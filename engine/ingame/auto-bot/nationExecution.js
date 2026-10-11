@@ -518,8 +518,8 @@
         // while that probe is in flight; do not let the stale-generation guard
         // suppress the independent construction lane.  The warship phase above
         // re-reads live state and has its own pending-build/rate guards.
-        await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",
-          () => this.structureBehavior.handleStructures(profile), tickGeneration);
+        if (!(await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",
+          () => this.structureBehavior.handleStructures(profile), tickGeneration))) return;
         if (!(await this.runOptionalAsyncPhase(this.feat("expand") || this.feat("boat"),
           profile, "attack", () => this.attackBehavior.maybeAttack(profile), tickGeneration))) return;
         if (this.feat("embargo")) {

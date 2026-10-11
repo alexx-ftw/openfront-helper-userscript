@@ -395,6 +395,8 @@
         isDisconnected: pass("isDisconnected", false),
         betrayals: pass("betrayals", 0),
         getTraitorRemainingTicks: pass("getTraitorRemainingTicks", 0),
+        inDoomsdayClock: pass("inDoomsdayClock", false),
+        doomsdayClockTicks: pass("doomsdayClockTicks", 0),
 
         units: (...types) => cachedUnits(core, `player:${sid}`, types),
         unitCount: (type) => cachedUnits(core, `player:${sid}`, [type]).length,

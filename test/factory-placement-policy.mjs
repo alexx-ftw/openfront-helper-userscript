@@ -65,6 +65,41 @@ assert.equal(
   "the first Factory remains legal when no Factory exists yet",
 );
 
+behavior.getOrBuildFactoryTradeDestinations = () => [];
+behavior.isDangerousStructureTile = () => false;
+assert.equal(
+  behavior.rankStructureSpawnTiles(UNIT.Factory, {}, [20], () => 1, null).safeScored.length,
+  1,
+  "non-Legendary tiers retain Factory placement when no paid stop is reachable",
+);
+sandbox.isLegendaryDifficulty = () => true;
+assert.equal(
+  behavior.rankStructureSpawnTiles(UNIT.Factory, {}, [20], () => 1, null).safeScored.length,
+  0,
+  "Legendary suppresses an idle Factory with no paid stop",
+);
+
+let spawnProbeCalled = false;
+behavior.structureSpawnTile = async () => {
+  spawnProbeCalled = true;
+  return { canBuild: 20 };
+};
+sandbox.isLegendaryDifficulty = () => false;
+assert.deepEqual(
+  await behavior.structureSpawnBuildable(UNIT.Factory, [], false, {}),
+  { canBuild: 20 },
+  "non-Legendary Factory construction keeps its existing placement probe",
+);
+assert.equal(spawnProbeCalled, true);
+spawnProbeCalled = false;
+sandbox.isLegendaryDifficulty = () => true;
+assert.equal(
+  await behavior.structureSpawnBuildable(UNIT.Factory, [], false, {}),
+  false,
+  "Legendary skips Factory placement probes when no paid stop exists",
+);
+assert.equal(spawnProbeCalled, false);
+
 const selfCity = { id: () => 1, tile: () => 40, hasTrainStation: () => false };
 const alliedPort = { id: () => 2, tile: () => 80, hasTrainStation: () => false };
 const hostileCity = { id: () => 3, tile: () => 120, hasTrainStation: () => false };

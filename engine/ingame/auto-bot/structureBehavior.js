@@ -68,6 +68,8 @@
   // Module-level constants — verbatim from NationStructureBehavior.ts.
   // ===========================================================================
 
+  const LEGENDARY_LANDLOCKED_ARSENAL_BACKSTOP_TICK = 3000;
+
   /** SAM launcher ratio per city, keyed by difficulty */
   const SAM_RATIO_BY_DIFFICULTY = {
     [Difficulty.Easy]: 0,
@@ -431,8 +433,16 @@
   // (gameApi player exposes hasEmbargoAgainst + id(), so this is exact.)
   function shimCanTrade(a, b) {
     if (a == null || b == null) return false;
-    if (a.id() === b.id()) return false;
-    return !a.hasEmbargoAgainst(b) && !b.hasEmbargoAgainst(a);
+    const aId = typeof a.id === "function" ? a.id() : a.smallID?.();
+    const bId = typeof b.id === "function" ? b.id() : b.smallID?.();
+    if (aId === bId) return false;
+    const aEmbargo = typeof a.hasEmbargoAgainst === "function"
+      ? a.hasEmbargoAgainst(b)
+      : false;
+    const bEmbargo = typeof b.hasEmbargoAgainst === "function"
+      ? b.hasEmbargoAgainst(a)
+      : false;
+    return !aEmbargo && !bEmbargo;
   }
 
   // sharedWaterComponents(game, player) — src SharedWaterCache + GameImpl.
@@ -590,6 +600,8 @@
       this._legendaryCityUpgradeProbeTick = null;
       this._legendaryCityUpgradeProbe = null;
       this._legendaryCityUpgradeCostCache = new Map();
+      this._legendaryThroughputUpgradeProbeTick = null;
+      this._legendaryThroughputUpgradeProbe = null;
       this.initializeThreatSnapshotCaches();
       this.initializeMissileDefenseCaches();
     }
@@ -799,9 +811,11 @@
         await profileStructureAsync(profile, "structures-winfix-priorities", () =>
           this.handleWinFixStructurePriorities(legendaryDifficulty))
       ) {
+        this.debugStructureLaneCount("laneWinfixTrue");
         return true;
       }
 
+      this.debugStructureLaneCount("laneReachInitialSilo");
       if (await this.handleInitialSiloPriority(profile, legendaryDifficulty)) {
         return true;
       }
@@ -870,12 +884,55 @@
           evaluation,
           uncoveredMirvDemands,
         )
-      ) return false;
+      ) {
+        // A useful emergency SAM is already under construction, so its
+        // interception deadline is secured. Start the first Silo alongside it
+        // from true surplus; otherwise back-to-back hostile flights can keep
+        // this max-priority lane occupied until the bot dies with no launcher.
+        return await this.maybeStartFirstSiloAlongsidePendingSam();
+      }
 
       // The missile has a fixed deadline. Reserve the whole construction slot
       // until a geometrically useful SAM can be afforded and placed; spending
       // it on a Port/Warship/economy action can make the interception impossible.
-      return this.resolveActiveMissileSamFallback(context);
+      if (await this.resolveActiveMissileSamFallback(context)) return true;
+      // A pending interceptor has already claimed the urgent-defense action.
+      // If it cannot cover this particular flight and no additional SAM action
+      // is buildable, use funded surplus to open the first offensive silo
+      // alongside it; otherwise repeated flights can starve the launcher for
+      // the whole match.
+      if (
+        this.hasOwnSamUnderConstruction() &&
+        (await this.maybeStartFirstSiloAlongsidePendingSam())
+      ) {
+        return true;
+      }
+      return false;
+    }
+
+    async maybeStartFirstSiloAlongsidePendingSam() {
+      const config = this.game?.config?.();
+      if (
+        !config ||
+        config.isUnitDisabled(UNIT.MissileSilo) ||
+        ![UNIT.AtomBomb, UNIT.HydrogenBomb, UNIT.MIRV].some(
+          (type) => !config.isUnitDisabled(type),
+        ) ||
+        this.ownedLevels(UNIT.MissileSilo) > 0
+      ) {
+        return false;
+      }
+      const cost = this.safeConstructionCost(UNIT.MissileSilo);
+      if (
+        cost === null ||
+        this.availableGoldAfterReserve(UNIT.MissileSilo, { includeSam: true }) <
+          cost
+      ) {
+        return false;
+      }
+      return this.maybeSpawnStructure(UNIT.MissileSilo, {
+        ignoreEconomicReserve: true,
+      });
     }
 
     async resolveActiveMissileSamFallback(context) {
@@ -1190,7 +1247,10 @@
       const uncoveredFrontTiles = this.defensePostFrontDemand(threat, frontTiles);
       if (uncoveredFrontTiles === null) return false;
       const cost = this.cost(UNIT.DefensePost);
-      if (this.player.gold() < cost) return false;
+      // Budget through the shared reserve so the first-Silo gold survives a
+      // sustained DP pressure lane (Baikal 2026-10-10: DP spam starved the
+      // nuclear opening, siloMissing=197).
+      if (this.availableGoldAfterReserve(UNIT.DefensePost) < cost) return false;
 
       // src samples tiles (canBuild checked inside the sampler) and builds the
       // first valid one. Client: sample WITHOUT canBuild (it's async), then probe
@@ -1791,6 +1851,21 @@
         this.handleInitialMissileSilo(legendaryDifficulty));
     }
 
+    async maybeOpenLandlockedLegendaryArsenal(context, profile, hasWaterAccess) {
+      if (
+        !isLegendaryDifficulty(context.difficulty) ||
+        hasWaterAccess ||
+        context.cityCount < 1
+      ) {
+        return false;
+      }
+      const tick =
+        typeof this.game?.ticks === "function" ? this.game.ticks() : 0;
+      if (tick < LEGENDARY_LANDLOCKED_ARSENAL_BACKSTOP_TICK) return false;
+      return profileStructureAsync(profile, "structures-ordinary-landlocked-arsenal", () =>
+        this.maybeOpenLegendaryArsenal(context));
+    }
+
     legendaryDefenseEmergencies(legendaryDifficulty) {
       const missileEmergency =
         legendaryDifficulty && this.legendaryMissileDefenseUrgent();
@@ -1821,19 +1896,20 @@
       ) {
         return true;
       }
-      if (
-        isLegendaryDifficulty(context.difficulty) &&
-        // Shared-water lakes (Baikal) carry the same naval/nuclear economy
-        // as oceans; only truly landlocked maps fall through to the
-        // faithful order. The hydro fixture map (Alps) has no shared water
-        // and keeps its dedicated nuclear path. The raw shore fact catches
-        // lakes the client classification marks as neither ocean nor
-        // shared-water, which otherwise never reach the Legendary planner
-        // at all.
+      const legendaryDifficulty = isLegendaryDifficulty(context.difficulty);
+      const hasWaterAccess = legendaryDifficulty &&
         (context.hasOceanPortTiles ||
           context.hasCoastalTiles ||
-          this.hasAnyShoreBorderTile())
-      ) {
+          this.hasAnyShoreBorderTile());
+      if (await this.maybeOpenLandlockedLegendaryArsenal(
+        context, profile, hasWaterAccess,
+      )) return true;
+      if (legendaryDifficulty && hasWaterAccess) {
+        // Shared-water lakes (Baikal) carry the same naval/nuclear economy
+        // as oceans. Truly landlocked maps retain the faithful structure
+        // order, with only the bounded first-Silo/baseline-SAM Arsenal lane
+        // checked after its 3000-tick backstop. The hydro fixture map (Alps)
+        // therefore keeps its dedicated nuclear path.
         return profileStructureAsync(profile, "structures-ordinary-legendary", () =>
           this.doHandleLegendaryStructures(context));
       }
@@ -2021,6 +2097,7 @@
         !economyGrowthPriority &&
         missileSilosEnabled &&
         nukesEnabled &&
+        !this.hasStructureUnderConstruction(this.player.units(UNIT.MissileSilo)) &&
         this.missileSiloParityGap() > 0 &&
         (await this.maybeSpawnStructure(UNIT.MissileSilo))
       );
@@ -2091,7 +2168,16 @@
       if (!this.hasOceanPortTiles()) return false;
       if (!this.navalOpeningHasCompletedPort()) return true;
       const warships = this.player?.units?.(UNIT.Warship) || [];
-      return warships.length === 0;
+      if (warships.length > 0) return false;
+      // A coastal opening must not hold the nuclear lane hostage forever: if
+      // the first Warship never becomes affordable, the same 3000-tick
+      // backstop the landlocked Arsenal uses releases the first Silo.
+      // Measured Baikal Nuke Wars run (2026-10-10): the Warship never queued,
+      // so the deferred Silo never reached its lane before bot_dead at 5212.
+      const tick = this.game?.ticks?.();
+      return !(
+        Number.isFinite(tick) && tick >= LEGENDARY_LANDLOCKED_ARSENAL_BACKSTOP_TICK
+      );
     }
 
     async handleOrdinaryStructurePriorities(context) {
@@ -2401,47 +2487,6 @@
       return tick !== null && this._hostileSiloSamAttemptTick === tick;
     }
 
-    // Legendary deliberately chooses among all currently relevant structures
-    // instead of following the faithful Nation priority list. Placement, cost,
-    // upgrade, and buildability checks remain in maybeSpawnStructure().
-    async maybeOpenLegendaryNavalEconomy({
-      config,
-      citiesDisabled,
-      cityCount,
-      hasCoastalTiles,
-      hasOceanPortTiles,
-    }) {
-      if (!this.legendaryNavalEconomyEligible({
-        config, citiesDisabled, cityCount, hasCoastalTiles, hasOceanPortTiles,
-      })) return false;
-      const ports = this.player?.units?.(UNIT.Port) || [];
-      const completedPort = ports.some(
-        (port) => port.isUnderConstruction?.() !== true,
-      );
-      // Big-start opening (5MM/25MM modifiers): the starting treasury is dead
-      // capital until it becomes trade infrastructure — every nation compounds
-      // from the same start, and the measured 5MM failure mode is economy
-      // (3-6 cities / 1-16 ports vs 13/57-70 without the modifier) because the
-      // ratio lane (cityCount x 0.75) stays closed at 2 cities while the gold
-      // idles. Extend the naval opening to the first ~5 ports so the burst
-      // happens before the ratio math ever binds. The SAM path is unaffected:
-      // 5M minus City+5 ports (~3M) still covers the 1.5M interceptor well
-      // before the first measured hostile strike (1774+).
-      const portBurstCap = this.legendaryBigStartGame() ? 5 : 1;
-      if (portBurstCap === 1) {
-        if (completedPort || ports.length > 0) return false;
-      } else if (ports.length >= portBurstCap) {
-        return false;
-      } else if (this.bigStartStructurePacingBlocks()) {
-        // Engine-nation pacing: spaced placements, not a back-to-back cluster
-        // inside one nuke blast (see bigStartStructurePacingBlocks).
-        return false;
-      }
-      const placed = await this.maybeSpawnStructure(UNIT.Port);
-      if (placed) this.recordBigStartStructurePlacement();
-      return placed;
-    }
-
     // Engine-nation structure pacing (NationStructureBehavior.ts:97-114):
     // placements #3+ are spaced 250/150/100 ticks so a rich-board burst does
     // not cluster structures inside one nuke blast radius or balloon
@@ -2518,7 +2563,7 @@
       if (!hasOceanPortTiles || !this.legendaryBigStartGame()) return false;
       const tick =
         typeof this.game?.ticks === "function" ? this.game.ticks() : 0;
-      if (tick >= 3000) return false;
+      if (tick >= LEGENDARY_LANDLOCKED_ARSENAL_BACKSTOP_TICK) return false;
       const ports = this.player?.units?.(UNIT.Port) || [];
       return ports.length < 5;
     }
@@ -2531,11 +2576,12 @@
       nukesEnabled,
     }) {
       // Landlocked spawns (Luna interior) never gain ocean port tiles; the
-      // 3000-tick backstop opens the first-silo lane with one City instead
+      // tick backstop opens the first-silo lane with one City instead
       // of waiting for a coast and a second City that never came.
       const tick =
         typeof this.game?.ticks === "function" ? this.game.ticks() : 0;
-      const landlockedBackstop = !hasOceanPortTiles && tick >= 3000;
+      const landlockedBackstop =
+        !hasOceanPortTiles && tick >= LEGENDARY_LANDLOCKED_ARSENAL_BACKSTOP_TICK;
       if (
         cityCount < (landlockedBackstop ? 1 : 2) ||
         (!hasOceanPortTiles && !landlockedBackstop) ||
@@ -2547,6 +2593,9 @@
       }
       const silos = this.player?.units?.(UNIT.MissileSilo) || [];
       if (silos.length === 0) {
+        // Give a timely interceptor a chance before the speculative first
+        // launcher; the active-threat path opens the Silo only after that probe.
+        if (this.legendaryMissileDefenseUrgent()) return false;
         return this.maybeOpenLegendaryFirstSilo(hasOceanPortTiles);
       }
       return this.maybeOpenLegendaryBaselineSam(config);
@@ -2615,14 +2664,11 @@
       nukesEnabled,
       economyGrowthPriority,
     }) {
-      // The naval economy opening: the first Port unlocks trade income, the
-      // warship spawn path, and every capture mechanic the adaptive tier
-      // depends on. Buy it right after the foundational City instead of
-      // behind ratio targets that only re-open after further Cities.
-      if (await this.maybeOpenLegendaryNavalEconomy({ config, citiesDisabled, cityCount, hasCoastalTiles, hasOceanPortTiles })) {
-        return true;
-      }
+      this.debugStructureLaneCount("laneLegendaryChain");
+      const missileDefenseInitiallyUrgent =
+        this.legendaryMissileDefenseUrgent();
       if (
+        !missileDefenseInitiallyUrgent &&
         await this.maybeOpenLegendaryArsenal({
           config,
           cityCount,
@@ -2633,29 +2679,44 @@
       ) {
         return true;
       }
-      // A missile attack inside the five-tick safety window takes precedence over
-      // economic construction: upgrade the SAM that actually covers the most
-      // exposed trajectory before spending the same gold on a new structure.
-      if (await this.maybeUpgradeLegendarySam()) {
-        return true;
-      }
 
       const needsBaselineSam = this.ownSamCapacity() <= 0;
-      if (needsBaselineSam && (await this.maybeSpawnHostileSiloSam())) return true;
-      // A failed/blocked baseline-SAM placement is retried on its bounded
-      // cadence, but it must not reserve every intervening construction slot.
-      // If the current per-missile schedule is not fully defensible, only
-      // attempt a SAM whose construction can actually finish in time. Do not
-      // spend on a City/Factory/Port/Silo in a zone that the model already
-      // predicts will be hit before the emergency defense can come online.
-      if (this.legendaryMissileDefenseUrgent()) {
+      let baselineSamBlocked = false;
+      if (needsBaselineSam) {
+        if (await this.maybeSpawnHostileSiloSam()) return true;
+        baselineSamBlocked = this.hostileSiloSamActionBlocked();
+      }
+      // The launcher covering the most exposed trajectory and any urgent
+      // replacement take priority over offensive or economic construction.
+      if (await this.maybeUpgradeLegendarySam()) return true;
+      const missileDefenseUrgent = this.legendaryMissileDefenseUrgent();
+      if (missileDefenseUrgent && !baselineSamBlocked) {
         if (
           await this.maybeSpawnStructure(UNIT.SAMLauncher, {
             useActualCost: true,
+            prioritizeStructureCoverage: true,
+            activeMissileDefense: true,
           })
-        ) return true;
+        ) {
+          return true;
+        }
       }
-
+      // A first launcher is offensive capacity as well as deterrence; place
+      // it only after every actionable, timely SAM construction has been tried.
+      if (
+        nukesEnabled &&
+        missileSilosEnabled &&
+        typeof this.player?.units === "function" &&
+        this.ownedLevels(UNIT.MissileSilo) === 0 &&
+        !(this.player?.units?.(UNIT.MissileSilo) || []).some((silo) =>
+          silo.isUnderConstruction?.(),
+        ) &&
+        (await this.maybeOpenLegendaryFirstSilo(hasOceanPortTiles))
+      ) {
+        this.debugStructureLaneCount("laneSiloBuilt");
+        return true;
+      }
+      if (missileDefenseUrgent) return false;
       // Arm-on-freeze strike silo: FFA-only survival lane (see method doc).
       // Defense keeps priority above; the ordinary candidates ladder below
       // defers offensive silos behind the economy gates that mode-A freezes
@@ -2674,11 +2735,11 @@
       // Cap relief needs the authoritative City upgrade price before the
       // candidate set is built. The probe is tick-cached and its per-level
       // cost cache keeps repeated decisions off the worker.
-      if (this.troopCapPressure()) {
+      if (this.computeTroopCapPressure(false)) {
         await this.refreshLegendaryCityUpgradeCandidate();
       }
 
-      const candidates = this.legendaryConstructionCandidates({
+      const candidates = await this.legendaryConstructionCandidates({
         config,
         citiesDisabled,
         cityCount,
@@ -2820,7 +2881,10 @@
         // its failure falls through to the next ranked action (e.g. a new
         // City) instead of aborting the whole group.
         if (candidate.action === "upgrade") {
-          if (await this.maybeUpgradeLegendaryCityCapacity(candidate)) {
+          const upgraded = candidate.type === UNIT.City
+            ? await this.maybeUpgradeLegendaryCityCapacity(candidate)
+            : await this.maybeUpgradeLegendaryThroughput(candidate);
+          if (upgraded) {
             return "built";
           }
           continue;
@@ -3734,13 +3798,61 @@
       return this.shouldReserveHostileSiloSamBudget() ? reserve : 0n;
     }
 
-    availableGoldAfterReserve(type) {
+    debugStructureLaneCount(lane) {
+      const tel = this.nukeBehavior?.decisionTelemetry;
+      if (tel) tel[lane] = (tel[lane] ?? 0) + 1;
+    }
+
+    firstSiloConstructionReserve(
+      type,
+      includeSam = false,
+      missileDefenseUrgent = null,
+    ) {
+      if (
+        type !== UNIT.DefensePost &&
+        !(includeSam && type === UNIT.SAMLauncher)
+      ) {
+        return 0n;
+      }
+      if (!state.settings.winFixes) return 0n;
+      if (
+        !isLegendaryDifficulty(currentDifficulty()) &&
+        !this.hasBuiltHostileSiloThreat()
+      ) {
+        return 0n;
+      }
+      if (
+        type === UNIT.SAMLauncher &&
+        ((this.player?.units?.(UNIT.SAMLauncher) || []).length === 0 ||
+          (missileDefenseUrgent ?? this.legendaryMissileDefenseUrgent()))
+      ) {
+        return 0n;
+      }
+      if (this.ownedLevels(UNIT.MissileSilo) > 0) return 0n;
+      const silos = this.player.units(UNIT.MissileSilo) || [];
+      if (silos.some((silo) => silo.isUnderConstruction?.())) return 0n;
+      // No deferral exemption: while the naval opening funds Port/Warship,
+      // Defense Posts are exactly the spend that starved the opening
+      // (Baikal 2026-10-10: three DPs consumed the Port's gold window).
+      const cost = this.safeConstructionCost(UNIT.MissileSilo);
+      return cost === null ? 0n : cost;
+    }
+
+    availableGoldAfterReserve(type, { includeSam = false } = {}) {
       let availableGold = this.spendableConstructionGold();
 
       // Plateau/opening callers bypass the ordinary defense phase. Keep the
       // first interceptor funded at their shared budget boundary as well.
       const firstSamReserve = this.firstSamConstructionReserve(type);
       availableGold = availableGold > firstSamReserve ? availableGold - firstSamReserve : 0n;
+
+      // While the first Silo is missing, Defense Posts and nonurgent follow-up
+      // SAM spending preserve its cost; urgent SAM responses stay exempt.
+      const firstSiloReserve = this.firstSiloConstructionReserve(
+        type,
+        includeSam,
+      );
+      availableGold = availableGold > firstSiloReserve ? availableGold - firstSiloReserve : 0n;
 
       // The first-Atom war chest claims economic gold ahead of ordinary
       // growth once a Silo is live (the nuke lane decides after structures
@@ -4147,7 +4259,7 @@
       return pressure;
     }
 
-    computeTroopCapPressure() {
+    computeTroopCapPressure(includeThinDensity = true) {
       if (!state.settings.winFixes) return false;
       const config = this.game?.config?.();
       if (!config || typeof config.maxTroops !== "function") return false;
@@ -4157,7 +4269,7 @@
       const troops = Number(this.player.troops());
       if (!Number.isFinite(troops) || troops <= 0) return false;
       if (troops >= maxTroops * TROOP_CAP_PRESSURE_RATIO) return true;
-      return this.legendaryThinDensityPressure(troops);
+      return includeThinDensity && this.legendaryThinDensityPressure(troops);
     }
 
     // Density floor: territory growing faster than the army is the paper
@@ -4694,6 +4806,15 @@
       return Math.max(
         0,
         this.missileSiloParityTarget() - this.ownedLevels(UNIT.MissileSilo),
+      );
+    }
+
+    missileSiloPhysicalCapReached() {
+      const siloCount = (this.player?.units?.(UNIT.MissileSilo) ?? []).length;
+      const parityGap = this.missileSiloParityGap();
+      return (
+        siloCount >= MAX_MISSILE_SILOS &&
+        (parityGap <= 0 || !Number.isFinite(parityGap))
       );
     }
 
@@ -9830,6 +9951,35 @@
       const missileThreat = this.getMissileDefenseContext();
       const rail = this.legendaryRailMetrics(cities, ports, factories);
       const hostile = this.legendaryHostilePlayers();
+      const hasTradePartner = this.hasTradeablePortOnSharedWater();
+      const hasCompletedTradePartner = this.hasTradeablePortOnSharedWater({
+        includeInProgress: false,
+      });
+      const factoryUnitCount = typeof this.player?.unitCount === "function"
+        ? this.player.unitCount(UNIT.Factory)
+        : factories.reduce(
+            (total, factory) =>
+              total + Math.max(1, Math.floor(Number(factory?.level?.() ?? 1))),
+            0,
+          );
+      const spawnMultipliers = legendaryEconomySpawnMultipliers(
+        this.game?.config?.(),
+        factoryUnitCount,
+        this.game?.units?.(UNIT.Train)?.length ?? 0,
+        this.game?.units?.(UNIT.TradeShip)?.length ?? 0,
+      );
+      const economyHorizonTicks = legendaryStructureHorizonTicks(
+        this.game,
+        safeStructureGameTick(this.game),
+        this.player,
+      );
+      const economyInputs = this.legendaryEconomyInputs({
+        trainCount: this.game?.units?.(UNIT.Train)?.length ?? 0,
+        tradeShipCount: this.game?.units?.(UNIT.TradeShip)?.length ?? 0,
+        hasTradePartner,
+        hasCompletedTradePartner,
+        connectedStops: rail.connectedCities + ports.length,
+      });
       const ownSiloLevels = this.ownedLevels(UNIT.MissileSilo);
       const siloParityTarget = this.missileSiloParityTarget();
       const siloParityGap = Math.max(0, siloParityTarget - ownSiloLevels);
@@ -9854,16 +10004,16 @@
         cityRailConnection: rail.cityRailConnection,
         railNeed: rail.railNeed,
         // Misclassified enclosed lakes (Baikal) read hasCoastalTiles=false and
-        // see few rail-reachable trade stations, dropping tradeNeed to its
-        // floor — which caps Port's objective below City and leaves the map
-        // at one Port with no fleet economy. A shore-capable map trades by
-        // definition, so hold tradeNeed at the strategic threshold
-        // (tradeNeed > 1.25 is what flips the Port candidate's strategic
-        // bit) instead of the waterless floor.
+        // see few rail-reachable trade stations. When an ocean trade partner
+        // exists, keep Port value at the strategic threshold rather than the
+        // waterless floor; without a reachable partner, Port has no trade value.
         tradeNeed:
-          hasCoastalTiles || this.hasAnyShoreBorderTile()
+          hasTradePartner &&
+          (hasCoastalTiles || this.hasAnyShoreBorderTile())
             ? Math.max(1.3, rail.tradeNeed)
             : 0.25,
+        ...spawnMultipliers,
+        hasTradePartner,
         destroyerNeed: Math.min(
           2.5,
           Math.max(0.25, 1 + (enemyWarships - this.player.units(UNIT.Warship).length) / 5),
@@ -9874,6 +10024,8 @@
         ),
         missileThreat,
         portSurvivability: this.legendaryPortSurvivability(ports, enemyWarships),
+        economyHorizonTicks,
+        economyInputs,
         enemySilos,
         ownSams: this.ownSamCapacity(),
         ownSilos: ownSiloLevels,
@@ -9882,6 +10034,870 @@
         samLevelParityTarget,
         samLevelParityGap,
       };
+    }
+
+    // Team-economy inputs for the marginal expected-gold evaluator. Rail
+    // sources are grouped by the same station clusters used by placement;
+    // pending destinations count as supply but do not pay until complete.
+    legendaryEconomyInputs({
+      trainCount,
+      tradeShipCount,
+      hasTradePartner,
+      hasCompletedTradePartner,
+      connectedStops,
+    }) {
+      const config = this.game?.config?.();
+      const ownPlayer = this.player;
+      const ownPortUnits = this.player?.units?.(UNIT.Port) ?? [];
+      const ownCityUnits = this.player?.units?.(UNIT.City) ?? [];
+      const ownPorts = ownPortUnits.reduce(
+        (total, port) => this.portIsUsable(port)
+          ? total + (port?.isUnderConstruction?.() === true
+            ? 1
+            : Math.max(1, Math.floor(Number(port?.level?.() ?? 1))))
+          : total,
+        0,
+      );
+      const otherOwners = (this.game?.players?.() ?? []).filter(
+        (owner) =>
+          owner &&
+          String(owner?.smallID?.() ?? "") !== String(ownPlayer?.smallID?.() ?? "") &&
+          owner?.isPlayer?.() !== false &&
+          owner?.isAlive?.() !== false &&
+          shimCanTrade(ownPlayer, owner),
+      );
+      const owners = [ownPlayer, ...otherOwners];
+      const idOf = (owner) => String(owner?.smallID?.() ?? "");
+      const sameOwner = (left, right) =>
+        idOf(left) !== "" && idOf(left) === idOf(right);
+      const sameTeam = (owner) =>
+        sameOwner(owner, ownPlayer) || ownPlayer?.isOnSameTeam?.(owner) === true;
+      const allied = (owner) =>
+        !sameTeam(owner) && ownPlayer?.isAlliedWith?.(owner) === true;
+      const relationship = (source, destination) =>
+        sameOwner(source, destination)
+          ? "self"
+          : source?.isOnSameTeam?.(destination) === true
+            ? "team"
+            : source?.isAlliedWith?.(destination) === true
+              ? "ally"
+              : "other";
+      const levelOf = (unit) =>
+        unit?.isUnderConstruction?.() === true
+          ? 1
+          : Math.max(1, Math.floor(Number(unit?.level?.() ?? 1)));
+      const levelSum = (units) =>
+        (units ?? []).reduce((total, unit) => total + levelOf(unit), 0);
+      const trainGold = (relation, source) => {
+        const player = source?.__src ?? source;
+        return typeof config?.trainGold === "function" &&
+            typeof player?.isLobbyCreator === "function"
+          ? Number(config.trainGold(relation, 1, player))
+          : Number(this.trainGoldBase(relation, 1));
+      };
+      const allianceTicksRemaining = (owner) =>
+        this.legendaryAllianceTicksRemaining(owner, ownPlayer);
+
+      const clusterEntries = this.buildReachableStations(
+        [UNIT.City, UNIT.Port, UNIT.Factory],
+        owners,
+      ) ?? [];
+      const clusterByTile = new Map(
+        clusterEntries.map((entry) => [String(entry.tile), entry.cluster]),
+      );
+      const stationByTile = new Map();
+      const clusterData = new Map();
+      const clusterFor = (tile) => {
+        const cluster = clusterByTile.get(String(tile));
+        return cluster === null || cluster === undefined
+          ? "isolated:" + String(tile)
+          : String(cluster);
+      };
+      for (const owner of owners) {
+        for (const type of [UNIT.Factory, UNIT.City, UNIT.Port]) {
+          for (const unit of owner?.units?.(type) ?? []) {
+            const tile = unit?.tile?.();
+            if (tile !== null && tile !== undefined) {
+              stationByTile.set(String(tile), { owner, type, unit });
+            }
+          }
+        }
+      }
+      for (const entry of clusterEntries) {
+        const station = stationByTile.get(String(entry.tile));
+        if (!station) continue;
+        const cluster = clusterFor(entry.tile);
+        let data = clusterData.get(cluster);
+        if (!data) {
+          data = { factories: new Map(), destinations: [] };
+          clusterData.set(cluster, data);
+        }
+        const { owner, type, unit } = station;
+        if (type === UNIT.Factory) {
+          let source = data.factories.get(idOf(owner));
+          if (!source) {
+            source = {
+              owner,
+              factoryCount: levelSum(owner?.units?.(UNIT.Factory)),
+              productiveFactoryLevels: [],
+              productiveFactoryUnits: [],
+              pendingFactoryLevels: [],
+              factoryConstructionDelayTicks: Number(
+                config?.unitInfo?.(UNIT.Factory)?.constructionDuration ?? 0,
+              ),
+            };
+            data.factories.set(idOf(owner), source);
+          }
+          if (unit?.isUnderConstruction?.() === true) {
+            source.pendingFactoryLevels.push(levelOf(unit));
+          } else {
+            source.productiveFactoryLevels.push(levelOf(unit));
+            source.productiveFactoryUnits.push(unit);
+          }
+        } else {
+          data.destinations.push({ owner, type, unit });
+        }
+      }
+      // Include pending City/Port supply when it lies within station range of
+      // an existing cluster; it is not yet treated as a paying stop.
+      const stationRangeSquared =
+        Number(config?.trainStationMaxRange?.() ?? 0) ** 2;
+      for (const owner of owners) {
+        for (const type of [UNIT.City, UNIT.Port]) {
+          for (const unit of owner?.units?.(type) ?? []) {
+            if (unit?.isUnderConstruction?.() !== true) continue;
+            const tile = unit?.tile?.();
+            if (tile === null || tile === undefined || stationRangeSquared <= 0) continue;
+            let nearest = null;
+            let distanceSquared = Infinity;
+            for (const entry of clusterEntries) {
+              const distance = this.game.euclideanDistSquared(tile, entry.tile);
+              if (distance > stationRangeSquared || distance >= distanceSquared) continue;
+              nearest = clusterFor(entry.tile);
+              distanceSquared = distance;
+            }
+            const data = nearest ? clusterData.get(nearest) : null;
+            if (data) data.destinations.push({ owner, type, unit, pending: true });
+          }
+        }
+      }
+
+      let bestTrainSources = [];
+      let bestTrainValue = 0;
+      let bestFactoryGold = 0;
+      let bestPaidStops = 0;
+      let bestOwnProductiveLevels = [];
+      let bestOwnPendingLevels = [];
+      let bestOwnPendingDelayTicks = 0;
+      let bestRouteDelayTicks = 0;
+      let bestPendingStopDelayTicks = 0;
+      const ownFactoryClusterEntries = [];
+      const factoryUpgradeTargets = [];
+      const globalTrainCount = Math.max(0, Number(trainCount) || 0);
+      for (const data of clusterData.values()) {
+        const completedDestinations = data.destinations.filter(
+          ({ pending, unit }) =>
+            pending !== true && unit?.isUnderConstruction?.() !== true,
+        );
+        const pendingDestinations = data.destinations.filter(
+          ({ pending, unit }) =>
+            pending === true || unit?.isUnderConstruction?.() === true,
+        );
+        const futureDestinations = completedDestinations.concat(pendingDestinations);
+        const poolMean = (sourceOwner, includeCandidate, postAlliance) => {
+          const pool = includeCandidate
+            ? futureDestinations.concat([{ owner: ownPlayer }])
+            : futureDestinations;
+          if (pool.length === 0) return 0;
+          const values = pool.map(({ owner }) => {
+            const alliedPair = sourceOwner?.isAlliedWith?.(owner) === true;
+            const payoutRelation =
+              postAlliance && alliedPair ? "other" : relationship(sourceOwner, owner);
+            const recipients = sameOwner(sourceOwner, owner) ? 1 : 2;
+            return trainGold(payoutRelation, sourceOwner) * recipients;
+          });
+          return values.reduce((sum, value) => sum + value, 0) / values.length;
+        };
+        const sources = [...data.factories.values()].map((source) => {
+          const allyTicks = allied(source.owner)
+            ? allianceTicksRemaining(source.owner)
+            : Infinity;
+          return {
+            // The engine's unitCount denominator covers completed levels only.
+            factoryCount: (source.owner?.units?.(UNIT.Factory) ?? [])
+              .filter((factory) => factory?.isUnderConstruction?.() !== true)
+              .reduce((total, factory) => total + levelOf(factory), 0),
+            productiveFactoryLevels: source.productiveFactoryLevels,
+            pendingFactoryLevels: source.pendingFactoryLevels,
+            factoryConstructionDelayTicks: source.factoryConstructionDelayTicks,
+            paidStopsAfterBuild: Math.max(1, futureDestinations.length + 1),
+            beforeTeamGoldPerSpawn: poolMean(source.owner, false, false),
+            teamGoldPerStop: poolMean(source.owner, true, false),
+            beforePostAllianceTeamGoldPerSpawn:
+              poolMean(source.owner, false, true),
+            postAllianceTeamGoldPerStop: poolMean(source.owner, true, true),
+            eligibleTicks: allyTicks,
+            pendingStopDelayTicks: pendingDestinations.length > 0
+              ? Number(config?.unitInfo?.(pendingDestinations[0].type)?.constructionDuration ?? 0)
+              : 0,
+          };
+        });
+        if (data.factories.has(idOf(ownPlayer))) {
+          const ownSource = data.factories.get(idOf(ownPlayer));
+          const alliedDestinations = futureDestinations.filter(
+            ({ owner }) => allied(owner),
+          );
+          ownFactoryClusterEntries.push({
+            productiveFactoryLevels: ownSource.productiveFactoryLevels,
+            pendingFactoryLevels: ownSource.pendingFactoryLevels,
+            teamGoldPerSpawn: poolMean(ownPlayer, false, false),
+            postTeamGoldPerSpawn: poolMean(ownPlayer, false, true),
+            eligibleTicks: alliedDestinations.length > 0
+              ? Math.min(...alliedDestinations.map(
+                  ({ owner }) => allianceTicksRemaining(owner),
+                ))
+              : Infinity,
+            isTarget: false,
+          });
+        }
+        const estimate = sources.reduce((total, source) => {
+          const denominator = Math.max(
+            1,
+            Number(config?.trainSpawnRate?.(source.factoryCount, globalTrainCount) ?? 1),
+          );
+          const spawns = source.productiveFactoryLevels.reduce(
+            (sum, level) => sum + legendaryExpectedTrainRatePerTick(level, denominator),
+            0,
+          ) + source.pendingFactoryLevels.reduce(
+            (sum, level) => sum + legendaryExpectedTrainRatePerTick(level, denominator),
+            0,
+          );
+          return total + spawns * source.teamGoldPerStop /
+            Math.max(1, source.paidStopsAfterBuild);
+        }, 0);
+        if (estimate > bestTrainValue) {
+          bestTrainValue = estimate;
+          bestTrainSources = sources;
+          for (const entry of ownFactoryClusterEntries) entry.isTarget = false;
+          if (ownFactoryClusterEntries.length > 0) {
+            ownFactoryClusterEntries[ownFactoryClusterEntries.length - 1].isTarget = true;
+          }
+          bestOwnProductiveLevels =
+            data.factories.get(idOf(ownPlayer))?.productiveFactoryLevels ?? [];
+          const ownFactorySource = data.factories.get(idOf(ownPlayer));
+          bestOwnPendingLevels = ownFactorySource?.pendingFactoryLevels ?? [];
+          bestOwnPendingDelayTicks = ownFactorySource?.factoryConstructionDelayTicks ?? 0;
+          bestRouteDelayTicks = Number(config?.trainStationMaxRange?.() ?? 0);
+          bestPendingStopDelayTicks = Math.max(
+            0,
+            ...pendingDestinations.map(({ type }) =>
+              Number(config?.unitInfo?.(type)?.constructionDuration ?? 0),
+            ),
+          );
+        }
+        if (futureDestinations.length > 0) {
+          const weighted = futureDestinations.map(({ owner }) => {
+            const relation = relationship(ownPlayer, owner);
+            const teamRecipients = sameOwner(owner, ownPlayer) ? 1 : sameTeam(owner) ? 2 : 1;
+            return {
+              payout: trainGold(relation, ownPlayer) * teamRecipients,
+            };
+          });
+          const average = weighted.length > 0
+            ? weighted.reduce((sum, item) => sum + item.payout, 0) / weighted.length
+            : 0;
+          if (average > bestFactoryGold) {
+            bestFactoryGold = average;
+            bestPaidStops = futureDestinations.length;
+          }
+          const ownFactorySource = data.factories.get(idOf(ownPlayer));
+          if (ownFactorySource) {
+            for (let index = 0; index < ownFactorySource.productiveFactoryUnits.length; index++) {
+              const unit = ownFactorySource.productiveFactoryUnits[index];
+              if (typeof unit?.id !== "function") continue;
+              factoryUpgradeTargets.push({
+                structureId: unit.id(),
+                factoryCount: ownFactorySource.factoryCount,
+                productiveFactoryLevels: ownFactorySource.productiveFactoryLevels,
+                pendingFactoryLevels: ownFactorySource.pendingFactoryLevels,
+                factoryConstructionDelayTicks:
+                  ownFactorySource.factoryConstructionDelayTicks,
+                upgradeFactoryIndex: index,
+                pendingStopDelayTicks: Math.max(
+                  0,
+                  ...pendingDestinations.map(({ type }) =>
+                    Number(config?.unitInfo?.(type)?.constructionDuration ?? 0),
+                  ),
+                ),
+                teamGoldPerTrain: average,
+              });
+            }
+          }
+        }
+      }
+
+      const ownFactoryCount = (ownPlayer?.units?.(UNIT.Factory) ?? [])
+        .filter((factory) => factory?.isUnderConstruction?.() !== true)
+        .reduce((total, factory) => total + levelOf(factory), 0);
+      const sharedWater = this.game?.sharedWaterComponents?.(ownPlayer);
+      let teamFactoryLevels = 0;
+      let teamCityStops = 0;
+      let allyFactoryLevels = 0;
+      let allyCityStops = 0;
+      let pendingPartnerConstructionTicks = 0;
+      const portConstructionTicks = Number(
+        config?.unitInfo?.(UNIT.Port)?.constructionDuration ?? 0,
+      );
+      for (const other of otherOwners) {
+        const isTeam = ownPlayer?.isOnSameTeam?.(other) === true;
+        const isAlly = !isTeam && ownPlayer?.isAlliedWith?.(other) === true;
+        if (isTeam) {
+          teamFactoryLevels += levelSum(other?.units?.(UNIT.Factory));
+          teamCityStops += levelSum(other?.units?.(UNIT.City));
+        } else if (isAlly) {
+          allyFactoryLevels += levelSum(other?.units?.(UNIT.Factory));
+          allyCityStops += levelSum(other?.units?.(UNIT.City));
+        }
+        for (const port of other?.units?.(UNIT.Port) ?? []) {
+          if (!this.portIsUsable(port)) continue;
+          const onSharedWater = [...this.portWaterComponents(port?.tile?.())].some(
+            (component) => sharedWater?.has?.(component),
+          );
+          if (!onSharedWater) continue;
+          if (port?.isUnderConstruction?.() === true) {
+            pendingPartnerConstructionTicks = Math.max(
+              pendingPartnerConstructionTicks,
+              portConstructionTicks,
+            );
+          }
+        }
+      }
+      const foreignPorts = otherOwners.flatMap((owner) =>
+        (owner?.units?.(UNIT.Port) ?? [])
+          .filter((port) => this.portIsUsable(port))
+          .map((unit) => ({ owner, unit })),
+      );
+      const completedOwnPorts = ownPortUnits.filter(
+        (port) =>
+          port?.isUnderConstruction?.() !== true &&
+          this.portIsUsable(port),
+      );
+      const portUpgradeProfiles = {};
+      for (const port of hasTradePartner ? completedOwnPorts : []) {
+        const id = port?.id?.();
+        if (id === null || id === undefined) continue;
+        const profile = this.legendaryPortRouteProfile(
+          port.tile(),
+          ownPlayer,
+          foreignPorts,
+        );
+        if (profile) {
+          profile.inboundSources = this.legendaryPortInboundSources(
+            port.tile(),
+            port,
+            levelOf(port) + 1,
+          );
+          portUpgradeProfiles[String(id)] = profile;
+        }
+      }
+      const portUpgradeTargetIds = Object.keys(portUpgradeProfiles);
+      const portSeedWindowOpen = this.legendaryPortSeedWindowOpen();
+      const candidateTiles =
+        hasTradePartner || portSeedWindowOpen
+          ? this.legendaryPortCandidateTilesForEconomy()
+          : [];
+      let portTradeProfile = null;
+      const portCandidateProfiles = [];
+      for (const tile of candidateTiles) {
+        const profile = this.legendaryPortRouteProfile(tile, ownPlayer, foreignPorts);
+        if (profile) {
+          profile.inboundSources = this.legendaryPortInboundSources(tile);
+          portCandidateProfiles.push(profile);
+        }
+        if (
+          profile &&
+          (portTradeProfile === null ||
+            profile.teamGoldPerArrival > portTradeProfile.teamGoldPerArrival ||
+            (profile.teamGoldPerArrival === portTradeProfile.teamGoldPerArrival &&
+              profile.routeDelayTicks < portTradeProfile.routeDelayTicks))
+        ) {
+          portTradeProfile = profile;
+        }
+      }
+      let portSeedSources = [];
+      let seedPairDelayTicks = portConstructionTicks;
+      let seedPartnerCommitted = false;
+      if (portSeedWindowOpen && hasCompletedTradePartner !== true && candidateTiles.length > 0) {
+        let bestSeed = null;
+        for (const ownTile of candidateTiles) {
+          for (const component of this.portWaterComponents(ownTile)) {
+            if (!sharedWater?.has?.(component)) continue;
+            const selectedIds = this.legendaryPortSeedOwnerIds(component).map(String);
+            const ownId = String(ownPlayer?.smallID?.() ?? "");
+            const partnerId = selectedIds.find((id) => id !== ownId);
+            if (!partnerId || !selectedIds.includes(ownId)) continue;
+            const partner = otherOwners.find(
+              (owner) => String(owner?.smallID?.() ?? "") === partnerId,
+            );
+            if (!partner) continue;
+            const inProgress = (partner.units?.(UNIT.Port) ?? []).filter(
+              (port) =>
+                this.portIsUsable(port) &&
+                port?.isUnderConstruction?.() === true &&
+                this.portWaterComponents(port?.tile?.()).has(component),
+            );
+            let partnerTargets = inProgress.map((unit) => ({ owner: partner, unit }));
+            if (partnerTargets.length === 0) {
+              let border = partner.oceanShoreBorderTiles?.() ?? [];
+              if (border.length === 0) {
+                border = Array.from(partner.borderTiles?.() ?? []).filter((tile) =>
+                  this.isShoreBorderTile(tile),
+                );
+              }
+              const limit = Math.max(
+                1,
+                Number(STRUCTURE_PLACEMENT_CANDIDATE_LIMIT) || 1,
+              );
+              const uniqueBorder = [...new Set(border)];
+              const sampledBorder = uniqueBorder.length <= limit
+                ? uniqueBorder
+                : Array.from({ length: limit }, (_, index) =>
+                    uniqueBorder[Math.floor((index * uniqueBorder.length) / limit)],
+                  );
+              const partnerTiles = sampledBorder.filter(
+                (tile) =>
+                  this.portWaterComponents(tile).has(component) &&
+                  this.portTileHasOpenWaterAccess(tile),
+              );
+              partnerTargets = partnerTiles.map((tile) => ({ owner: partner, tile }));
+            }
+            for (const partnerTarget of partnerTargets) {
+              const partnerTile = partnerTarget.tile ?? partnerTarget.unit?.tile?.();
+              if (partnerTile === null || partnerTile === undefined) continue;
+              const ownProfile = this.legendaryPortRouteProfile(ownTile, ownPlayer, [
+                { owner: partner, tile: partnerTile, unit: partnerTarget.unit },
+              ]);
+              const partnerProfile = this.legendaryPortRouteProfile(
+                partnerTile,
+                partner,
+                [{ owner: ownPlayer, tile: ownTile }],
+              );
+              if (!ownProfile || !partnerProfile) continue;
+              const candidate = {
+                sources: [
+                  { ...ownProfile, level: 1, portSeedStream: "own" },
+                  {
+                    ...partnerProfile,
+                    level: 1,
+                    portSeedStream: "partner",
+                  },
+                ],
+                committed: inProgress.length > 0,
+                value:
+                  ownProfile.teamGoldPerArrival +
+                  partnerProfile.teamGoldPerArrival,
+                routeDelay:
+                  ownProfile.routeDelayTicks + partnerProfile.routeDelayTicks,
+              };
+              if (
+                bestSeed === null ||
+                candidate.value > bestSeed.value ||
+                (candidate.value === bestSeed.value &&
+                  candidate.routeDelay < bestSeed.routeDelay)
+              ) {
+                bestSeed = candidate;
+              }
+            }
+          }
+        }
+        if (bestSeed) {
+          portSeedSources = bestSeed.sources;
+          seedPartnerCommitted = bestSeed.committed === true;
+          // The selected seed partner is completing concurrently; unrelated
+          // pending Ports on other shared water must not delay this pair.
+          seedPairDelayTicks = portConstructionTicks;
+        }
+      }
+      const completedFactoryLevels = (this.player?.units?.(UNIT.Factory) ?? [])
+        .reduce(
+          (total, factory) =>
+            factory?.isUnderConstruction?.() === true
+              ? total
+              : total + levelOf(factory),
+          0,
+        );
+      return {
+        ownFactoryCount,
+        ownProductiveFactoryLevels: bestOwnProductiveLevels,
+        ownPendingFactoryLevels: bestOwnPendingLevels,
+        ownPendingFactoryDelayTicks: bestOwnPendingDelayTicks,
+        clusterFactoryLevels: completedFactoryLevels,
+        ownCityStops: ownCityUnits.length,
+        ownPorts,
+        ownCompletedPorts: ownPortUnits.filter(
+          (port) => port?.isUnderConstruction?.() !== true,
+        ).length,
+        portInProgress: ownPortUnits.some(
+          (port) => port?.isUnderConstruction?.() === true,
+        ) ? 1 : 0,
+        teamFactoryLevels,
+        teamCityStops,
+        allyFactoryLevels,
+        allyCityStops,
+        hasTeamOrAllyEconomy:
+          teamFactoryLevels + teamCityStops + allyFactoryLevels + allyCityStops > 0,
+        connectedStops,
+        trainCount: globalTrainCount,
+        tradeShipCount,
+        hasTradePartner,
+        hasCompletedTradePartner,
+        hasPendingTradePartner: hasTradePartner && !hasCompletedTradePartner,
+        portSeedWindowOpen,
+        pendingPartnerConstructionTicks,
+        seedPairDelayTicks,
+        portSeedSources,
+        portSeedPartnerCommitted: seedPartnerCommitted,
+        routeDelayTicks: Math.max(
+          bestRouteDelayTicks,
+          Number(config?.trainStationMaxRange?.() ?? 0),
+          bestPendingStopDelayTicks,
+        ),
+        portRouteDelayTicks: portTradeProfile?.routeDelayTicks ?? 0,
+        portTradeGoldPerArrival: portTradeProfile?.teamGoldPerArrival ?? 0,
+        portPostAllianceGoldPerArrival:
+          portTradeProfile?.postAllianceGoldPerArrival ?? 0,
+        portRoutes: portTradeProfile?.routes ?? [],
+        portCandidateProfiles,
+        factoryPaidStops: bestPaidStops,
+        factoryTeamGoldPerTrain: bestFactoryGold,
+        trainSources: bestTrainSources,
+        ownerFactoryClusters: ownFactoryClusterEntries,
+        factoryUpgradeTargets,
+        portUpgradeTargetIds,
+        portUpgradeProfiles,
+      };
+    }
+
+    legendaryAllianceTicksRemaining(owner, otherOwner) {
+      const source = owner?.__src ?? owner;
+      const otherId = String(otherOwner?.smallID?.() ?? "");
+      const tick = safeStructureGameTick(this.game) ?? 0;
+      for (const alliance of source?.alliances?.() ?? []) {
+        const other = typeof alliance?.other === "function"
+          ? alliance.other(source)?.smallID?.()
+          : alliance?.other;
+        if (String(other ?? "") !== otherId) continue;
+        const expiresAt = typeof alliance?.expiresAt === "function"
+          ? alliance.expiresAt()
+          : alliance?.expiresAt;
+        if (Number.isFinite(Number(expiresAt))) {
+          return Math.max(0, Number(expiresAt) - tick);
+        }
+      }
+      return Number(this.game?.config?.()?.allianceDuration?.() ?? 0);
+    }
+
+    // shortcut: client exposes the water raster, not TradeShipExecution's pathfinder;
+    // bounded shortest-water BFS estimates distance until a shared route hook exists.
+    legendaryWaterDistancesFrom(sourceTile) {
+      const tick = safeStructureGameTick(this.game);
+      if (this._legendaryWaterRouteTick !== tick) {
+        this._legendaryWaterRouteTick = tick;
+        this._legendaryWaterRouteCache = new Map();
+      }
+      const cache = this._legendaryWaterRouteCache ??= new Map();
+      if (cache.has(sourceTile)) return cache.get(sourceTile);
+      const game = this.game;
+      const maxVisited = Math.max(
+        1,
+        Number(
+          typeof WATER_ROUTE_MAX_VISITED === "undefined"
+            ? 1280
+            : WATER_ROUTE_MAX_VISITED,
+        ) || 1280,
+      );
+      const maxDistance = Math.max(
+        1,
+        Number(
+          typeof BOAT_EXPLORATION_MAX_ROUTE_TICKS === "undefined"
+            ? 1200
+            : BOAT_EXPLORATION_MAX_ROUTE_TICKS,
+        ) || 1200,
+      );
+      const distances = new Map([[sourceTile, 0]]);
+      const queue = [sourceTile];
+      for (let head = 0; head < queue.length && distances.size <= maxVisited; head++) {
+        const current = queue[head];
+        const distance = distances.get(current);
+        if (distance >= maxDistance) continue;
+        for (const next of game?.neighbors?.(current) ?? []) {
+          if (distances.has(next)) continue;
+          if (game?.isWater?.(next) !== true) continue;
+          distances.set(next, distance + 1);
+          queue.push(next);
+        }
+      }
+      cache.set(sourceTile, distances);
+      return distances;
+    }
+
+    legendaryPortOwnersIncludingSelf() {
+      const ownersById = new Map();
+      for (const owner of [this.player, ...(this.game?.players?.() ?? [])]) {
+        const id = owner?.smallID?.();
+        if (id === null || id === undefined || owner?.isAlive?.() === false) continue;
+        ownersById.set(String(id), owner);
+      }
+      return [...ownersById.values()];
+    }
+
+    legendaryPortsForOwners(owners) {
+      return owners.flatMap((owner) =>
+        (owner?.units?.(UNIT.Port) ?? [])
+          .filter((unit) => this.portIsUsable(unit))
+          .map((unit) => ({ owner, unit, tile: unit?.tile?.() })),
+      ).filter((port) => port.tile !== null && port.tile !== undefined);
+    }
+
+    legendaryPortInboundProfiles(
+      source,
+      completedPorts,
+      { ownPlayer, tile, targetPort, targetUnit },
+    ) {
+      const sourceId = String(source.owner?.smallID?.() ?? "");
+      const destinations = completedPorts.filter(
+        ({ owner }) => String(owner?.smallID?.() ?? "") !== sourceId,
+      );
+      const beforeProfile = this.legendaryPortRouteProfile(
+        source.tile,
+        source.owner,
+        destinations,
+      );
+      const targetId = targetPort?.id?.();
+      const isTarget = (unit) =>
+        unit === targetPort ||
+        (targetId !== null && targetId !== undefined &&
+          String(unit?.id?.()) === String(targetId));
+      const afterDestinations = targetPort
+        ? destinations.map((destination) =>
+            isTarget(destination.unit)
+              ? { ...destination, unit: targetUnit }
+              : destination,
+          )
+        : [...destinations, { owner: ownPlayer, tile, unit: targetUnit }];
+      return {
+        beforeProfile,
+        afterProfile: this.legendaryPortRouteProfile(
+          source.tile,
+          source.owner,
+          afterDestinations,
+        ),
+      };
+    }
+
+    legendaryPortInboundSource(source, profiles, constructionTicks) {
+      if (!profiles.afterProfile) return null;
+      return {
+        level: source.unit?.isUnderConstruction?.() === true
+          ? 1
+          : Math.max(1, Math.floor(Number(source.unit?.level?.() ?? 1))),
+        constructionDelayTicks: source.unit?.isUnderConstruction?.() === true
+          ? constructionTicks
+          : 0,
+        ...profiles,
+      };
+    }
+
+    legendaryPortInboundSources(tile, targetPort = null, upgradedLevel = null) {
+      const ownPlayer = this.player;
+      const ownId = String(ownPlayer?.smallID?.() ?? "");
+      const config = this.game?.config?.();
+      const ports = this.legendaryPortsForOwners(
+        this.legendaryPortOwnersIncludingSelf(),
+      );
+      const completedPorts = ports.filter(
+        ({ unit }) => unit?.isUnderConstruction?.() !== true,
+      );
+      const targetUnit = targetPort
+        ? { isUnderConstruction: () => false, level: () => upgradedLevel }
+        : { isUnderConstruction: () => true, level: () => 1 };
+      const constructionTicks = Math.max(
+        0,
+        Number(config?.unitInfo?.(UNIT.Port)?.constructionDuration ?? 0),
+      );
+      return ports
+        .filter(({ owner }) => String(owner?.smallID?.() ?? "") !== ownId)
+        .map((source) => {
+          const profiles = this.legendaryPortInboundProfiles(
+            source,
+            completedPorts,
+            { ownPlayer, tile, targetPort, targetUnit },
+          );
+          return this.legendaryPortInboundSource(source, profiles, constructionTicks);
+        })
+        .filter(Boolean);
+    }
+
+    legendaryPortRouteProfile(sourceTile, sourceOwner, destinations) {
+      const config = this.game?.config?.();
+      if (typeof config?.tradeShipGold !== "function") return null;
+      const sourceComponents = this.portWaterComponents(sourceTile);
+      if (sourceComponents.size === 0) return null;
+      const routeDistances = this.legendaryWaterDistancesFrom(sourceTile);
+      const sourceId = String(sourceOwner?.smallID?.() ?? "");
+      const myId = String(this.player?.smallID?.() ?? "");
+      const sourceIsTeam = sourceId === myId || this.player?.isOnSameTeam?.(sourceOwner) === true;
+      const debuff = Math.max(0, Number(config?.tradeShipShortRangeDebuff?.() ?? 0));
+      const eligible = [];
+      for (const destination of destinations ?? []) {
+        const owner = destination?.owner;
+        const tile = destination?.tile ?? destination?.unit?.tile?.();
+        if (tile === null || tile === undefined || !owner) continue;
+        if (String(owner?.smallID?.() ?? "") === sourceId) continue;
+        if (!shimCanTrade(sourceOwner, owner)) continue;
+        const targetComponents = this.portWaterComponents(tile);
+        if (![...sourceComponents].some((component) => targetComponents.has(component))) continue;
+        let bestWaterDistance = Infinity;
+        for (const neighbor of this.game?.neighbors?.(tile) ?? []) {
+          if (this.game?.isWater?.(neighbor) !== true) continue;
+          const pathDistance = routeDistances.get(neighbor);
+          if (Number.isFinite(Number(pathDistance))) {
+            bestWaterDistance = Math.min(bestWaterDistance, Number(pathDistance) + 1);
+          }
+        }
+        if (!Number.isFinite(bestWaterDistance)) continue;
+        const distance = bestWaterDistance;
+        const manhattan = Number(this.game?.manhattanDist?.(sourceTile, tile));
+        eligible.push({
+          owner,
+          tile,
+          distance,
+          manhattan: Number.isFinite(manhattan) ? manhattan : distance,
+          level: destination?.unit?.isUnderConstruction?.() === true
+            ? 1
+            : Math.max(1, Math.floor(Number(destination?.unit?.level?.() ?? 1))),
+        });
+      }
+      eligible.sort((left, right) => left.manhattan - right.manhattan);
+      if (eligible.length === 0) return null;
+      const proximityCount = Math.max(
+        0,
+        Number(config?.proximityBonusPortsNb?.(eligible.length) ?? 0),
+      );
+      const routes = eligible.map((destination, index) => {
+        const tooClose = destination.manhattan < debuff;
+        const closeBonus = !tooClose && index < proximityCount;
+        const friendlyBonus =
+          !tooClose && sourceOwner?.isFriendly?.(destination.owner) === true;
+        const weight = destination.level * (1 + Number(closeBonus) + Number(friendlyBonus));
+        const rawSource = sourceOwner?.__src ?? sourceOwner;
+        const gold = Number(config.tradeShipGold(destination.distance, rawSource));
+        const destinationIsTeam =
+          String(destination.owner?.smallID?.() ?? "") === myId ||
+          this.player?.isOnSameTeam?.(destination.owner) === true;
+        const destinationIsAlly =
+          !destinationIsTeam && this.player?.isAlliedWith?.(destination.owner) === true;
+        const sourceIsAlly =
+          !sourceIsTeam && this.player?.isAlliedWith?.(sourceOwner) === true;
+        const allianceTicks = [];
+        if (destinationIsAlly) {
+          allianceTicks.push(
+            this.legendaryAllianceTicksRemaining(this.player, destination.owner),
+          );
+        }
+        if (sourceIsAlly) {
+          allianceTicks.push(
+            this.legendaryAllianceTicksRemaining(this.player, sourceOwner),
+          );
+        }
+        const sameTeamRoute = sourceOwner?.isOnSameTeam?.(destination.owner) === true ||
+          sourceIsTeam && destinationIsTeam;
+        const friendlyAllianceTicks = sameTeamRoute
+          ? Infinity
+          : this.legendaryAllianceTicksRemaining(sourceOwner, destination.owner);
+        return {
+          weight,
+          postAllianceWeight:
+            weight - (friendlyBonus && Number.isFinite(friendlyAllianceTicks)
+              ? destination.level
+              : 0),
+          distance: destination.distance,
+          teamGoldPerArrival:
+            (sourceIsTeam ? gold : 0) + (destinationIsTeam ? gold : 0),
+          // TradeShipExecution keeps paying both endpoint owners after an
+          // alliance expires (canTrade is embargo-only), so post-alliance
+          // gold stays unchanged while the friendly route-selection weight ends.
+          postAllianceGoldPerArrival:
+            (sourceIsTeam ? gold : 0) + (destinationIsTeam ? gold : 0),
+          allianceTicksRemaining: allianceTicks.length > 0
+            ? Math.min(...allianceTicks)
+            : Infinity,
+        };
+      });
+      const totalWeight = routes.reduce((total, route) => total + route.weight, 0);
+      const weighted = (key) =>
+        routes.reduce((total, route) => total + route[key] * route.weight, 0) /
+        Math.max(1, totalWeight);
+      return {
+        routes,
+        teamGoldPerArrival: weighted("teamGoldPerArrival"),
+        postAllianceGoldPerArrival: weighted("postAllianceGoldPerArrival"),
+        routeDelayTicks: weighted("distance"),
+      };
+    }
+
+    legendaryPortCandidateTilesForEconomy() {
+      const borderTiles = Array.from(this.player?.borderTiles?.() ?? []);
+      let tiles = this.player?.oceanShoreBorderTiles?.() ?? [];
+      if (tiles.length === 0) {
+        tiles = borderTiles.filter((tile) => this.isOceanPortTile(tile));
+      }
+      if (tiles.length === 0) {
+        tiles = borderTiles.filter((tile) => this.isShoreBorderTile(tile));
+      }
+      tiles = [...new Set(tiles)];
+      const limit = Math.max(1, Number(STRUCTURE_PLACEMENT_CANDIDATE_LIMIT) || 1);
+      if (tiles.length > limit) {
+        tiles = Array.from({ length: limit }, (_, index) =>
+          tiles[Math.floor((index * tiles.length) / limit)],
+        );
+      }
+      return tiles.filter(
+        (tile) =>
+          this.portTileHasOpenWaterAccess(tile) &&
+          this.portCandidateHasTradeRoute(tile),
+      );
+    }
+
+    // Seed economics are available only when two deterministic eligible
+    // owners share water; placement still verifies the candidate's component.
+    legendaryPortSeedWindowOpen() {
+      const sharedWater = this.game?.sharedWaterComponents?.(this.player);
+      if (!sharedWater || sharedWater.size === 0) return false;
+      if ((this.player?.units?.(UNIT.Port) ?? []).some((port) => this.portIsUsable(port))) {
+        return false;
+      }
+      const ownId = String(this.player?.smallID?.() ?? "");
+      return [...sharedWater].some(
+        (component) => {
+          const ids = this.legendaryPortSeedOwnerIds(component).map(String);
+          return ids.length === 2 && ids.includes(ownId);
+        },
+      );
+    }
+
+    legendaryPortSeedPartner() {
+      const ownId = String(this.player?.smallID?.() ?? "");
+      const sharedWater = this.game?.sharedWaterComponents?.(this.player);
+      for (const component of sharedWater ?? []) {
+        const ids = this.legendaryPortSeedOwnerIds(component).map(String);
+        if (ids.length !== 2 || !ids.includes(ownId)) continue;
+        const partnerId = ids.find((id) => id !== ownId);
+        return (this.game?.players?.() ?? []).find(
+          (owner) => String(owner?.smallID?.() ?? "") === partnerId,
+        ) ?? null;
+      }
+      return null;
     }
 
     legendaryCostFactor(cost) {
@@ -10000,7 +11016,7 @@
     // a level change, destruction, or lost affordability just falls through to
     // the next ranked action.
     async maybeUpgradeLegendaryCityCapacity(candidate) {
-      if (!this.troopCapPressure()) return false;
+      if (!this.computeTroopCapPressure(false)) return false;
       const city = this.builtCityUpgradeTargets().find(
         (target) => target.id() === candidate?.upgradeStructureId,
       );
@@ -10037,7 +11053,158 @@
       );
     }
 
-    legendaryConstructionCandidates({
+    async probeLegendaryThroughputUpgradeCandidates(strategicState) {
+      const tick = safeStructureGameTick(this.game);
+      if (
+        tick !== null &&
+        this._legendaryThroughputUpgradeProbeTick === tick &&
+        Array.isArray(this._legendaryThroughputUpgradeProbe)
+      ) {
+        return this._legendaryThroughputUpgradeProbe;
+      }
+      const inputs = strategicState?.economyInputs;
+      const config = this.game?.config?.();
+      const candidates = [];
+      for (const type of [UNIT.Factory, UNIT.Port]) {
+        const networkTargets = type === UNIT.Factory
+          ? inputs?.factoryUpgradeTargets ?? []
+          : (inputs?.portUpgradeTargetIds ?? []).map((structureId) => ({ structureId }));
+        if (networkTargets.length === 0) continue;
+        const units = this.player.units(type) ?? [];
+        const targets = networkTargets
+          .map((entry) => ({
+            entry,
+            unit: units.find(
+              (unit) => String(unit?.id?.()) === String(entry.structureId),
+            ),
+          }))
+          .filter(({ unit }) => unit && unit.isUnderConstruction?.() !== true);
+        if (targets.length === 0) continue;
+        const buildables = await this.buildableForUnits(
+          targets.map(({ unit }) => unit),
+          type,
+          {
+            concurrency: STRUCTURE_PROBE_CONCURRENCY,
+            timeoutMs: STRUCTURE_PROBE_TIMEOUT_MS,
+          },
+        );
+        for (let index = 0; index < targets.length; index++) {
+          const { entry, unit } = targets[index];
+          const buildable = buildables[index];
+          const cost = this.legendaryCityUpgradeBuildableCost(buildable);
+          if (cost <= 0n) continue;
+          const evaluationInputs = { ...inputs, upgradeAction: true };
+          if (type === UNIT.Factory) evaluationInputs.factoryUpgrade = entry;
+          if (type === UNIT.Port) {
+            evaluationInputs.upgradeStructureId = unit.id();
+            evaluationInputs.portUpgradeLevel = Math.max(
+              1,
+              Math.floor(Number(unit.level?.() ?? 1)),
+            );
+            evaluationInputs.portUpgradeProfile =
+              inputs?.portUpgradeProfiles?.[String(unit.id())];
+          }
+          const evaluation = legendaryEconomyNetGold(type, {
+            cost: Number(cost),
+            horizonTicks: strategicState.economyHorizonTicks,
+            inputs: evaluationInputs,
+            config,
+          });
+          if (!evaluation || evaluation.refused === true || evaluation.netTeamGold <= 0) {
+            continue;
+          }
+          candidates.push({
+            type,
+            action: "upgrade",
+            upgradeStructureId: unit.id(),
+            upgradeCost: cost,
+            netTeamGold: BigInt(Math.round(evaluation.netTeamGold)),
+            mandatory: 0,
+            safety: 0,
+            capacity: 0,
+            strategic: 0,
+            deficit: 0,
+            efficiency: 1,
+          });
+        }
+      }
+      if (tick !== null) {
+        this._legendaryThroughputUpgradeProbeTick = tick;
+        this._legendaryThroughputUpgradeProbe = candidates;
+      }
+      return candidates;
+    }
+
+    async maybeUpgradeLegendaryThroughput(candidate) {
+      const type = candidate?.type;
+      if (type !== UNIT.Factory && type !== UNIT.Port) return false;
+      const target = (this.player?.units?.(type) ?? []).find(
+        (unit) => String(unit?.id?.()) === String(candidate?.upgradeStructureId),
+      );
+      if (!target || target.isUnderConstruction?.() === true) return false;
+      const strategicState = this.legendaryConstructionState({
+        cityCount: (this.player.units(UNIT.City) ?? []).length,
+        hasCoastalTiles: this.hasAnyShoreBorderTile(),
+      });
+      const current = strategicState.economyInputs;
+      const stillProductive = type === UNIT.Factory
+        ? current.factoryUpgradeTargets.some(
+            (entry) => String(entry.structureId) === String(candidate.upgradeStructureId),
+          )
+        : current.portUpgradeTargetIds.some(
+            (structureId) => String(structureId) === String(candidate.upgradeStructureId),
+          );
+      if (!stillProductive) return false;
+      const buildables = await this.buildableForUnits([target], type, {
+        concurrency: 1,
+        timeoutMs: STRUCTURE_PROBE_TIMEOUT_MS,
+      });
+      const buildable = buildables[0];
+      if (!buildable || buildable.canUpgrade === false) return false;
+      const cost = this.buildableCostOrFallback(
+        buildable,
+        legendaryBigInt(candidate.upgradeCost),
+      );
+      if (cost <= 0n || cost > this.availableGoldAfterReserve(type, { includeSam: true })) {
+        return false;
+      }
+      const evaluationInputs = {
+        ...current,
+        upgradeAction: true,
+        upgradeStructureId: target.id(),
+      };
+      if (type === UNIT.Factory) {
+        evaluationInputs.factoryUpgrade = current.factoryUpgradeTargets.find(
+          (entry) => String(entry.structureId) === String(target.id()),
+        );
+      } else {
+        evaluationInputs.portUpgradeLevel = Math.max(
+          1,
+          Math.floor(Number(target.level?.() ?? 1)),
+        );
+        evaluationInputs.portUpgradeProfile =
+          current.portUpgradeProfiles?.[String(target.id())];
+      }
+      const evaluation = legendaryEconomyNetGold(type, {
+        cost: Number(cost),
+        horizonTicks: strategicState.economyHorizonTicks,
+        inputs: evaluationInputs,
+        config: this.game?.config?.(),
+      });
+      if (!evaluation || evaluation.refused === true || evaluation.netTeamGold <= 0) {
+        return false;
+      }
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, buildable, undefined, this.game, this.player)) {
+        return false;
+      }
+      state.stats.builds++;
+      setLastAction(tr("⬆️ Upgrade {type}", { type }), "build");
+      return true;
+    }
+
+    async legendaryConstructionCandidates({
       config,
       citiesDisabled,
       cityCount,
@@ -10050,6 +11217,9 @@
         cityCount,
         hasCoastalTiles,
       });
+      const throughputUpgrades = await this.probeLegendaryThroughputUpgradeCandidates(
+        strategicState,
+      );
       const typeOrder = {
         [UNIT.City]: 0,
         [UNIT.Port]: 1,
@@ -10071,7 +11241,7 @@
       // Troops at the cap lose every further troop-second of production. A
       // City build or upgrade is the only ranked action that raises maxTroops,
       // so it carries the `capacity` priority while the pressure holds.
-      const capPressure = this.troopCapPressure();
+      const capPressure = this.computeTroopCapPressure(false);
 
       this.addLegendaryCityCandidates(candidateContext, {
         citiesDisabled,
@@ -10079,6 +11249,9 @@
         capPressure,
         strategicState,
       });
+      for (const upgrade of throughputUpgrades) {
+        this.addLegendaryConstructionCandidate(candidateContext, upgrade.type, upgrade);
+      }
 
       const ratios = getStructureRatios(Difficulty.Legendary);
       const ratioContext = {
@@ -10129,6 +11302,7 @@
         action: "upgrade",
         upgradeStructureId: cityUpgrade.structureId,
         upgradeCost: cityUpgrade.cost,
+        netTeamGold: -legendaryBigInt(cityUpgrade.cost),
         mandatory: 0,
         safety: 0,
         capacity: 1,
@@ -10179,12 +11353,40 @@
         ...context.strategicState,
         costFactor: this.legendaryCostFactor(cost),
       });
+      const valuesWithPolicy = { ...values };
+      if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
+        const evaluation = values.netTeamGold === undefined
+          ? legendaryEconomyNetGold(type, {
+              cost: Number(cost),
+              horizonTicks: context.strategicState?.economyHorizonTicks,
+              inputs: context.strategicState?.economyInputs,
+              config: context.config,
+            })
+          : null;
+        if (values.netTeamGold !== undefined) {
+          valuesWithPolicy.netTeamGold = legendaryBigInt(values.netTeamGold);
+        } else if (evaluation?.refused === true) {
+          // Net value negative by policy; only active troop-cap relief carries
+          // a separate City value.
+          valuesWithPolicy.netTeamGold = 0n;
+        } else if (evaluation) {
+          valuesWithPolicy.netTeamGold = BigInt(
+            Math.round(evaluation.netTeamGold),
+          );
+        } else {
+          valuesWithPolicy.netTeamGold = 0n;
+        }
+      }
+      if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
+        valuesWithPolicy.affordable =
+          cost <= this.availableGoldAfterReserve(type, { includeSam: true });
+      }
       context.candidates.push({
         type,
         cost,
         typeOrder: context.typeOrder[type],
         ...objective,
-        ...values,
+        ...valuesWithPolicy,
       });
     }
 
@@ -10233,10 +11435,23 @@
     legendaryRatioCandidateValues(context, type, values, owned, ratio) {
       const ratioTarget = Math.floor(context.cityCount * ratio);
       const state = context.strategicState;
-      const target =
+      let target =
         type === UNIT.MissileSilo
           ? Math.max(ratioTarget, state.siloParityTarget)
           : ratioTarget;
+      // floor() neutralizes FIRST_MISSILE_SILO_RATIO below 5 cities (0.2/city
+      // floors to 0), so the organic first silo sat at deficit:0 and lost
+      // every group decision to economy builds on measured Baikal organic
+      // runs (15 hostile warheads landed, 0 own silos). A nuclear-capable
+      // hostile keeps a real first-silo deficit on the board.
+      if (
+        type === UNIT.MissileSilo &&
+        owned === 0 &&
+        context.nukesEnabled === true &&
+        state.targetPressure > 0.75
+      ) {
+        target = Math.max(1, target);
+      }
       const deficit = Math.max(0, target - owned);
       const parityGap = type === UNIT.MissileSilo ? state.siloParityGap : 0;
       const strategic = Number(values.strategic || 0) + Math.min(3, parityGap);
@@ -10281,8 +11496,7 @@
       }
       if (
         type === UNIT.MissileSilo &&
-        owned >= MAX_MISSILE_SILOS &&
-        context.strategicState.siloParityGap <= 0
+        this.missileSiloPhysicalCapReached()
       ) return null;
       if (type === UNIT.MissileSilo && owned === 0) return FIRST_MISSILE_SILO_RATIO;
       return ratio;
@@ -10448,13 +11662,8 @@
           ? this.missileSiloParityTarget()
           : 0;
 
-      // Hard cap on missile silos, except while the custom SAM-parity target
-      // requires additional silo levels.
-      if (
-        type === UNIT.MissileSilo &&
-        owned >= MAX_MISSILE_SILOS &&
-        owned >= siloParityTarget
-      ) {
+      // Hard cap counts physical silos, except while custom SAM parity needs more levels.
+      if (type === UNIT.MissileSilo && this.missileSiloPhysicalCapReached()) {
         return false;
       }
 
@@ -10532,12 +11741,26 @@
 
     // maybeSpawnStructure — NationStructureBehavior.ts:585 (now async).
     async maybeSpawnStructure(type, options = {}) {
-      if (!this.structureSpawnEligible(type, options)) return false;
+      const siloStage = (lane) => {
+        if (type === UNIT.MissileSilo) this.debugStructureLaneCount(lane);
+      };
+      const finishSiloStage = (result) => {
+        siloStage("laneSiloStageResult");
+        return result;
+      };
+      if (!this.structureSpawnEligible(type, options)) {
+        siloStage("laneSiloStageEligibleBlocked");
+        return finishSiloStage(false);
+      }
+      siloStage("laneSiloStageEligible");
+      if (type === UNIT.MissileSilo && this.missileSiloPhysicalCapReached()) {
+        return finishSiloStage(false);
+      }
       if (
         options.nukeDemandRequest &&
         !this.nukeDemandSiloSpawnAllowed(options.nukeDemandRequest)
       ) {
-        return false;
+        return finishSiloStage(false);
       }
 
       const structures = this.player.units(type);
@@ -10555,22 +11778,27 @@
       // An authoritative upgrade can cost less than a new structure of the
       // same type. Give that decision its chance before applying the new-build
       // affordability gate.
-      if (!economicType) {
+      if (!economicType || !isLegendaryDifficulty()) {
         const upgradeDecision = await this.structureUpgradeBeforeSpawn(
           type,
           structures,
           options,
         );
-        if (upgradeDecision !== null) return upgradeDecision;
+        siloStage("laneSiloStageUpgrade");
+        if (upgradeDecision !== null) return finishSiloStage(upgradeDecision);
       }
 
       const perceivedCost = this.constructionCostForOptions(type, options);
-      // Keep the MIRV war chest scoped to offensive silo construction. Cities,
-      // factories, ports and SAMs must still spend normal available gold.
-      const availableGold = this.availableGoldAfterReserve(type);
+      // SAM construction preserves the first-Silo cost unless the response is
+      // urgent; economic growth keeps its ordinary budget.
+      const availableGold = this.availableGoldAfterReserve(type, {
+        includeSam: true,
+      });
       if (availableGold < perceivedCost) {
-        return false;
+        siloStage("laneSiloStageGoldBlocked");
+        return finishSiloStage(false);
       }
+      siloStage("laneSiloStageGold");
 
       const buildable = await this.structureSpawnBuildable(
         type,
@@ -10578,8 +11806,16 @@
         economicType,
         options,
       );
-      if (buildable === null) return false;
-      if (typeof buildable === "boolean") return buildable;
+      siloStage("laneSiloStageBuildable");
+      if (buildable === null) return finishSiloStage(false);
+      if (typeof buildable === "boolean") return finishSiloStage(buildable);
+      if (
+        economicType &&
+        this.buildableCostOrFallback(buildable, perceivedCost) >
+          this.availableGoldAfterReserve(type, { includeSam: true })
+      ) {
+        return finishSiloStage(false);
+      }
       if (
         options.nukeDemandRequest &&
         !this.nukeDemandSiloSpawnAllowed(
@@ -10587,9 +11823,16 @@
           buildable.canBuild,
         )
       ) {
-        return false;
+        return finishSiloStage(false);
       }
-      return this.emitStructureBuildable(type, buildable);
+      if (
+        options.nukePendingLaunchRoute === true &&
+        (!this.nuclearSlotPressureQueueEligible() ||
+          !this.nukePendingLaunchRouteAllowed(buildable.canBuild))
+      ) {
+        return finishSiloStage(false);
+      }
+      return finishSiloStage(this.emitStructureBuildable(type, buildable));
     }
 
     async structureSpawnBuildable(type, structures, economicType, options) {
@@ -10606,6 +11849,13 @@
       // creates visible Auto-build stalls.  Resume the unchanged scan directly;
       // its fingerprint is invalidated below as soon as territory or structure
       // geometry changes.
+      if (
+        type === UNIT.Factory &&
+        isLegendaryDifficulty() &&
+        this.getOrBuildFactoryTradeDestinations().length === 0
+      ) {
+        return false;
+      }
       let buildable = null;
       if (!economicType || !this.hasPendingEconomicPlacementScan(type)) {
         buildable = await this.structureSpawnTile(type, options);
@@ -10803,11 +12053,12 @@
 
     async maybeUpgradeStructure(structures, options = {}) {
       const type = structures?.[0]?.type?.();
-      // Economic upgrades are strictly an exhaustion fallback. Keep that
+      // Legendary economic upgrades are strictly an exhaustion fallback. Keep that
       // proof at the actuation boundary as well as in maybeSpawnStructure so
       // no direct or future caller can trade a legal new City/Factory/Port
       // site for an upgrade.
       if (
+        isLegendaryDifficulty() &&
         ECONOMIC_STRUCTURE_TYPES.includes(type) &&
         options.economicSpaceExhausted !== true
       ) {
@@ -10819,8 +12070,77 @@
       if (structures.length === 0) {
         return false;
       }
-      const result = await this.findBestStructureToUpgrade(structures);
+      let upgradeStructures = structures;
+      if (type === UNIT.Factory && isLegendaryDifficulty()) {
+        const destinations = this.getOrBuildFactoryTradeDestinations();
+        const minimum = this.game.config().trainStationMinRange() ** 2;
+        const maximum = this.game.config().trainStationMaxRange() ** 2;
+        upgradeStructures = structures.filter((factory) =>
+          destinations.some(({ tile }) => {
+            const distance = this.game.euclideanDistSquared(factory.tile(), tile);
+            return distance >= minimum && distance <= maximum;
+          }),
+        );
+        if (upgradeStructures.length === 0) return false;
+      }
+      let legendaryUpgradeState = null;
+      if (isLegendaryDifficulty() && ECONOMIC_STRUCTURE_TYPES.includes(type)) {
+        if (type === UNIT.City) {
+          if (!this.computeTroopCapPressure(false)) return false;
+        } else {
+          legendaryUpgradeState = this.legendaryConstructionState({
+            cityCount: (this.player?.units?.(UNIT.City) ?? []).length,
+            hasCoastalTiles: this.hasAnyShoreBorderTile(),
+          });
+          const inputs = legendaryUpgradeState.economyInputs;
+          const eligibleIds = new Set(
+            type === UNIT.Factory
+              ? (inputs?.factoryUpgradeTargets ?? []).map((entry) =>
+                  String(entry.structureId),
+                )
+              : (inputs?.portUpgradeTargetIds ?? []).map(String),
+          );
+          upgradeStructures = upgradeStructures.filter((unit) =>
+            eligibleIds.has(String(unit?.id?.() ?? "")),
+          );
+          if (upgradeStructures.length === 0) return false;
+        }
+      }
+      const result = await this.findBestStructureToUpgrade(upgradeStructures);
       if (result !== null) {
+        if (
+          legendaryUpgradeState &&
+          (type === UNIT.Factory || type === UNIT.Port)
+        ) {
+          if (result.bu?.cost === undefined || result.bu?.cost === null) return false;
+          const structureId = result.structure?.id?.();
+          const inputs = {
+            ...legendaryUpgradeState.economyInputs,
+            upgradeAction: true,
+            upgradeStructureId: structureId,
+          };
+          if (type === UNIT.Factory) {
+            inputs.factoryUpgrade = inputs.factoryUpgradeTargets?.find(
+              (entry) => String(entry.structureId) === String(structureId),
+            );
+          } else {
+            inputs.portUpgradeLevel = Math.max(
+              1,
+              Math.floor(Number(result.structure?.level?.() ?? 1)),
+            );
+            inputs.portUpgradeProfile =
+              inputs.portUpgradeProfiles?.[String(structureId)];
+          }
+          const evaluation = legendaryEconomyNetGold(type, {
+            cost: Number(result.bu.cost),
+            horizonTicks: legendaryUpgradeState.economyHorizonTicks,
+            inputs,
+            config: this.game?.config?.(),
+          });
+          if (!evaluation || evaluation.refused === true || evaluation.netTeamGold <= 0) {
+            return false;
+          }
+        }
         if (!this.genericStructureUpgradeAllowed(result, type)) return false;
         // src: addExecution(new UpgradeStructureExecution(player, unit.id())).
         // Client: sendBuildOrUpgrade(bu) where bu.canUpgrade !== false. We already
@@ -10880,18 +12200,32 @@
         (silo) => silo.isUnderConstruction?.() !== true,
       );
       if (silos.length === 0) return false;
-      if (this.legendaryReadyShotTotal(silos) > 0) return false;
-      const result = await this.findBestStructureToUpgrade(silos);
+      const routeEligibleSilos = silos.filter((silo) =>
+        this.nukePendingLaunchRouteAllowed(silo.tile?.()),
+      );
+      if (routeEligibleSilos.length === 0) return false;
+      if (this.legendaryReadyShotTotal(routeEligibleSilos) > 0) return false;
+      const result = await this.findBestStructureToUpgrade(routeEligibleSilos);
       if (result === null) {
-        // Every silo is maxed (or unprobeable): a new launcher is the only
-        // remaining slot source for the waiting queue. Same trigger and
-        // gates as the upgrade branch; placement reuses the first-silo
-        // machinery, reserves respected.
+        // A null probe can be a timeout. Only a confirmed max-level set can
+        // justify adding another launcher for the waiting queue.
+        if (routeEligibleSilos.some((silo) => this.structureBelowUpgradeLimit(silo))) {
+          return false;
+        }
+        if (!this.nuclearSlotPressureQueueEligible()) return false;
+        // Every completed silo is maxed, so a new launcher is the only
+        // remaining slot source. Placement reuses first-Silo machinery.
         // Synchronization: one pending launcher at a time. The filtered
         // list above cannot see a silo already under construction, and
         // stacking duplicate builds would drain the treasury without
         // adding ready slots any sooner.
         return this.maybeSpawnUnqueuedNuclearSlotPressureSilo();
+      }
+      if (
+        !this.nuclearSlotPressureQueueEligible() ||
+        !this.nukePendingLaunchRouteAllowed(result.structure?.tile?.())
+      ) {
+        return false;
       }
       if (!this.genericStructureUpgradeAllowed(result, UNIT.MissileSilo)) {
         return false;
@@ -10900,6 +12234,7 @@
     }
 
     maybeSpawnNuclearSlotPressureSilo() {
+      if (this.missileSiloPhysicalCapReached()) return false;
       const siloCost = this.safeConstructionCost(UNIT.MissileSilo) ?? 0n;
       if (siloCost <= 0n || this.spendableConstructionGold() < siloCost) {
         return false;
@@ -10907,6 +12242,7 @@
       return this.maybeSpawnStructure(UNIT.MissileSilo, {
         useActualCost: true,
         prioritizeStructureCoverage: true,
+        nukePendingLaunchRoute: true,
       });
     }
 
@@ -10999,12 +12335,17 @@
      * threshold. Threat urgency decides which useful SAM receives the level;
      * it does not redefine 3M of economic principal as surplus.
      */
-    samUpgradeEconomyCanAbsorb(cost) {
+    samUpgradeEconomyCanAbsorb(cost, missileDefenseUrgent = false) {
       if (!state.settings.winFixes) return true;
       const upgradeCost = BigInt(cost ?? 0n);
       if (upgradeCost <= 0n) return true;
       const economic = this.economicConstructionPressureForSamUpgrade();
       const economicCost = economic?.cost ?? 0n;
+      const firstSiloReserve = this.firstSiloConstructionReserve(
+        UNIT.SAMLauncher,
+        true,
+        missileDefenseUrgent,
+      );
       // Port-income earmark: two or more completed Ports run a compounding
       // trade stream that pays for the next interceptor level on its own
       // schedule. Demanding the full economic principal on top of the
@@ -11013,9 +12354,14 @@
       // so a port-funded economy may draw the upgrade against the economic
       // share it is actively earning.
       if (this.legendaryPortIncomeFundsSamUpgrades()) {
-        return this.spendableConstructionGold() >= upgradeCost;
+        return (
+          this.spendableConstructionGold() >= upgradeCost + firstSiloReserve
+        );
       }
-      return this.spendableConstructionGold() >= upgradeCost + economicCost;
+      return (
+        this.spendableConstructionGold() >=
+        upgradeCost + economicCost + firstSiloReserve
+      );
     }
 
     legendaryPortIncomeFundsSamUpgrades() {
@@ -11290,6 +12636,7 @@
       const pendingRequest = state.nukeWantSlots;
       const request = this.validNukeSiloUpgradeRequest();
       if (request === null) return false;
+      if (this.legendaryMissileDefenseUrgent()) return false;
       const planStillMissing = this.samOverwhelmPlanStillMissing(request);
       if (planStillMissing === false) {
         // The planner closes the demand with the live layout even when the
@@ -11319,6 +12666,19 @@
         this.structureBelowUpgradeLimit(silo),
       );
       if (candidates.length === 0 || canUpgradeForDemand === false) {
+        // Unsatisfiable demand: every scoped silo is at its level cap and the
+        // nation silo budget is exhausted, so no upgrade or spawn can ever
+        // close the request. Release it — a pinned nukeWantSlots would keep
+        // the surplus lane suppressed and the nuke lanes anchored to this
+        // SAM owner forever.
+        if (
+          candidates.length === 0 &&
+          canUpgradeForDemand === false &&
+        this.missileSiloPhysicalCapReached()
+        ) {
+          state.nukeWantSlots = null;
+          return false;
+        }
         return this.maybeSpawnNukeDemandSilo(pendingRequest);
       }
       const availableGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
@@ -11357,7 +12717,7 @@
       }
       const silos = this.player.units(UNIT.MissileSilo) || [];
       if (
-        silos.length >= MAX_MISSILE_SILOS ||
+        this.missileSiloPhysicalCapReached() ||
         this.hasStructureUnderConstruction(silos)
       ) {
         return false;
@@ -11412,6 +12772,35 @@
         tile,
         request.targetTile,
         coveringSamIds,
+      );
+    }
+
+    nukePendingLaunchRouteClear(tile, launch) {
+      const nuke = this.nukeBehavior;
+      if (
+        !nuke ||
+        typeof nuke.isTrajectoryInterceptableBySam !== "function" ||
+        typeof nuke.isValidNukeTarget !== "function" ||
+        typeof nuke.isValidNukeDestination !== "function" ||
+        tile === null ||
+        tile === undefined ||
+        !nuke.isValidNukeTarget(launch?.targetPlayer) ||
+        !nuke.isValidNukeDestination(launch?.tile)
+      ) {
+        return false;
+      }
+      const excludedSamIds = new Set(launch.salvo?.coveringSamIds ?? []);
+      return !nuke.isTrajectoryInterceptableBySam(
+        tile,
+        launch.tile,
+        excludedSamIds,
+      );
+    }
+
+    nukePendingLaunchRouteAllowed(tile) {
+      const pending = this.nukeBehavior?._pendingNukeLaunches;
+      return Array.isArray(pending) && pending.some((launch) =>
+        this.nukePendingLaunchRouteClear(tile, launch),
       );
     }
 
@@ -11553,7 +12942,7 @@
         this.spendableConstructionGold(),
       );
       const economicallySafeCandidates = candidates.filter((candidate) =>
-        this.samUpgradeEconomyCanAbsorb(candidate.cost),
+        this.samUpgradeEconomyCanAbsorb(candidate.cost, true),
       );
       economicallySafeCandidates.sort((left, right) =>
         this.compareSamParityUpgrades(left, right));
@@ -11930,6 +13319,10 @@
         tiles = this.nukeDemandSiloSpawnTiles(tiles, options.nukeDemandRequest);
         if (tiles.length === 0) return null;
       }
+      if (type === UNIT.MissileSilo && options.nukePendingLaunchRoute === true) {
+        tiles = tiles.filter((tile) => this.nukePendingLaunchRouteAllowed(tile));
+        if (tiles.length === 0) return null;
+      }
       const valueFunction = this.structureTileValueFunction(type, options);
       if (valueFunction === null) return null;
       const compactness = this.structurePlacementCompactnessRanker(type);
@@ -11984,9 +13377,12 @@
       // an already-served commercial pocket.  This keeps ordinary spacing as
       // the tie-breaker, but prevents a nearby duplicate Factory from beating
       // an expansion that actually opens a new route.
-      if (type === UNIT.Factory && safeScored.length > 1) {
-        const novel = this.novelFactoryTradeCandidates(safeScored);
-        if (novel.length > 0) safeScored = novel;
+      if (
+        type === UNIT.Factory &&
+        isLegendaryDifficulty() &&
+        safeScored.length > 0
+      ) {
+        safeScored = this.novelFactoryTradeCandidates(safeScored);
       }
       let scored = safeScored.filter(
         ({ t }) =>
@@ -12971,7 +14367,8 @@
       let tiles =
         type === UNIT.Port
           ? this.portCandidateTiles(candidateLimit).filter((tile) =>
-              this.portTileHasOpenWaterAccess(tile),
+              this.portTileHasOpenWaterAccess(tile) &&
+              (!isLegendaryDifficulty() || this.portCandidateHasTradeRoute(tile)),
             )
           : randTerritoryTileArray(
               this.random,
@@ -14570,10 +15967,128 @@
       const mySid = this.player?.smallID?.();
       for (const other of this.game.players?.() ?? []) {
         if (!other || (mySid !== undefined && other?.smallID?.() === mySid)) continue;
+        if (other?.isPlayer?.() === false || other?.isAlive?.() === false) continue;
         if (!shimCanTrade(this.player, other)) continue;
         owners.push(other);
       }
       return owners;
+    }
+
+    portWaterComponents(tile) {
+      const components = new Set();
+      if (
+        tile === null || tile === undefined ||
+        typeof this.game?.forEachNeighbor !== "function" ||
+        typeof this.game?.isWater !== "function"
+      ) {
+        return components;
+      }
+      this.game.forEachNeighbor(tile, (neighbor) => {
+        if (!this.game.isWater(neighbor)) return;
+        const component = this.game.isOcean?.(neighbor)
+          ? -1
+          : this.game.getWaterComponent?.(neighbor);
+        if (component !== null && component !== undefined) components.add(component);
+      });
+      return components;
+    }
+
+    portOwnerStateOnWater(owner, component) {
+      let completed = false;
+      let inProgress = false;
+      for (const port of owner?.units?.(UNIT.Port) ?? []) {
+        if (!this.portIsUsable(port)) continue;
+        if (!this.portWaterComponents(port?.tile?.()).has(component)) continue;
+        if (port?.isUnderConstruction?.() === true) {
+          inProgress = true;
+          continue;
+        }
+        completed = true;
+      }
+      return { completed, inProgress };
+    }
+
+    portIsUsable(port) {
+      return port?.isMarkedForDeletion?.() !== true && port?.isActive?.() !== false;
+    }
+
+    legendaryPortSeedOwnerIds(component) {
+      const ownersById = new Map();
+      for (const owner of [this.player, ...(this.game?.players?.() ?? [])]) {
+        const id = owner?.smallID?.();
+        if (id === null || id === undefined) continue;
+        if (owner?.isPlayer?.() === false || owner?.isAlive?.() === false) continue;
+        const ownerShared = this.game?.sharedWaterComponents?.(owner);
+        if (!ownerShared?.has?.(component)) continue;
+        ownersById.set(String(id), owner);
+      }
+      const ids = [...ownersById.keys()].sort((left, right) => {
+        const leftNumber = Number(left);
+        const rightNumber = Number(right);
+        if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+          return leftNumber - rightNumber;
+        }
+        return String(left) < String(right) ? -1 : String(left) > String(right) ? 1 : 0;
+      });
+      for (let first = 0; first < ids.length; first++) {
+        for (let second = first + 1; second < ids.length; second++) {
+          if (shimCanTrade(ownersById.get(ids[first]), ownersById.get(ids[second]))) {
+            return [ids[first], ids[second]];
+          }
+        }
+      }
+      return [];
+    }
+
+    portCandidateHasTradeRoute(tile) {
+      const components = this.portWaterComponents(tile);
+      const shared = this.game?.sharedWaterComponents?.(this.player);
+      if (!shared || components.size === 0) return false;
+      const currentId = this.player?.smallID?.();
+      const foreignOwners = this.tradeableForeignPortOwners();
+      for (const component of components) {
+        if (!shared.has(component)) continue;
+        const foreignStates = foreignOwners.map((owner) => ({
+          owner,
+          ...this.portOwnerStateOnWater(owner, component),
+        }));
+        if (foreignStates.some(({ completed }) => completed)) return true;
+
+        const seedIds = this.legendaryPortSeedOwnerIds(component).map(String);
+        if (!seedIds.includes(String(currentId))) continue;
+        const ownState = this.portOwnerStateOnWater(this.player, component);
+        if (ownState.completed || ownState.inProgress) continue;
+        const pendingOwners = foreignStates
+          .filter(({ inProgress }) => inProgress)
+          .map(({ owner }) => String(owner.smallID()));
+        if (pendingOwners.some((id) => !seedIds.includes(id))) continue;
+        const seededOwners = pendingOwners.filter((id) => seedIds.includes(id));
+        if (seededOwners.length === 0) return true;
+        if (
+          seededOwners.length === 1 &&
+          seededOwners[0] !== String(currentId) &&
+          seedIds.includes(String(currentId))
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    hasTradeablePortOnSharedWater({ includeInProgress = true } = {}) {
+      const shared = this.game?.sharedWaterComponents?.(this.player);
+      if (!shared) return this.foreignOceanPorts().length > 0;
+      for (const component of shared) {
+        if (
+          this.tradeableForeignPortOwners().some((owner) => {
+            const status = this.portOwnerStateOnWater(owner, component);
+            return status.completed || (includeInProgress && status.inProgress);
+          })
+        ) {
+          return true;
+        }
+      }
+      return false;
     }
 
     oceanPortTile(port) {
@@ -14859,6 +16374,7 @@
 
     collectFactoryTradeDestinations() {
       const player = this.player;
+      if (typeof player?.units !== "function") return [];
       const maxTradeGold = Math.max(Number(this.trainGoldBase("ally", 0)), 1);
       const destinations = [];
       const append = (owner, weight) => {
@@ -14878,25 +16394,27 @@
     }
 
     novelFactoryTradeCandidates(candidates) {
-      if (typeof this.player?.units !== "function") return candidates;
+      if (typeof this.player?.units !== "function") return [];
       const destinations = this.getOrBuildFactoryTradeDestinations();
-      const factories = this.player.units(UNIT.Factory);
-      if (destinations.length === 0 || factories.length === 0) return candidates;
+      if (destinations.length === 0) return [];
       const minRangeSquared = this.game.config().trainStationMinRange() ** 2;
       const stationRangeSquared = this.game.config().trainStationMaxRange() ** 2;
-      return candidates.filter(({ t }) =>
+      const reachesPaidStop = (tile, destination) => {
+        const distance = this.game.euclideanDistSquared(tile, destination.tile);
+        return distance >= minRangeSquared && distance <= stationRangeSquared;
+      };
+      const reachableCandidates = candidates.filter(({ t }) =>
+        destinations.some((destination) => reachesPaidStop(t, destination)),
+      );
+      if (reachableCandidates.length === 0) return [];
+      const factories = this.player.units(UNIT.Factory);
+      if (factories.length === 0) return reachableCandidates;
+      return reachableCandidates.filter(({ t }) =>
         destinations.some(({ tile }) => {
-          const candidateDistance = this.game.euclideanDistSquared(t, tile);
-          if (
-            candidateDistance < minRangeSquared ||
-            candidateDistance > stationRangeSquared
-          ) {
-            return false;
-          }
-          return !factories.some((factory) => {
-            const distance = this.game.euclideanDistSquared(factory.tile(), tile);
-            return distance >= minRangeSquared && distance <= stationRangeSquared;
-          });
+          if (!reachesPaidStop(t, { tile })) return false;
+          return !factories.some((factory) =>
+            reachesPaidStop(factory.tile(), { tile }),
+          );
         }),
       );
     }
@@ -14926,6 +16444,15 @@
     //   Mirrors Config.ts:trainGold exactly: baseGold by relation, −5k per city past
     //   the first 10, floored at 5k.
     trainGoldBase(rel, citiesVisited) {
+      const config = this.game?.config?.();
+      const player = this.player?.__src ?? this.player;
+      if (
+        typeof config?.trainGold === "function" &&
+        typeof player?.isLobbyCreator === "function"
+      ) {
+        return Number(config.trainGold(rel, citiesVisited, player));
+      }
+
       const visited = Math.max(0, (citiesVisited || 0) - 9);
       let baseGold;
       switch (rel) {
@@ -14954,9 +16481,9 @@
     //     components; each station's cluster is the rail component at/adjacent to
     //     its tile (null when no rail touches it → isolated). EXACT.
     //   - HARNESS: railroadState() null → proximity union-find. APPROXIMATE.
-    buildReachableStations(types = [UNIT.City, UNIT.Port, UNIT.Factory]) {
+    buildReachableStations(types = [UNIT.City, UNIT.Port, UNIT.Factory], owners) {
       const game = this.game;
-      const stationed = this.collectReachableStations(types);
+      const stationed = this.collectReachableStations(types, owners);
 
       if (stationed.length === 0) return [];
 
@@ -14968,24 +16495,33 @@
       return this.proximityStationClusters(game, stationed);
     }
 
-    collectReachableStations(types = [UNIT.City, UNIT.Port, UNIT.Factory]) {
+    collectReachableStations(types = [UNIT.City, UNIT.Port, UNIT.Factory], owners) {
       const player = this.player;
       const maxTradeGold = Math.max(Number(this.trainGoldBase("ally", 0)), 1);
       const stationed = [];
-      const append = (owner, weight) => {
+      const append = (owner) => {
+        let relation = "self";
+        if (owner !== player) {
+          relation = "other";
+          if (player.isAlliedWith(owner)) relation = "ally";
+          if (player.isOnSameTeam(owner)) relation = "team";
+        }
+        const weight = Number(this.trainGoldBase(relation, 0)) / maxTradeGold;
         for (const unit of owner.units(...types)) {
           if (unit.hasTrainStation()) {
             stationed.push({ tile: unit.tile(), weight, key: unit.id() });
           }
         }
       };
-      append(player, Number(this.trainGoldBase("self", 0)) / maxTradeGold);
-      for (const neighbor of player.nearby()) {
-        if (!this.isTradeableStationNeighbor(neighbor)) continue;
-        let relation = "other";
-        if (player.isAlliedWith(neighbor)) relation = "ally";
-        if (player.isOnSameTeam(neighbor)) relation = "team";
-        append(neighbor, Number(this.trainGoldBase(relation, 0)) / maxTradeGold);
+      append(player);
+      const networkOwners = Array.isArray(owners)
+        ? owners
+        : (player.nearby?.() ?? []).filter((owner) =>
+            this.isTradeableStationNeighbor(owner),
+          );
+      for (const owner of networkOwners) {
+        if (owner === player || !shimCanTrade(player, owner)) continue;
+        append(owner);
       }
       return stationed;
     }
@@ -15502,15 +17038,6 @@
     initialSiloNavalConstructionEnabled() {
       const config = this.game?.config?.();
       return Boolean(config && this.maritimeDefenseConstructionEnabled(config));
-    }
-
-    legendaryNavalEconomyEligible({ config, citiesDisabled, cityCount, hasCoastalTiles, hasOceanPortTiles }) {
-      return !(
-        citiesDisabled ||
-        cityCount < 1 ||
-        config?.isUnitDisabled?.(UNIT.Port) === true ||
-        !this.legendaryPortCapable(hasOceanPortTiles, hasCoastalTiles)
-      );
     }
 
     structureConfigDisablesType(config, type) {

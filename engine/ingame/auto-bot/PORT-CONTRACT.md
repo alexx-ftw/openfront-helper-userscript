@@ -37,12 +37,106 @@ EXCEPTION: `config().maxTroops(player)` internally uses the real lobby difficult
 leave those calls as-is (they read true enemy/our stats).
 
 `Legendary` is the intentional adaptive exception to the 1:1 Nation construction
-order: `StructureBehavior` ranks City/Factory/Port/Silo/SAM candidates with an
-equal-weight max-min objective over gold production and troop generation. Missile
-defense is a safety constraint/tie-breaker, and a Defense Post is only allowed for
-an exceptional land assault. The Legendary placement scorer also uses engine rail
-connectivity, friendly ally power/proximity, the own border nearest the team's
-geometric center, and trajectory-aware SAM coverage.
+order. Cross-domain candidate ranking uses the equal-weight max-min objective
+over gold production and troop generation; missile defense remains a safety
+constraint/tie-breaker, and a Defense Post is only allowed for an exceptional
+land assault. Among City/Factory/Port actions, binding City troop-cap relief
+ranks first, then the larger positive net team-gold value. The Legendary
+placement scorer also uses engine rail connectivity, friendly ally
+power/proximity, the own border nearest the team's geometric center, and
+trajectory-aware SAM coverage.
+
+Legendary compares each feasible City/Factory/Port build or throughput upgrade
+by projected net team gold over the remaining match horizon (live
+`maxTimerValue`, construction delay, global saturation, and route travel, minus
+true cost). This is total projected net gold, not return-on-cost or payback
+ranking. It queries live `Config.trainSpawnRate`, `tradeShipSpawnRate`,
+`trainGold`, and `tradeShipGold`; the Port estimate integrates the pity counter
+over the long-run rejection cadence instead of assuming a fixed spawn constant.
+Train network supply is gathered across trade-eligible owners and grouped by the
+rail raster, with only completed City/Port stops paying. In-progress
+Factory/City/Port supply counts toward the shared estimate only after its own
+completion: the client view hides remaining construction ticks, so the estimate
+conservatively waits the full live `unitInfo().constructionDuration`. The
+train-spawn denominator is the level-sum `unitCount(Factory)` that
+`TrainStationExecution` reads, and a Factory upgrade raises it by one level.
+A completed source Port may earn from a different-owner destination Port while
+that destination is still under construction; the arrival pays both owners, and
+travel begins when the source can send. A newly built source still waits for its
+own construction. When no Port route exists, one deterministic pair of mutually
+tradeable owners is selected per shared-water component by stable owner ID; the
+estimate conservatively delays that seed stream until both Ports are complete.
+Port upgrades use the target Port's actual level and need a completed source
+with a valid route; the destination may still be under construction. Allied City
+income is split at the observed alliance expiry and continues at the
+post-alliance payout. Port routes require a different-owner Port on matching
+shared water, and team income counts the source and destination owners separately.
+Once the selected seed route is complete, other owners can use it for ordinary
+route valuation.
+
+For a new Port destination or a Port level-up, each existing different-owner
+source is profiled with its current destination list and again with the new
+destination/level. The policy counts the marginal change in expected team
+payout, including arrivals paid to the destination owner, rather than treating
+all existing source traffic as new income. Port build and inbound source
+construction delays are included. Teammate structures count toward team value
+and saturation, never toward the builder's own affordability. Factory values
+apply the owner's global completed-Factory denominator across every rail
+cluster, so a build or upgrade also scores the spawn-rate loss of the owner's
+other clusters; the denominator counts completed levels only, matching
+`PlayerImpl.unitCount`. City values are the pool-mean delta over the cluster's
+uniformly sampled trade stops (new share minus displaced shares), so an own
+City that only dilutes team-paid stops is refused. A two-owner Port seed counts
+the partner's stream only once the partner has an in-progress Port; before
+that, only the builder's own stream is priced. Inbound Port value starts when
+the source Port is ready, because a completed source dispatches to destinations
+still under construction. Factory upgrades require a paid stop in their rail
+cluster; upgrades use the live buildable quote, are repriced and route-checked
+before emission, and compete with construction by net team-gold value. City cap
+relief remains limited to the existing 0.9 troop-cap pressure.
+
+The Legendary horizon also uses the live Doomsday Clock deadline while the
+player is flagged: `rotDeathSeconds` minus `doomsdayClockTicks()` caps projected
+payback. Recovery or a disabled territory-rot deadline restores the ordinary
+match-timer horizon. This is a deterministic at-risk deadline, not a general
+combat-loss prediction.
+
+`// DIVERGENCE:` the client does not expose `RailNetwork.findStationsPath` or
+`TradeShipExecution`'s smoothed `WaterPathFinder`, nor each Port's current pity
+counter. Rail stops therefore use the engine's equal-weight endpoint choice,
+and Port distance uses bounded water BFS; routes beyond the search budget are
+excluded from the estimate. Incoming Port source rates use the live global
+trade-ship count as fixed for the horizon, and the route mix includes completed
+destination Ports only; a pending source waits its full construction duration.
+The estimate does not forecast later fleet saturation or per-Port pity state.
+Port route weights follow the engine's selection list: a non-team alliance adds
+its friendly selection weight only until expiry, and the post-expiry mix
+reweights remaining destinations while endpoint payouts continue (`canTrade`
+is embargo-only). Train travel delay uses the live station-range limit as a
+conservative tick proxy because the client does not expose the station path's
+rail-tile length or TrainExecution motion plan. Live Config rates supply the
+spawn model. These estimates can understate or misprice a specific route, so
+the exact engine route APIs are the upgrade path if the client later exposes
+them.
+
+`// DIVERGENCE:` with `winFixes` enabled, non-Legendary construction can prioritize
+economic growth when no hostile has reached the silo-gold threshold or an
+economic-construction reserve is active; a stronger hostile on the exact border
+also triggers it. The optional growth lane orders City first under border or
+troop-cap pressure and Factory before Port otherwise. After ratio-driven
+construction, its high-gold fallback can also try a first coastal Port or
+Factory before a further City. These win-fix priorities are not part of the
+Legendary-only marginal ROI policy and do not change the native behavior when
+`winFixes` is disabled.
+
+`// DIVERGENCE:` commercial rail placement also affects non-Legendary tiers:
+City candidate sampling and its rail score are active at every difficulty, as
+are Factory connectivity scoring and rejection of sites that only duplicate
+already served routes. The Factory scorer still consumes its legacy random
+draw but does not use that draw to disable connectivity scoring. With
+`winFixes`, City/Factory border scoring also excludes borders exposed only to
+allies or teammates. These are placement and site-filter rules, separate from
+the Legendary marginal-ROI construction ranking.
 
 Commercial City placement ranks owned railway anchors at most once per authoritative
 game tick. The cache is keyed by tick, railroad snapshot identity, and owner; it never
@@ -51,7 +145,7 @@ request so repeated City attempts keep exploring different legal station sites.
 
 ## Enums & unit constants (portutil.js / gameApi.js / core.js — already global)
 
-- `UNIT.City|Port|Factory|SAMLauncher|SAMMissile|MissileSilo|DefensePost|TransportShip|TradeShip|Warship|AtomBomb|HydrogenBomb|MIRV|MIRVWarhead` (string UnitType values). Replace `UnitType.City` → `UNIT.City`, etc.
+- `UNIT.City|Port|Factory|SAMLauncher|SAMMissile|MissileSilo|DefensePost|TransportShip|Train|TradeShip|Warship|AtomBomb|HydrogenBomb|MIRV|MIRVWarhead` (string UnitType values). Replace `UnitType.City` → `UNIT.City`, etc.
 - `Difficulty`, `GameMode` (`.FFA`/`.Team`), `PlayerType` (`.Bot`/`.Human`/`.Nation`), `TerrainType` (portutil).
 - `Relation` (`.Hostile`=0/`.Distrustful`=1/`.Neutral`=2/`.Friendly`=3) (gameApi).
 
@@ -232,16 +326,20 @@ defensive intent cannot emit, offensive troop spending remains blocked for that
 decision.
 
 When `state.settings.winFixes` is enabled in FFA, a frozen at-cap army may
-force one land attack as the LAST policy in `maybeAttack()`, after every
-ordinary strategy declined (the attackTargets=∅ signature). Frozen means the
-owned-tile count stayed flat while troops sat at ≥ 90% of maxTroops across six
-consecutive Legendary-cadence attack decisions (~30-50 ticks each). The target
-is the weakest bordering non-friendly player regardless of the ordinary
-weakness ratios; the payload is `forceSendAttack(target, 1)`, which clamps to
-the surplus over that target's defensive reserve, so the lane fails safe when
-the reserve covers the whole army. Team mode never arms the lane: the
-commerce-stall win pacing stays authoritative there, and friendly/teammate
-players are excluded by the bordering-enemy filter by construction.
+force one attack as the LAST policy in `maybeAttack()`, after every ordinary
+strategy declined (the attackTargets=∅ signature). Frozen means the owned-tile
+count stayed flat while troops sat at ≥ 90% of maxTroops across six consecutive
+Legendary-cadence attack decisions (~30-50 ticks each). The target is the
+weakest bordering non-friendly player regardless of the ordinary weakness
+ratios; the payload clamps to the surplus over that target's defensive reserve,
+so the lane fails safe when the reserve covers the whole army. If no land target
+exists after 30 frozen decisions, it periodically probes the existing reachable
+island target and boat path. Maritime cap-strikes require a verified route ETA
+from 0 through 300 ticks, recheck native attack legality and target authorization
+after async route work, and preserve pending-outbound and incoming-counterattack
+reserves at final emission. Team mode never arms the lane: the commerce-stall
+win pacing stays authoritative there, and friendly/teammate players are
+excluded by the target filters.
 
 When `state.settings.winFixes` is enabled, `AttackBehavior.maybeAttack()` has a
 documented policy seam before the existing bot/Terra Nullius fallback. It may
@@ -480,6 +578,12 @@ distance divided by `defaultSamMissileSpeed()`, and it must be no greater than
 the missile's remaining flight ticks. When only the detonation tile lies inside
 the SAM radius, the engine's final attempt against the penultimate in-flight tile
 is retained. This timing-aware result also feeds SAM-overwhelm salvo capacity.
+When Legendary rejects every nuke candidate because the route remains
+interceptable after destination SAMs are excluded, it carries the first blocked
+territory tile into counterforce planning. Every hostile SAM able to intercept
+that route joins the salvo targets, including when the nuke target also owns
+SAMs; duplicate launchers are removed. Without a blocked candidate, the existing
+structure-route fallback still applies when the target has no SAM coverage.
 
 An urgent land-attack Defense Post is evaluated after a concrete incoming-missile
 SAM upgrade but before routine SAM coverage/parity and offensive silo work. A

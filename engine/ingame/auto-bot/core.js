@@ -14,6 +14,7 @@
     MissileSilo: "Missile Silo",
     DefensePost: "Defense Post",
     TransportShip: "Transport",
+    Train: "Train",
     TradeShip: "Trade Ship",
     Warship: "Warship",
     AtomBomb: "Atom Bomb",

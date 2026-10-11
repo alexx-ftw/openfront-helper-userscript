@@ -11,7 +11,7 @@ const UNIT = {
   City: "City",
   SAMLauncher: "SAMLauncher",
 };
-const Difficulty = { LEGENDARY: "LEGENDARY" };
+const Difficulty = { HARD: "HARD", LEGENDARY: "LEGENDARY" };
 
 // Generic silo slot pressure handles queued launches only. An open
 // nukeWantSlots request stays with its target-specific route and reserve
@@ -21,16 +21,31 @@ const Difficulty = { LEGENDARY: "LEGENDARY" };
 
 const script = readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js");
 
-function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = false }) {
+function makeWorld({
+  pending,
+  queue,
+  level,
+  siloCount = 1,
+  winFixes = true,
+  siloDisabled = false,
+  pendingSilo = false,
+  difficulty = Difficulty.LEGENDARY,
+}) {
   const emitted = [];
-  const silo = {
-    id: () => 1,
+  const targetPlayer = { smallID: () => 2 };
+  const pendingLaunches = pending?.map((launch) => ({
+    ...launch,
+    targetPlayer,
+    tile: 900,
+  }));
+  const silos = Array.from({ length: siloCount }, (_, index) => ({
+    id: () => index + 1,
     level: () => level,
-    isUnderConstruction: () => false,
+    isUnderConstruction: () => pendingSilo && index === 0,
     missileTimerQueue: () => queue,
-    tile: () => 100,
+    tile: () => 100 + index,
     type: () => UNIT.MissileSilo,
-  };
+  }));
   const state = { settings: { winFixes }, stats: { builds: 0 }, lastAction: null };
   if (pending === undefined) state.nukeWantSlots = { need: 2 };
   const game = {
@@ -42,7 +57,7 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
     }),
   };
   const player = {
-    units: (type) => (type === UNIT.MissileSilo ? [silo] : []),
+    units: (type) => (type === UNIT.MissileSilo ? silos : []),
   };
   const sandbox = {
     UNIT: UNIT,
@@ -58,9 +73,11 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
       emitted.push(bu);
       return true;
     },
-    isLegendaryDifficulty: () => true,
+    isLegendaryDifficulty: (value = Difficulty.LEGENDARY) => value === Difficulty.LEGENDARY,
+    currentDifficulty: () => difficulty,
     playersArePermanentTeammates: () => false,
     autoBotBuildAllowed: () => true,
+    withTimeout: async (_promise, _timeout, fallback) => fallback,
   };
   const behavior = executeClassicScript(
     script + "\nObject.create(StructureBehavior.prototype);",
@@ -69,13 +86,100 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   behavior.game = game;
   behavior.player = player;
   behavior.nukeBehavior = {
-    _pendingNukeLaunches: pending === undefined ? [] : pending,
+    _pendingNukeLaunches: pendingLaunches ?? [],
+    isValidNukeTarget: (target) => target === targetPlayer,
+    isValidNukeDestination: (tile) => Number.isInteger(tile),
+    isTrajectoryInterceptableBySam: () => false,
   };
   behavior.findBestStructureToUpgrade = async (structures) => {
     behavior.upgradeProbeCalls = (behavior.upgradeProbeCalls ?? 0) + 1;
     return structures.length > 0 ? { structure: structures[0], bu: {} } : null;
   };
   return { behavior, emitted, state };
+}
+
+// Non-Legendary parity cannot place another silo while one is still building.
+{
+  const { behavior, emitted } = makeWorld({
+    difficulty: Difficulty.HARD,
+    pendingSilo: true,
+  });
+  behavior.missileSiloParityGap = () => 1;
+  behavior.maybeSpawnStructure = async (type) => {
+    emitted.push(type);
+    return true;
+  };
+
+  assert.equal(
+    await behavior.handleMissileSiloParity({
+      difficulty: Difficulty.HARD,
+      economyGrowthPriority: false,
+      missileSilosEnabled: true,
+      nukesEnabled: true,
+    }),
+    false,
+    "parity waits for an in-progress silo instead of starting another",
+  );
+  assert.deepEqual(emitted, [], "no second silo placement is emitted");
+}
+
+// Level sums still drive ordinary silo demand, but the hard limit counts
+// physical launchers: one level-3 silo does not consume all three slots.
+{
+  const { behavior } = makeWorld({ queue: [], level: 3 });
+  behavior.ownedLevels = () => 3;
+  behavior.missileSiloParityTarget = () => 0;
+  behavior.missileSiloParityGap = () => 0;
+  behavior.shouldReserveEconomicGrowthForOffense = () => false;
+  behavior.legendaryNavalFrontLoadSuppressed = () => false;
+
+  assert.equal(
+    behavior.legendaryAdjustedStructureRatio(
+      {
+        hasCoastalTiles: false,
+        config: {},
+        strategicState: { siloParityGap: 0 },
+      },
+      UNIT.MissileSilo,
+      3,
+      0.2,
+    ),
+    0.2,
+    "one level-3 silo remains below the three-physical-silo cap",
+  );
+  assert.equal(
+    behavior.shouldBuildStructureAfterDensity(UNIT.MissileSilo, 20, false),
+    true,
+    "ordinary silo demand can fill the two remaining physical slots",
+  );
+}
+
+// Target-specific salvo demand obeys the same cap and gets the same explicit
+// SAM-parity exception while retaining its own route and budget checks.
+{
+  const { behavior, state } = makeWorld({ queue: [], level: 5, siloCount: 3 });
+  const request = {};
+  state.nukeWantSlots = request;
+  behavior.validNukeSiloUpgradeRequest = () => request;
+  behavior.samOverwhelmPlanStillMissing = () => true;
+  behavior.routeEligibleSilosForDemand = () => [];
+  behavior.nukeDemandScopedSilos = () => [];
+  behavior.missileSiloParityGap = () => 0;
+  behavior.safeStructureCost = () => 1n;
+  behavior.availableGoldAfterReserve = () => 10n;
+  behavior.nukeSiloUpgradeBudgetAvailable = () => true;
+
+  assert.equal(
+    behavior.nukeDemandSiloSpawnAllowed(request),
+    false,
+    "target-specific demand cannot exceed the cap by itself",
+  );
+  behavior.missileSiloParityGap = () => 1;
+  assert.equal(
+    behavior.nukeDemandSiloSpawnAllowed(request),
+    true,
+    "a custom SAM-parity gap may authorize a route-specific fourth silo",
+  );
 }
 
 // An open SAM-overwhelm request is owned by the target-specific demand lane.
@@ -165,15 +269,18 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   assert.equal(emitted.length, 0, "no upgrade without winFixes");
 }
 
-// Every silo maxed: the upgrade probe returns null and a NEW silo is the
-// only remaining slot source for the waiting queue.
+// A third completed, maxed silo cannot use queued pressure to bypass the
+// physical cap. Custom SAM-parity demand is the only exception.
 {
   const { behavior, emitted, state } = makeWorld({
     pending: [{ nukeType: UNIT.AtomBomb }],
     queue: [5, 5, 5],
-    level: 3,
+    level: 5,
+    siloCount: 3,
   });
   behavior.findBestStructureToUpgrade = async () => null;
+  behavior.legendaryReadyShotTotal = () => 0;
+  behavior.missileSiloParityGap = () => 0;
   behavior.safeConstructionCost = () => 1000000n;
   behavior.spendableConstructionGold = () => 2000000n;
   const spawns = [];
@@ -183,14 +290,48 @@ function makeWorld({ pending, queue, level, winFixes = true, siloDisabled = fals
   };
   assert.equal(
     await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
-    true,
-    "a queued launch with every silo maxed builds a new launcher",
+    false,
+    "a queued launch cannot build a fourth silo without SAM-parity demand",
   );
-  assert.equal(spawns.length, 1, "the new-silo fallback reaches placement");
-  assert.equal(spawns[0].type, UNIT.MissileSilo, "the fallback builds a silo");
+  assert.equal(spawns.length, 0, "the over-cap fallback never reaches placement");
+
+  behavior.missileSiloParityGap = () => 1;
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
+    true,
+    "custom SAM-parity demand may exceed the physical silo cap",
+  );
+  assert.equal(spawns.length, 1, "parity demand reaches the spawn lane");
+  assert.equal(spawns[0].type, UNIT.MissileSilo, "parity demand builds a silo");
   assert.equal(spawns[0].options.useActualCost, true, "the fallback pays the actual silo cost");
   assert.equal(emitted.length, 0, "no upgrade intent is emitted");
   assert.equal(state.stats.builds, 0, "the upgrade counter stays untouched");
+}
+
+// An L1 silo whose worker probe times out is unknown, not confirmed maxed.
+{
+  const { behavior } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5, 5, 5],
+    level: 1,
+  });
+  delete behavior.findBestStructureToUpgrade;
+  behavior.tileInsideActiveHostileMissileImpact = () => false;
+  behavior.player.buildables = () => new Promise(() => {});
+  behavior.legendaryReadyShotTotal = () => 0;
+  behavior.safeConstructionCost = () => 1000000n;
+  behavior.spendableConstructionGold = () => 2000000n;
+  const spawns = [];
+  behavior.maybeSpawnStructure = async (type) => {
+    spawns.push(type);
+    return true;
+  };
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
+    false,
+    "a timed-out upgrade probe cannot be treated as proof that every silo is maxed",
+  );
+  assert.deepEqual(spawns, [], "unknown upgradeability does not duplicate the silo network");
 }
 
 // Maxed silos without the gold for a new launcher keep the ladder.

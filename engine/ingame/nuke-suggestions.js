@@ -3047,10 +3047,17 @@
         game,
         stackSams.length > 0 ? stackSams : [sam],
       );
+      // Deliverable-capacity realism: rank the sam-clear bonus by what our
+      // ready tubes can actually deliver this window, so an un-overwhelmable
+      // stack cannot outrank a reachable target in destruction suggestions.
+      const deliverableCapacity = Math.max(
+        1,
+        Math.min(capacity, getReadyNukeSiloSlotCount(baseContext.myPlayer)),
+      );
       recordAutoNukeSamScore(
         scoreState,
         sam,
-        AUTO_NUKE_DESTRUCTION_SAM_BONUS * Math.max(1, capacity),
+        AUTO_NUKE_DESTRUCTION_SAM_BONUS * deliverableCapacity,
         true,
       );
     }
@@ -4421,6 +4428,8 @@
         reason: "sam-intercept",
         interceptingSamKey: shotSam.key,
         interceptingSamOwnedByTarget: shotSam.ownedByTarget,
+        isSamClear: Boolean(shotSam.candidate.isSamClear),
+        samClearStackKey: shotSam.candidate.samClearStackKey,
       });
     }
   }
@@ -4726,6 +4735,8 @@
       spec: best.candidate.spec,
       reason: best.candidate.isSamClear ? "sam-clear" : "impact",
       targetSamOwnedByTarget: best.candidate.samClearOwnedByTarget,
+      isSamClear: Boolean(best.candidate.isSamClear),
+      samClearStackKey: best.candidate.samClearStackKey,
     });
     addAutoNukeCandidateMetrics(context.metrics, best.candidate);
 
@@ -4738,6 +4749,8 @@
         spec: best.candidate.spec,
         reason: "sam-clear-overshoot",
         targetSamOwnedByTarget: best.candidate.samClearOwnedByTarget,
+        isSamClear: Boolean(best.candidate.isSamClear),
+        samClearStackKey: best.candidate.samClearStackKey,
       });
     }
     context.state.selectedCandidateKeys.add(best.candidateKey);
@@ -4911,6 +4924,82 @@
     return direct || queryAutoNukeBuildable(params, candidate, "actions");
   }
 
+  function revalidateAutoNukeShot(params, shot, shotIndex = 0) {
+    const game = params?.game;
+    const baseContext = buildNukeSuggestionBaseContext(game, params?.selected);
+    if (!baseContext || !shot?.spec?.type || shot.tile == null) return null;
+
+    const liveSams = collectAllHostileSams(game, baseContext.myPlayer);
+    const pendingSams = collectPendingHostileSams(game, baseContext.myPlayer);
+    if (liveSams.length > 0) baseContext.targetSams = liveSams;
+    if (pendingSams.length > 0) baseContext.pendingTargetSams = pendingSams;
+
+    const scoreContext = {
+      ...baseContext,
+      game,
+      magnitude: getNukeSuggestionMagnitude(game, shot.spec.type),
+      spec: shot.spec,
+      scoreMode: shot.spec.scoreMode || "population",
+    };
+    if (!isNukeScoreTileAllowed(game, scoreContext, shot.tile)) return null;
+
+    let candidate;
+    if (shot.isSamClear) {
+      const sam = baseContext.targetSams.find(
+        (unit) => getSamStackKey(unit) === shot.samClearStackKey,
+      );
+      if (!sam) return null;
+      candidate = scoreAutoNukeSamClearCandidate(
+        game,
+        baseContext,
+        shot.spec,
+        sam,
+        1,
+      );
+    } else {
+      candidate = scoreNukeSuggestionTile(game, scoreContext, shot.tile);
+      if (candidate) {
+        const sourceSilo = findClosestReadySilo(
+          game,
+          shot.tile,
+          baseContext.readySilos,
+        );
+        candidate.sourceTile = getUnitTile(sourceSilo);
+      }
+    }
+    if (!candidate || candidate.sourceTile == null) return null;
+
+    const directionPlan = chooseBestNukeRocketDirection(game, {
+      sourceTile: candidate.sourceTile,
+      targetTile: shot.tile,
+      sams: baseContext.targetSams,
+      pendingSams: baseContext.pendingTargetSams,
+      pendingSamReadyTicks: baseContext.pendingSamReadyTicks,
+    });
+    const interceptionPlan = getAutoNukeInterceptionPlan(game, {
+      baseContext,
+      candidate: {
+        ...candidate,
+        rocketDirectionUp: directionPlan.rocketDirectionUp,
+      },
+      state: cloneAutoNukePlanState(),
+      shotIndexOffset: shotIndex,
+    });
+    if (shot.reason === "sam-intercept") {
+      if (interceptionPlan.shotSamKeys[0]?.key !== shot.interceptingSamKey) {
+        return null;
+      }
+    } else if (interceptionPlan.shotsNeededBeforeLanding > 0) {
+      return null;
+    }
+
+    return {
+      ...shot,
+      sourceTile: candidate.sourceTile,
+      rocketDirectionUp: directionPlan.rocketDirectionUp,
+    };
+  }
+
   function applyAutoNukeRocketDirection(params, candidate) {
     const type = candidate.spec?.type;
     if (type !== "Atom Bomb" && type !== "Hydrogen Bomb") return;
@@ -4920,19 +5009,39 @@
     }
   }
 
-  async function launchAutoNukeCandidate(params, candidate) {
+  async function launchAutoNukeCandidate(params, candidate, shotIndex = 0) {
     if (!candidate || candidate.intercepted || candidate.tile == null) {
       return false;
     }
 
     const buildableUnit = await getAutoNukeBuildableUnit(params, candidate);
     if (!buildableUnit?.canBuild) {
+      candidate.stale = true;
       return false;
     }
 
+    const liveShot = revalidateAutoNukeShot(params, candidate, shotIndex);
+    if (!liveShot) {
+      candidate.stale = true;
+      return false;
+    }
+
+    Object.assign(candidate, liveShot);
     applyAutoNukeRocketDirection(params, candidate);
     params?.buildMenu?.sendBuildOrUpgrade?.(buildableUnit, candidate.tile);
     return true;
+  }
+
+  function markAutoNukePlanStale(params, plan, launchedCount) {
+    plan.stale = true;
+    for (const [key, cachedPlan] of Object.entries(params?.autoNukePlans || {})) {
+      if (cachedPlan === plan) delete params.autoNukePlans[key];
+    }
+    plan.estimatedLandingDelayMs = estimateAutoNukePlanLandingDelayMs(params, {
+      shots: plan.shots.slice(0, launchedCount),
+    });
+    plan.estimatedImpactAtMs = performance.now() + plan.estimatedLandingDelayMs;
+    runtimeDebugLog("OpenFront Helper: live state changed; stopping the stale auto-nuke plan.");
   }
 
   function estimateAutoNukeShotLandingDelayMs(game, shot, shotIndex) {
@@ -5060,8 +5169,9 @@
         await waitForAutoNukeDelay(AUTO_NUKE_SEQUENCE_DELAY_MS);
       }
 
-      const launched = await launchAutoNukeCandidate(params, shot);
+      const launched = await launchAutoNukeCandidate(params, shot, launchedCount);
       if (!launched) {
+        if (shot.stale) markAutoNukePlanStale(params, plan, launchedCount);
         break;
       }
 
@@ -5522,6 +5632,13 @@
         }),
       );
       completeAutoNukeWaveEntry(logIndex);
+      if (samClearPlan.stale) {
+        latestImpactAtMs = Math.max(
+          latestImpactAtMs,
+          samClearPlan.estimatedImpactAtMs || 0,
+        );
+        return { followupWaveState, waveNumber, latestImpactAtMs, stale: true };
+      }
       if (launched === 0) {
         waveNumber--;
         break;
@@ -5560,6 +5677,10 @@
         getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: isDestructionFlow ? plan.destructionPhase : mode, detail: "Launch failed", extra: { progress: 1 } }),
       );
       hideAutoNukeProcessPanel(AUTO_NUKE_PROCESS_COMPLETE_HIDE_MS);
+      return;
+    }
+    if (plan.stale) {
+      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
       return;
     }
 
@@ -7313,6 +7434,10 @@
       latestImpactAtMs,
     });
     ({ followupWaveState, waveNumber, latestImpactAtMs } = preemptiveResult);
+    if (preemptiveResult.stale) {
+      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+      return;
+    }
 
     let followupWaveNumber = waveNumber + 1;
     let followupWavesLaunched = 0;
@@ -7347,7 +7472,11 @@
         getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: followupWaveNumber, phase: mode, detail: `Firing ${followupWavePlan.shots.length} nukes` }),
       );
       completeAutoNukeWaveEntry(followupLogIdx);
-      if (followupWaveLaunched === 0) {
+      if (followupWaveLaunched === 0 || followupWavePlan.stale) {
+        latestImpactAtMs = Math.max(
+          latestImpactAtMs,
+          followupWavePlan.estimatedImpactAtMs || 0,
+        );
         break;
       }
       latestImpactAtMs = Math.max(
@@ -7407,6 +7536,14 @@
         }),
       );
       completeAutoNukeWaveEntry(logIndex);
+      if (wavePlan.stale) {
+        latestImpactAtMs = Math.max(
+          latestImpactAtMs,
+          wavePlan.estimatedImpactAtMs || 0,
+        );
+        hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+        return { aborted: true, currentState, waveNumber, latestImpactAtMs };
+      }
       if (launched === 0) {
         runtimeDebugLog("OpenFront Helper: total destruction SAM pass could not be launched.");
         updateAutoNukeProcessPanel(
@@ -7484,6 +7621,14 @@
       getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: "buildings", detail: `Firing ${secondWavePlan.shots.length} nukes` }),
     );
     completeAutoNukeWaveEntry(bldgLogIdx);
+    if (secondWavePlan.stale) {
+      latestImpactAtMs = Math.max(
+        latestImpactAtMs,
+        secondWavePlan.estimatedImpactAtMs || 0,
+      );
+      hideAutoNukeProcessPanelAfterLanding(latestImpactAtMs);
+      return;
+    }
     if (secondWaveLaunchedCount === 0) {
       runtimeDebugLog("OpenFront Helper: total destruction second pass could not be launched.");
       updateAutoNukeProcessPanel(
@@ -7538,7 +7683,11 @@
         getAutoNukeProcessWaveStatus(params, { mode: mode, waveNumber: waveNumber, phase: "remote", detail: `Firing ${remoteWavePlan.shots.length} nukes` }),
       );
       completeAutoNukeWaveEntry(remoteLogIdx);
-      if (remoteWaveLaunched === 0) {
+      if (remoteWaveLaunched === 0 || remoteWavePlan.stale) {
+        latestImpactAtMs = Math.max(
+          latestImpactAtMs,
+          remoteWavePlan.estimatedImpactAtMs || 0,
+        );
         break;
       }
       latestImpactAtMs = Math.max(

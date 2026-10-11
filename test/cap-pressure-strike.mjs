@@ -186,3 +186,162 @@ function confirmFreeze(behavior, decisions = 6) {
   // The dead-target bail happens before any attempt is recorded.
   assert.equal(Number(behavior.capStrikeAttempts ?? 0), 0);
 }
+
+// 7. Endgame bypass: a 30-decision frozen at-cap army strikes without the
+// expansion feature. Baikal stalemate: expansion never fired, so the old
+// expandOn gate idled the closer for 182-decision freezes.
+{
+  const { behavior, strikes } = makeBehavior();
+  for (let i = 0; i < 30; i++) behavior.updateCapPressureStrikeState();
+  assert.equal(
+    await behavior.maybeCapPressureStrike({
+      expandOn: false,
+      borderingEnemies: [makeEnemy(3, 900_000)],
+    }),
+    false,
+    "29 frozen decisions must not bypass yet",
+  );
+  behavior.updateCapPressureStrikeState();
+  assert.equal(
+    await behavior.maybeCapPressureStrike({
+      expandOn: false,
+      borderingEnemies: [makeEnemy(3, 900_000)],
+    }),
+    true,
+    "30 frozen decisions bypass the expansion gate",
+  );
+  assert.equal(strikes.length, 1);
+  assert.equal(Number(behavior.capStrikeEndgameBypasses ?? 0), 1);
+}
+
+// 7b. An ordinary expansion strike at the endgame threshold is not counted
+// as an expansion-gate bypass.
+{
+  const { behavior, strikes } = makeBehavior();
+  for (let i = 0; i <= 30; i++) behavior.updateCapPressureStrikeState();
+  assert.equal(
+    await behavior.maybeCapPressureStrike({
+      expandOn: true,
+      borderingEnemies: [makeEnemy(3, 900_000)],
+    }),
+    true,
+  );
+  assert.equal(strikes.length, 1);
+  assert.equal(Number(behavior.capStrikeEndgameBypasses ?? 0), 0);
+}
+
+// 7c. Freeze accumulated while winFixes is disabled cannot trigger a strike
+// immediately after the setting is turned back on.
+{
+  const { behavior, strikes } = makeBehavior({ winFixes: false });
+  for (let i = 0; i <= 40; i++) behavior.updateCapPressureStrikeState();
+  assert.equal(behavior.capStrikeFrozenDecisions, 0);
+  sandbox.state.settings.winFixes = true;
+  assert.equal(
+    await behavior.maybeCapPressureStrike({
+      expandOn: false,
+      borderingEnemies: [makeEnemy(3, 900_000)],
+    }),
+    false,
+  );
+  assert.equal(strikes.length, 0);
+}
+
+// 8. The endgame bypass records a no-target veto without attempting.
+{
+  const { behavior, strikes } = makeBehavior();
+  for (let i = 0; i <= 30; i++) behavior.updateCapPressureStrikeState();
+  behavior.findNearestIslandEnemy = async () => null;
+  assert.equal(await behavior.maybeCapPressureStrike({ expandOn: false }), false);
+  assert.equal(strikes.length, 0);
+  assert.equal(Number(behavior.capStrikeVetoNoTarget ?? 0), 1);
+  assert.equal(Number(behavior.capStrikeAttempts ?? 0), 0);
+}
+
+// 8b. A frozen army periodically uses the existing reachable-island boat path
+// when no land target exists, while retaining the cap-strike payload marker.
+{
+  const { behavior } = makeBehavior();
+  for (let i = 0; i <= 30; i++) behavior.updateCapPressureStrikeState();
+  const island = makeEnemy(9, 800_000);
+  let boatCall;
+  behavior.findNearestIslandEnemy = async () => island;
+  behavior.sendBoatAttack = async (...args) => {
+    boatCall = args;
+    return true;
+  };
+  assert.equal(await behavior.maybeCapPressureStrike({ expandOn: false }), true);
+  assert.deepEqual(boatCall, [island, null, null, true]);
+  assert.equal(Number(behavior.capStrikeLaunches ?? 0), 1);
+  assert.equal(Number(behavior.capStrikeVetoNoTarget ?? 0), 0);
+}
+
+// 8c. Maritime cap-strikes fail closed on unknown/slow routes and recheck
+// native legality plus target authorization after async route validation.
+{
+  const { behavior } = makeBehavior();
+  const island = makeEnemy(10, 800_000);
+  let legalityChecks = 0;
+  behavior.allowBoatExplorationRoute = async () => false;
+  behavior.allowEarlyGameBoat = async () => true;
+  behavior.canAttackPlayerNow = () => {
+    legalityChecks++;
+    return true;
+  };
+  let targetAuthorized = false;
+  behavior.sendAttackTargetIsAuthorized = (options, force) =>
+    targetAuthorized && options.target === island && force === true;
+  behavior.boatPlayerTargetStillValid = () => true;
+  assert.equal(
+    await behavior.allowAndRevalidateBoatPlayerTarget(island, "island", 123, true),
+    false,
+  );
+  assert.equal(legalityChecks, 0, "unknown or slow routes stop before dispatch checks");
+  behavior.allowBoatExplorationRoute = async () => true;
+  assert.equal(
+    await behavior.allowAndRevalidateBoatPlayerTarget(island, "island", 123, true),
+    false,
+  );
+  assert.equal(legalityChecks, 1, "native legality is checked before authorization");
+  targetAuthorized = true;
+  assert.equal(
+    await behavior.allowAndRevalidateBoatPlayerTarget(island, "island", 123, true),
+    true,
+  );
+  assert.equal(legalityChecks, 2, "native attack legality is rechecked after route awaits");
+}
+
+// 8d. The full boat payload still respects the defensive reserve, incoming
+// counterattack reserve and already-pending outbound commitments.
+{
+  const behavior = Object.create(sandbox.AttackBehavior.prototype);
+  behavior.player = { troops: () => 1_000 };
+  behavior.capStrikeReserveTroops = () => 300;
+  behavior.getEarlyGameSpendableTroops = (reserve) => Math.max(0, 1_000 - reserve - 100);
+  behavior.incomingCounterattackAggregateTroops = () => 400;
+  const island = makeEnemy(11, 800_000);
+  const requested = behavior.getBoatAttackTroopsForSend(island, null, null, true);
+  assert.equal(requested, 600, "cap-strike uses available surplus, not the 1% probe");
+  assert.equal(
+    behavior.resolveBoatTroops(requested, behavior.boatReserveTarget(island, true), false),
+    500,
+    "the emission boundary retains the larger incoming reserve and pending commitments",
+  );
+}
+
+// 9. The endgame bypass records a legality veto without emitting.
+{
+  const { behavior, strikes } = makeBehavior();
+  for (let i = 0; i <= 30; i++) behavior.updateCapPressureStrikeState();
+  behavior.canAttackPlayerNow = () => false;
+  assert.equal(
+    await behavior.maybeCapPressureStrike({
+      expandOn: false,
+      borderingEnemies: [makeEnemy(3, 900_000)],
+    }),
+    false,
+  );
+  assert.equal(strikes.length, 0);
+  assert.equal(Number(behavior.capStrikeVetoLegality ?? 0), 1);
+  assert.equal(Number(behavior.capStrikeAttempts ?? 0), 0);
+}

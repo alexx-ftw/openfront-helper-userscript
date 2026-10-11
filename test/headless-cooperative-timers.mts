@@ -116,6 +116,7 @@ Object.assign(postPolicy, {
   defensePostThreat: () => null,
   defensePostFrontDemand: (_threat, front) => front,
   cost: () => 1n,
+  availableGoldAfterReserve: () => 10n,
   sampleTilesNearFront: (front) => front,
   rankDefensePostTiles: (front) => front,
   buildFirstDefensePost: async (front) => {

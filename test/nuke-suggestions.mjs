@@ -51,10 +51,74 @@ executeClassicScript(
     "globalThis.__isNukeSuggestionSamOwnerHostileToLauncher = isNukeSuggestionSamOwnerHostileToLauncher;" +
     "globalThis.__collectAllHostileSams = collectAllHostileSams;" +
     "globalThis.__isNukeScoreTileAllowed = isNukeScoreTileAllowed;" +
-    "globalThis.__collectAlliedPlayerSmallIds = collectAlliedPlayerSmallIds;",
+    "globalThis.__collectAlliedPlayerSmallIds = collectAlliedPlayerSmallIds;" +
+    "globalThis.__collectAutoNukeTargetSamScores = collectAutoNukeTargetSamScores;" +
+    "globalThis.__launchAutoNukePlan = launchAutoNukePlan;",
   sandbox,
   { filename: "nuke-suggestions-test-exports.js" },
 );
+
+// Destruction SAM bonus must be capped by our deliverable ready silo slots:
+// an un-overwhelmable stack may not outrank a reachable target.
+{
+  const collectScores = sandbox.__collectAutoNukeTargetSamScores;
+  const targetPlayer = { isPlayer: () => true, smallID: () => 7 };
+  const owner = { isPlayer: () => true, smallID: () => 7 };
+  const reachableSam = {
+    id: () => "reachable",
+    level: () => 2,
+    tile: () => 100,
+    owner: () => owner,
+  };
+  const fortressSam = {
+    id: () => "fortress",
+    level: () => 12,
+    tile: () => 200,
+    owner: () => owner,
+  };
+  const myPlayer = {
+    isPlayer: () => true,
+    smallID: () => 1,
+    units: (type) =>
+      type === "Missile Silo"
+        ? [
+            {
+              level: () => 2,
+              missileTimerQueue: () => [],
+              isActive: () => true,
+              isUnderConstruction: () => false,
+            },
+            {
+              level: () => 1,
+              missileTimerQueue: () => [],
+              isActive: () => true,
+              isUnderConstruction: () => false,
+            },
+          ]
+        : [],
+  };
+  const baseContext = {
+    myPlayer,
+    targetPlayer,
+    targetSams: [reachableSam, fortressSam],
+    pendingTargetSams: [],
+  };
+  const scoreState = {
+    samsByKey: new Map(),
+    samUnlockScores: new Map(),
+  };
+  collectScores({}, baseContext, scoreState);
+  assert.equal(
+    scoreState.samUnlockScores.get("reachable"),
+    3_500_000 * 2,
+    "a reachable stack keeps its full capacity bonus",
+  );
+  assert.equal(
+    scoreState.samUnlockScores.get("fortress"),
+    3_500_000 * 3,
+    "an un-overwhelmable stack is capped by the ready silo slots (3), not its raw level (12)",
+  );
+}
 
 const suggestionMe = {
   isPlayer: () => true,
@@ -113,6 +177,102 @@ assert.deepEqual(
   [3],
   "nuke collateral protection includes only permanent teammates",
 );
+
+// A SAM appearing after the first launch invalidates the still-unfired shot.
+{
+  const world = { samActive: false };
+  const changingSam = {
+    id: () => "late-sam",
+    tile: () => 30,
+    owner: () => breakableSuggestionAlly,
+    level: () => 1,
+  };
+  const sourceSilo = { tile: () => 10 };
+  const context = {
+    myPlayer: suggestionMe,
+    targetPlayer: breakableSuggestionAlly,
+    readySilos: [sourceSilo],
+    targetSams: [],
+    pendingTargetSams: [],
+    pendingSamReadyTicks: new Map(),
+    teamStructures: [],
+  };
+  const functionNames = [
+    "buildNukeSuggestionBaseContext",
+    "collectAllHostileSams",
+    "collectPendingHostileSams",
+    "getNukeSuggestionMagnitude",
+    "isNukeScoreTileAllowed",
+    "scoreNukeSuggestionTile",
+    "findClosestReadySilo",
+    "chooseBestNukeRocketDirection",
+    "getAutoNukeInterceptionPlan",
+    "getAutoNukeBuildableUnit",
+    "estimateAutoNukePlanLandingDelayMs",
+    "renderAutoNukePlanSteps",
+  ];
+  const originals = new Map(functionNames.map((name) => [name, sandbox[name]]));
+  const originalWindow = sandbox.window;
+  const emissions = [];
+  Object.assign(sandbox, {
+    buildNukeSuggestionBaseContext: () => context,
+    collectAllHostileSams: () => (world.samActive ? [changingSam] : []),
+    collectPendingHostileSams: () => [],
+    getNukeSuggestionMagnitude: () => ({ inner: 1, outer: 2 }),
+    isNukeScoreTileAllowed: () => true,
+    scoreNukeSuggestionTile: (_game, _scoreContext, tile) => ({ tile, totalScore: 1 }),
+    findClosestReadySilo: () => sourceSilo,
+    chooseBestNukeRocketDirection: () => ({
+      rocketDirectionUp: true,
+      interceptingSams: world.samActive ? [changingSam] : [],
+    }),
+    getAutoNukeInterceptionPlan: () => ({
+      shotsNeededBeforeLanding: world.samActive ? 1 : 0,
+      shotSamKeys: world.samActive ? [{ key: "late-sam" }] : [],
+    }),
+    getAutoNukeBuildableUnit: async () => ({ type: "Atom Bomb", canBuild: true }),
+    estimateAutoNukePlanLandingDelayMs: () => 0,
+    renderAutoNukePlanSteps: () => null,
+  });
+  sandbox.window = {
+    setTimeout: (callback) => {
+      callback();
+      return 0;
+    },
+    clearTimeout: () => {},
+  };
+
+  const shot = (tile) => ({
+    tile,
+    sourceTile: 10,
+    rocketDirectionUp: true,
+    spec: { id: "economic-atom", type: "Atom Bomb", scoreMode: "economic" },
+    reason: "impact",
+  });
+  const plan = { shots: [shot(20), shot(21)], score: 2 };
+  const params = {
+    game: {},
+    selected: breakableSuggestionAlly,
+    myPlayer: suggestionMe,
+    autoNukePlans: { "economic:default": plan },
+    buildMenu: {
+      sendBuildOrUpgrade: (_buildable, tile) => {
+        emissions.push(tile);
+        if (emissions.length === 1) world.samActive = true;
+      },
+    },
+  };
+  try {
+    const launched = await sandbox.__launchAutoNukePlan(params, plan);
+    assert.equal(launched, 1, "only the first shot launches before the new SAM is observed");
+    assert.deepEqual(emissions, [20], "the second shot is not emitted through the new SAM");
+    assert.equal(plan.stale, true, "the remaining sequential plan is marked stale");
+    assert.equal(Object.keys(params.autoNukePlans).length, 0, "the stale cached plan is discarded");
+  } finally {
+    sandbox.window = originalWindow;
+    for (const [name, original] of originals) sandbox[name] = original;
+  }
+}
 
 const game = {
   ticks: () => 0,

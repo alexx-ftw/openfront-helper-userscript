@@ -559,7 +559,9 @@ manual launches and macros keep the player's selected direction.
 
 The `Legendary` difficulty is an adaptive construction mode, not a copy of the
 vanilla priority list. It treats gold production and troop generation as the two
-equally weighted primary objectives and ranks candidates lexicographically by:
+equally weighted primary objectives. Among City/Factory/Port actions, binding
+City troop-cap relief ranks first; otherwise the action with higher projected
+positive net team gold wins. Cross-domain candidates rank lexicographically by:
 
 1. mandatory/safety constraints;
 2. the weaker of the gold and troop marginal scores (max-min balance);

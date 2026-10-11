@@ -409,11 +409,18 @@
 
     isValidMirvTargetPlayer(target) {
       if (this.player === null) throw new Error("not initialized");
+      if (!target) return false;
+      const targetId = target.smallID();
+      const currentTarget = typeof this.game.playerBySmallID === "function"
+        ? this.game.playerBySmallID(targetId)
+        : target;
+      if (!currentTarget) return false;
       return (
-        target.smallID() !== this.player.smallID() &&
-        target.isPlayer() &&
-        target.type() !== PlayerType.Bot &&
-        !this.player.isFriendly(target)
+        targetId !== this.player.smallID() &&
+        currentTarget.isPlayer() &&
+        currentTarget.isAlive?.() !== false &&
+        currentTarget.type() !== PlayerType.Bot &&
+        !this.player.isFriendly(currentTarget)
       );
     }
 
@@ -585,17 +592,9 @@
       // through to the original behaviour.
       const structureCore = this.mirvStructureCoreTile(target, bounds);
       if (structureCore !== null) {
-        if (
-          this.game.hasOwner(structureCore) &&
-          this.game.ownerID(structureCore) === target.smallID()
-        ) {
-          return structureCore;
-        }
-        return this.findClosestBorderTile(
-          arr,
-          this.game.x(structureCore),
-          this.game.y(structureCore),
-        );
+        const structureAim = this.mirvBorderAimForTile(target, arr, structureCore);
+        const coveredFallback = this.mirvAimOutsideSamCoverage(target, arr, bounds, structureAim);
+        if (coveredFallback !== null) return coveredFallback;
       }
       const centerX = Math.floor((bounds.minX + bounds.maxX) / 2);
       const centerY = Math.floor((bounds.minY + bounds.maxY) / 2);
@@ -610,6 +609,91 @@
       }
 
       return this.findClosestBorderTile(arr, centerX, centerY);
+    }
+
+    mirvBorderAimForTile(target, borderTiles, tile) {
+      if (this.game.hasOwner(tile) && this.game.ownerID(tile) === target.smallID()) {
+        return tile;
+      }
+      return this.findClosestBorderTile(
+        borderTiles,
+        this.game.x(tile),
+        this.game.y(tile),
+      );
+    }
+
+    mirvAimOutsideSamCoverage(target, borderTiles, bounds, structureAim) {
+      if (
+        state.settings.winFixes !== true ||
+        !this.isMirvAimCoveredByEnemySam(structureAim)
+      ) {
+        return structureAim;
+      }
+      // DIVERGENCE (winFixes): avoid geometric SAM coverage because this path cannot model intercept timing.
+      const rankedStructureTypes = MIRV_AIM_STRUCTURE_WEIGHTS.slice().sort(
+        (a, b) => b[1] - a[1],
+      );
+      for (const [type] of rankedStructureTypes) {
+        const cluster = this.mirvStructureClusterTile(target, type, bounds);
+        if (cluster === null) continue;
+        const candidate = this.mirvBorderAimForTile(target, borderTiles, cluster);
+        if (!this.isMirvAimCoveredByEnemySam(candidate)) return candidate;
+      }
+      // If all structure clusters are covered, preserve the existing border-centre fallback.
+      return null;
+    }
+
+    isMirvAimCoveredByEnemySam(tile) {
+      const config = this.game.config?.();
+      const maxSamRange = config?.maxSamRange?.();
+      if (
+        !this.player ||
+        typeof this.player.smallID !== "function" ||
+        typeof this.game.nearbyUnits !== "function" ||
+        typeof this.game.euclideanDistSquared !== "function" ||
+        !Number.isFinite(maxSamRange)
+      ) {
+        return false;
+      }
+
+      const nearbySams = this.game.nearbyUnits(tile, maxSamRange, UNIT.SAMLauncher);
+      return (Array.isArray(nearbySams) ? nearbySams : []).some(
+        (sam) => this.isEnemySamCoveringMirvAim(tile, sam, config),
+      );
+    }
+
+    isEnemySamCoveringMirvAim(tile, sam, config) {
+      const unit = sam?.unit;
+      if (!unit || typeof unit.tile !== "function") return false;
+      const owner = unit.owner?.();
+      if (
+        (owner && owner.smallID?.() === this.player.smallID()) ||
+        playersArePermanentTeammates(this.player, owner)
+      ) {
+        return false;
+      }
+      const range = config.samRange?.(unit.level?.());
+      if (!Number.isFinite(range)) return false;
+      const distanceSquared = this.game.euclideanDistSquared(tile, unit.tile());
+      return Number.isFinite(distanceSquared) && distanceSquared <= range * range;
+    }
+
+    mirvStructureClusterTile(target, type, bounds) {
+      const units = target.units(type);
+      let totalX = 0;
+      let totalY = 0;
+      let count = 0;
+      for (const unit of Array.isArray(units) ? units : []) {
+        const tile = unit?.tile?.();
+        if (tile === null || tile === undefined) continue;
+        totalX += this.game.x(tile);
+        totalY += this.game.y(tile);
+        count++;
+      }
+      if (count === 0) return null;
+      const x = Math.min(bounds.maxX, Math.max(bounds.minX, Math.round(totalX / count)));
+      const y = Math.min(bounds.maxY, Math.max(bounds.minY, Math.round(totalY / count)));
+      return this.game.ref(x, y);
     }
 
     // Weighted centroid of the target's high-value structures, clamped into

@@ -473,7 +473,10 @@ function economicRealm() {
   const raw = {
     ticks: () => upgradeTick,
     units: (requested) => (present && requested === type ? [unit] : []),
-    config: () => ({}),
+    config: () => ({
+      trainStationMinRange: () => 10,
+      trainStationMaxRange: () => 20,
+    }),
   };
   const game = realm.createGameApi(raw).game;
   const strategy = realm.window.__OFH_hybridStrategy;

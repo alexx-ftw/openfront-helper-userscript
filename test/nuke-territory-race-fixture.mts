@@ -176,7 +176,7 @@ for (const action of ["launch", "silo-upgrade"]) {
       assert.equal(bot.harness.internals.state.stats.builds, buildsBefore);
       runTurn();
     }
-    assert.equal(probes, action === "silo-upgrade" && capture === "before-probe" ? 0 : 1);
+    assert.equal(probes, capture === "before-probe" ? 0 : 1);
     assert.equal(sent, shouldSend);
     const launches = bot.intentBuffer.filter(
       (intent) => intent.type === "build_unit" && intent.unit === UnitType.AtomBomb,

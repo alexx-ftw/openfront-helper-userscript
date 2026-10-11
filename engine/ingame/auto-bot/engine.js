@@ -12,6 +12,19 @@
   let _bot = null;
   let _botSeedKey = null;
 
+  // AttackBehavior's donation fallback can bypass emitIntent when its event
+  // constructor is unavailable, so guard that final emitter here as well.
+  if (
+    typeof AttackBehavior === "function" &&
+    typeof AttackBehavior.prototype.emitDonationTroops === "function"
+  ) {
+    const emitDonationTroops = AttackBehavior.prototype.emitDonationTroops;
+    AttackBehavior.prototype.emitDonationTroops = function (...args) {
+      if (!autoBotTickActionAllowed()) return false;
+      return emitDonationTroops.apply(this, args);
+    };
+  }
+
   function ensureGameApi(srcGame) {
     if (_api && _apiSrc === srcGame) return _api;
     _api = createGameApi(srcGame);
@@ -106,6 +119,7 @@
 
     const tickGeneration = state.tickGeneration;
     state.tickInFlight = true;
+    state.activeTickGeneration = tickGeneration;
     const profile = beginAutoBotProfileTick();
     try {
       const setupStartedAt = autoBotProfileStartPhase(profile);
@@ -128,6 +142,9 @@
       if (!currentAutoBotTickGeneration(tickGeneration)) return;
       await runAutoBotNationTick(profile, api, tickGeneration);
     } finally {
+      if (state.activeTickGeneration === tickGeneration) {
+        state.activeTickGeneration = null;
+      }
       state.tickInFlight = false;
       finishAutoBotProfileTick(profile);
       renderStatus();

@@ -189,6 +189,40 @@ const target = { smallID: () => 42 };
     "a blast covering a SAM prices the counterforce value instead of scoring zero",
   );
 
+  // Target-distance ranking must use ready silo origins. A cooling near silo
+  // cannot make a remote tile look like an easy delivery for a distant ready
+  // tube; when every tube is cooling, preserve the prior fallback ordering.
+  const siloDistanceInputs = [];
+  sandbox.autoBotBuildNukeSlots = (_game, player) => player.projectedSlots;
+  sandbox.closestTwoTiles = (_game, siloTiles, targetTiles) => {
+    siloDistanceInputs.push(siloTiles);
+    return { x: siloTiles[0], y: targetTiles[0] };
+  };
+  scoreBehavior.player = {
+    projectedSlots: new Map([
+      ["ready", 1],
+      ["cooling", 0],
+    ]),
+  };
+  const readySilo = { id: () => "ready", tile: () => 300 };
+  const coolingSilo = { id: () => "cooling", tile: () => 100 };
+  scoreBehavior.nukeTileScore(100, [coolingSilo, readySilo], [], UNIT.AtomBomb);
+  assert.deepEqual(
+    siloDistanceInputs.at(-1),
+    [300],
+    "target proximity is measured from the ready silo, not the closer cooling silo",
+  );
+  scoreBehavior.player.projectedSlots = new Map([
+    ["ready", 0],
+    ["cooling", 0],
+  ]);
+  scoreBehavior.nukeTileScore(100, [coolingSilo, readySilo], [], UNIT.AtomBomb);
+  assert.deepEqual(
+    siloDistanceInputs.at(-1),
+    [100, 300],
+    "when no silo has a ready slot, the ranking retains the live-silo fallback",
+  );
+
   const ladderBehavior = Object.create(sandbox.__NukeBehavior.prototype);
   ladderBehavior.random = { chance: () => false };
   ladderBehavior.attackBehavior = {
@@ -746,6 +780,44 @@ assert.equal(
   false,
   "plain retaliation no longer bypasses the expected-value guard",
 );
+
+// Deliverable-capacity realism: a covered salvo is only authorized when the
+// tubes can actually deliver it this window. Nominal levels parked behind
+// missileTimerQueue cooldowns are not capacity (mirrors getAvailableSiloEntries).
+const coolingCoveredTarget = {
+  smallID: () => 9,
+  team: () => null,
+  isAlive: () => true,
+  units: () => [{ type: () => UNIT.City, level: () => 3, tile: () => 20 }],
+};
+const richValue = () => 10_000_000;
+const coveredSilo = (queueLength) => ({
+  isUnderConstruction: () => false,
+  level: () => 3,
+  missileTimerQueue: () => Array.from({ length: queueLength }),
+});
+valueGuard.nukeStructureValue = richValue;
+assert.equal(
+  await valueGuard.nukeHasPositiveExpectedValue(
+    { tile: 10, coveringSamLevels: 2 },
+    coolingCoveredTarget,
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [coveredSilo(3)],
+  ),
+  false,
+  "a covered salvo is declined when every tube is cooling regardless of nominal levels",
+);
+assert.equal(
+  await valueGuard.nukeHasPositiveExpectedValue(
+    { tile: 10, coveringSamLevels: 2 },
+    coolingCoveredTarget,
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [coveredSilo(0)],
+  ),
+  true,
+  "the same covered salvo is authorized once the tubes actually hold ready shots",
+);
+valueGuard.nukeStructureValue = () => 25_000;
 
 // Production shape (cycle 14): currentDifficulty() maps the Legendary user
 // setting to the Impossible raw value, so the policy-tier bridge — not raw
@@ -1505,10 +1577,11 @@ assert.equal(
 
 let resolveNukeProbe;
 let nukeBuilds = 0;
-let nukeTargetStillAttackable = true;
+let staleNukeTargetAlive = true;
 const staleNukeTarget = {
   smallID: () => 8,
   type: () => "Human",
+  isAlive: () => staleNukeTargetAlive,
 };
 const staleNukePlayer = {
   buildables: () =>
@@ -1522,14 +1595,15 @@ const staleNukeBehavior = Object.create(sandbox.__NukeBehavior.prototype);
 staleNukeBehavior.game = { ticks: () => 500 };
 staleNukeBehavior.player = staleNukePlayer;
 staleNukeBehavior.attackBehavior = {
-  shouldAttack: () => nukeTargetStillAttackable,
+  shouldAttack: () => true,
 };
 sandbox.sendAutoBotBuildOrUpgrade = () => {
   nukeBuilds += 1;
   return true;
 };
+assert.equal(staleNukeBehavior.isEligibleNukeTarget(staleNukeTarget), true);
 const pendingStaleNuke = staleNukeBehavior.sendNuke(12, UNIT.AtomBomb, staleNukeTarget);
-nukeTargetStillAttackable = false;
+staleNukeTargetAlive = false;
 resolveNukeProbe([{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }]);
 await pendingStaleNuke;
 assert.equal(nukeBuilds, 0, "a target that becomes invalid during the worker probe is not nuked");
@@ -1870,6 +1944,38 @@ assert.equal(
     aimBehavior.samSalvoAimTile(sam),
     { x: 4, y: 4 },
     "diagonal aim points use the engine's circular blast rather than Manhattan distance",
+  );
+}
+
+// Idle-lane realism: with every tube cooling, maybeSendNuke must skip the
+// full target ladder and candidate sweep instead of probing into a refusal.
+{
+  const idleBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  idleBehavior.player = { gold: () => 10_000_000n, units: () => [] };
+  idleBehavior.hasPendingNukeLaunches = () => false;
+  idleBehavior.canConsiderNukes = () => true;
+  idleBehavior.findBestNukeTarget = () => {
+    throw new Error("target ladder must not run with zero ready silo slots");
+  };
+  const emptyTubeBehavior = Object.create(idleBehavior);
+  emptyTubeBehavior.readySiloShotCapacity = () => 0;
+  await emptyTubeBehavior.maybeSendNuke();
+  assert.equal(
+    emptyTubeBehavior.decisionTelemetry.tubesEmpty,
+    1,
+    "an all-tubes-cooling decision records tubesEmpty and skips the ladder",
+  );
+  assert.equal(
+    emptyTubeBehavior.decisionTelemetry.runs,
+    1,
+    "the idle decision still counts as a run for the durable harness counters",
+  );
+  const readyBehavior = Object.create(idleBehavior);
+  readyBehavior.readySiloShotCapacity = () => 2;
+  await assert.rejects(
+    () => readyBehavior.maybeSendNuke(),
+    /target ladder must not run/,
+    "ready tubes still reach the target ladder",
   );
 }
 

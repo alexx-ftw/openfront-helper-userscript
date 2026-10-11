@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -891,6 +892,29 @@ assert.match(comparison, /OFH_COMPARISON_SEED/);
 assert.match(comparison, /baselineSeed/);
 assert.match(comparison, /candidateSeed/);
 assert.match(comparison, /Unpaired result count/);
+const seedGuardSource = comparison.match(/function assertMatchingSeeds\([\s\S]*?\n\}/)?.[0];
+assert.ok(seedGuardSource, "the comparison validates seeds for every paired match");
+const assertMatchingSeeds = vm.runInNewContext(`(${seedGuardSource})`);
+assert.doesNotThrow(() =>
+  assertMatchingSeeds({ seed: "pair-seed" }, { seed: "pair-seed" }, "scenario", 0),
+);
+assert.throws(
+  () => assertMatchingSeeds({}, { seed: "pair-seed" }, "scenario", 0),
+  /Unmatched construction seeds/,
+);
+assert.throws(
+  () => assertMatchingSeeds({ seed: "pair-seed" }, {}, "scenario", 0),
+  /Unmatched construction seeds/,
+);
+assert.throws(
+  () => assertMatchingSeeds({ seed: "baseline-seed" }, { seed: "candidate-seed" }, "scenario", 0),
+  /Unmatched construction seeds/,
+);
+assert.match(
+  comparison,
+  /const baselineGame = baselineGames\[index\];\s*assertMatchingSeeds\(baselineGame, candidateGame, candidateEntry\.scenario\.id, index\);\s*return \{/,
+  "the seed guard runs before per-match deltas are computed",
+);
 assert.match(comparison, /comebackRecoveries/);
 assert.match(comparison, /closeouts/);
 assert.match(comparison, /averageDeepestDrawdownRatio/);

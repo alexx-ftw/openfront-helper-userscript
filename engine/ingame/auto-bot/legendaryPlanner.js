@@ -23,7 +23,7 @@
 const LEGENDARY_PRIORITY_FIELDS = ["mandatory", "safety", "capacity"];
 const LEGENDARY_PRIMARY_FIELDS = ["gold", "troops"];
 const LEGENDARY_OBJECTIVE_FIELDS = [...LEGENDARY_PRIMARY_FIELDS, "defense"];
-const LEGENDARY_TIE_FIELDS = ["strategic", "deficit", "efficiency"];
+const LEGENDARY_TIE_FIELDS = ["strategic", "deficit", "netTeamGold", "efficiency"];
 
 // The exact fallback covers normal emergency chains. It is bounded by both a
 // route count and a node budget: a greedy miss is never presented as a proof
@@ -160,6 +160,14 @@ function legendaryConstructionObjectiveVector(type, context = {}) {
   );
   const railNeed = legendaryClamp(context.railNeed ?? 1, 0.25, 2.5);
   const tradeNeed = legendaryClamp(context.tradeNeed ?? 1, 0.25, 2.5);
+  const trainSpawnMultiplier = Math.max(
+    0,
+    legendaryScoreValue(context.trainSpawnMultiplier ?? 1),
+  );
+  const tradeShipSpawnMultiplier = Math.max(
+    0,
+    legendaryScoreValue(context.tradeShipSpawnMultiplier ?? 1),
+  );
   const destroyerNeed = legendaryClamp(
     context.destroyerNeed ?? 1,
     0.25,
@@ -167,6 +175,7 @@ function legendaryConstructionObjectiveVector(type, context = {}) {
   );
   const defenseGap = legendaryClamp(context.defenseGap ?? 1, 0.25, 2.5);
   const costFactor = legendaryClamp(context.costFactor ?? 1, 0.25, 1);
+  const hasTradePartner = context.hasTradePartner !== false;
   const portSurvivability = legendaryClamp(
     context.portSurvivability ?? 1,
     0.35,
@@ -185,14 +194,16 @@ function legendaryConstructionObjectiveVector(type, context = {}) {
       break;
     case "Factory":
       vector = {
-        gold: base.gold * railNeed,
+        gold: base.gold * railNeed * trainSpawnMultiplier,
         troops: base.troops,
         defense: base.defense,
       };
       break;
     case "Port":
       vector = {
-        gold: base.gold * tradeNeed,
+        gold: hasTradePartner
+          ? base.gold * tradeNeed * tradeShipSpawnMultiplier
+          : 0,
         troops: base.troops * portSurvivability,
         defense: base.defense * destroyerNeed * portSurvivability,
       };
@@ -221,6 +232,682 @@ function legendaryConstructionObjectiveVector(type, context = {}) {
       legendaryScoreValue(vector[field]) * costFactor,
     ]),
   );
+}
+
+function legendaryEconomySpawnMultipliers(
+  config,
+  factoryCount,
+  trainCount,
+  tradeShipCount,
+) {
+  // Config returns spawn denominators, so baseline/current is live odds relative
+  // to a zero-fleet baseline.
+  const ratio = (baseline, current) => {
+    const baselineRate = Number(baseline);
+    const currentRate = Number(current);
+    return Number.isFinite(baselineRate) && baselineRate > 0 &&
+        Number.isFinite(currentRate) && currentRate > 0
+      ? baselineRate / currentRate
+      : 1;
+  };
+  const factories = Math.max(0, Math.floor(legendaryScoreValue(factoryCount)));
+  const trains = Math.max(0, Math.floor(legendaryScoreValue(trainCount)));
+  const tradeShips = Math.max(0, Math.floor(legendaryScoreValue(tradeShipCount)));
+
+  return {
+    trainSpawnMultiplier:
+      typeof config?.trainSpawnRate === "function"
+        ? ratio(
+            config.trainSpawnRate(factories + 1, 0),
+            config.trainSpawnRate(factories + 1, trains),
+          )
+        : 1,
+    // DIVERGENCE: the client cannot read PortExecution's private rejection
+    // counter, so compare fresh-attempt odds from the live Config function.
+    tradeShipSpawnMultiplier:
+      typeof config?.tradeShipSpawnRate === "function"
+        ? ratio(
+            config.tradeShipSpawnRate(0, 0),
+            config.tradeShipSpawnRate(0, tradeShips),
+          )
+        : 1,
+  };
+}
+
+// Marginal expected-gold policy inputs. The engine pays trains at City/Port
+// stops (Factory stops pay nothing), so an economic candidate is only as
+// productive as the paid route it unlocks; saturation and the match timer are
+// read live from Config instead of being hardcoded ROI constants.
+function legendaryDoomsdayHorizonTicks(
+  matchHorizonTicks,
+  gameConfig,
+  millisecondsPerTick,
+  player,
+) {
+  const rotDeathSeconds = Number(gameConfig?.rotDeathSeconds);
+  if (
+    player?.inDoomsdayClock?.() !== true ||
+    !Number.isFinite(rotDeathSeconds) ||
+    rotDeathSeconds <= 0 ||
+    typeof player?.doomsdayClockTicks !== "function"
+  ) {
+    return matchHorizonTicks;
+  }
+  // DIVERGENCE: the clock is a deterministic loss deadline; no general combat defeat ETA is exposed.
+  const remainingDoomsdayTicks = Math.floor(
+    (rotDeathSeconds * 1_000) / millisecondsPerTick -
+      Math.max(0, Number(player.doomsdayClockTicks()) || 0),
+  );
+  return Math.min(matchHorizonTicks, Math.max(0, remainingDoomsdayTicks));
+}
+
+function legendaryStructureHorizonTicks(game, tick, player) {
+  const config = game?.config?.();
+  const gameConfig = config?.gameConfig?.();
+  const timerMinutes = Number(gameConfig?.maxTimerValue);
+  const millisecondsPerTick = Math.max(
+    1,
+    Number(config?.msPerTick?.() ?? 100),
+  );
+  const currentTick = Math.max(0, Number(tick) || 0);
+  // DIVERGENCE: without a configured match timer, WinCheckExecution's
+  // 170-minute hard cap is the only deterministic horizon exposed by source.
+  const usefulMinutes = Math.min(
+    Number.isFinite(timerMinutes) && timerMinutes > 0 ? timerMinutes : 170,
+    170,
+  );
+  const remainingMilliseconds =
+    usefulMinutes * 60_000 - currentTick * millisecondsPerTick;
+  const matchHorizonTicks = Math.max(
+    0,
+    Math.floor(remainingMilliseconds / millisecondsPerTick),
+  );
+  return legendaryDoomsdayHorizonTicks(
+    matchHorizonTicks,
+    gameConfig,
+    millisecondsPerTick,
+    player,
+  );
+}
+
+// Returns null when live inputs are missing (gate opt-out, ranking unchanged)
+// and { refused: true } when the policy itself forbids the pure-economy build.
+function legendaryExpectedTrainRatePerTick(level, spawnDenominator) {
+  const rolls = Math.max(0, Math.floor(Number(level) || 0));
+  const denominator = Math.max(1, Number(spawnDenominator) || 1);
+  if (rolls === 0) return 0;
+  const spawnChance = 1 - (1 - 1 / denominator) ** rolls;
+  // TrainStationExecution blocks nine ticks after a successful spawn, then
+  // retries on the tenth; expected interval is 9 + the geometric retry time.
+  return spawnChance / (1 + 9 * spawnChance);
+}
+
+function legendaryExpectedTradeShipRatePerTick(level, tradeShipCount, config) {
+  const rolls = Math.max(0, Math.floor(Number(level) || 0));
+  if (rolls === 0 || typeof config?.tradeShipSpawnRate !== "function") return 0;
+  const ships = Math.max(0, Math.floor(Number(tradeShipCount) || 0));
+  let survival = 1;
+  let expectedCycles = 0;
+  for (let rejected = 0; rejected < 512 && survival > 1e-9; rejected += rolls) {
+    expectedCycles += survival;
+    for (let roll = 0; roll < rolls; roll++) {
+      const denominator = Math.max(
+        1,
+        Number(config.tradeShipSpawnRate(rejected + roll, ships)) || 1,
+      );
+      survival *= 1 - 1 / denominator;
+    }
+  }
+  return expectedCycles > 0 ? 1 / (expectedCycles * 10) : 0;
+}
+
+function legendaryPortFallbackRoute(profile, fallbackDistance) {
+  const activeGold = profile?.teamGoldPerArrival ?? profile?.portTradeGoldPerArrival ?? 0;
+  return {
+    weight: 1,
+    postAllianceWeight: profile?.postAllianceWeight ?? 1,
+    distance:
+      profile?.routeDelayTicks ?? profile?.portRouteDelayTicks ?? fallbackDistance,
+    teamGoldPerArrival: activeGold,
+    postAllianceGoldPerArrival:
+      profile?.postAllianceGoldPerArrival ??
+      profile?.portPostAllianceGoldPerArrival ??
+      activeGold,
+    allianceTicksRemaining: profile?.allianceTicksRemaining ?? Infinity,
+  };
+}
+
+function legendaryPortRoutes(profile, fallbackDistance) {
+  const routes = profile?.routes ?? profile?.portRoutes;
+  return Array.isArray(routes) && routes.length > 0
+    ? routes
+    : [legendaryPortFallbackRoute(profile, fallbackDistance)];
+}
+
+function legendaryPortRate(level, upgrade, tradeShipCount, config) {
+  const currentRate = legendaryExpectedTradeShipRatePerTick(
+    level,
+    tradeShipCount,
+    config,
+  );
+  return upgrade
+    ? Math.max(
+        0,
+        legendaryExpectedTradeShipRatePerTick(level + 1, tradeShipCount, config) -
+          currentRate,
+      )
+    : currentRate;
+}
+
+function legendaryPortRouteGold(
+  route,
+  rate,
+  totalWeight,
+  postAllianceTotalWeight,
+  startDelayTicks,
+  horizon,
+) {
+  const weight = Math.max(0, Number(route.weight) || 0) / totalWeight;
+  const postAllianceWeight = Math.max(
+    0,
+    Number(route.postAllianceWeight ?? route.weight) || 0,
+  ) / postAllianceTotalWeight;
+  const delay = Math.max(0, Number(route.distance) || 0);
+  const routeTicks = Math.max(0, horizon - startDelayTicks - delay);
+  const allianceTicks = Math.max(
+    0,
+    Number(route.allianceTicksRemaining ?? Infinity) - startDelayTicks - delay,
+  );
+  const activeTicks = Math.min(routeTicks, allianceTicks);
+  const activeGold = Math.max(0, Number(route.teamGoldPerArrival ?? 0));
+  const postGold = Math.max(
+    0,
+    Number(route.postAllianceGoldPerArrival ?? activeGold),
+  );
+  return rate * (
+    weight * activeGold * activeTicks +
+      postAllianceWeight * postGold * (routeTicks - activeTicks)
+  );
+}
+
+function legendaryPortExpectedGold(profile, options) {
+  const routes = legendaryPortRoutes(profile, options.fallbackDistance);
+  const totalWeight = routes.reduce(
+    (total, route) => total + Math.max(0, Number(route.weight) || 0),
+    0,
+  );
+  if (totalWeight <= 0) return 0;
+  const postAllianceTotalWeight = routes.reduce(
+    (total, route) =>
+      total + Math.max(0, Number(route.postAllianceWeight ?? route.weight) || 0),
+    0,
+  );
+  if (postAllianceTotalWeight <= 0) return 0;
+  const rate = legendaryPortRate(
+    options.level,
+    options.upgrade,
+    options.tradeShipCount,
+    options.config,
+  );
+  return routes.reduce(
+    (total, route) =>
+      total + legendaryPortRouteGold(
+        route,
+        rate,
+        totalWeight,
+        postAllianceTotalWeight,
+        options.startDelayTicks,
+        options.horizon,
+      ),
+    0,
+  );
+}
+
+function legendaryEconomyNetGold(
+  type,
+  { cost = 0, horizonTicks = 0, inputs, config } = {},
+) {
+  const costNumber = Number(cost);
+  const horizon = Number(horizonTicks);
+  const live = inputs && typeof inputs === "object";
+  if (!live || !Number.isFinite(costNumber) || costNumber <= 0) return null;
+  if (!Number.isFinite(horizon) || horizon <= 0) return { refused: true };
+  // Construction delay comes from live unit info (instant build reads as 0);
+  // the candidate earns nothing until the structure completes.
+  const unitInfo = config?.unitInfo?.(type);
+  if (inputs.upgradeAction !== true && !Number.isFinite(Number(unitInfo?.constructionDuration))) {
+    return null;
+  }
+  const constructionDelayTicks = inputs.upgradeAction === true
+    ? 0
+    : Math.max(0, Math.floor(Number(unitInfo.constructionDuration)));
+  const portHasRouteProfiles =
+    type === "Port" &&
+    (Array.isArray(inputs.portRoutes) && inputs.portRoutes.length > 0 ||
+      (Array.isArray(inputs.portUpgradeProfile?.routes) &&
+        inputs.portUpgradeProfile.routes.length > 0) ||
+      Object.values(inputs.portUpgradeProfiles ?? {}).some(
+        (profile) => Array.isArray(profile?.routes) && profile.routes.length > 0,
+      ));
+  const routeDelayTicks = Math.max(
+    0,
+    Number(type === "Port"
+      ? portHasRouteProfiles ? 0 : inputs.portRouteDelayTicks
+      : inputs.routeDelayTicks) || 0,
+  );
+  let additionalDelayTicks = 0;
+  if (
+    type === "Port" &&
+    inputs.hasCompletedTradePartner !== true
+  ) {
+    if (
+      inputs.portSeedWindowOpen !== true &&
+      !(inputs.hasPendingTradePartner === true && portHasRouteProfiles)
+    ) {
+      return { refused: true };
+    }
+    if (inputs.portSeedWindowOpen === true) {
+      const pairReadyTicks = Math.max(
+        constructionDelayTicks,
+        Number(
+          inputs.seedPairDelayTicks ??
+            inputs.pendingPartnerConstructionTicks ??
+            constructionDelayTicks,
+        ) || 0,
+      );
+      additionalDelayTicks = Math.max(0, pairReadyTicks - constructionDelayTicks);
+    }
+  }
+  const productiveTicks = Math.max(
+    0,
+    horizon - constructionDelayTicks - routeDelayTicks - additionalDelayTicks,
+  );
+  if (productiveTicks <= 0) return { refused: true };
+
+  let incomePerTick;
+  if (type === "Factory" || type === "City") {
+    if (typeof config?.trainSpawnRate !== "function") return null;
+    const trainCount = Math.max(0, Math.floor(Number(inputs.trainCount ?? 0)));
+    const sources = Array.isArray(inputs.trainSources) ? inputs.trainSources : [];
+    const actionReadyTicks = constructionDelayTicks + routeDelayTicks;
+      if (type === "Factory") {
+      const destinations = Math.max(
+        0,
+        Math.floor(Number(inputs.factoryPaidStops ?? 0)),
+      );
+      const goldPerTrain = Math.max(
+        0,
+        Number(inputs.factoryTeamGoldPerTrain ?? 0),
+      );
+      if (destinations <= 0) return { refused: true };
+      if (goldPerTrain <= 0) return null;
+      const ownerFactoryCount = Math.max(
+        0,
+        Math.floor(Number(inputs.ownFactoryCount ?? 0)),
+      );
+      const productiveLevels = Array.isArray(inputs.ownProductiveFactoryLevels)
+        ? inputs.ownProductiveFactoryLevels
+        : [];
+      const ownPendingLevels = Array.isArray(inputs.ownPendingFactoryLevels)
+        ? inputs.ownPendingFactoryLevels
+        : [];
+      const pendingReadyTicks = Math.max(
+        actionReadyTicks,
+        Math.max(0, Number(inputs.ownPendingFactoryDelayTicks ?? 0)),
+      );
+      const pendingProductiveTicks = Math.max(0, horizon - pendingReadyTicks);
+      const denominatorFor = (factoryCount) =>
+        Math.max(1, Number(config.trainSpawnRate(factoryCount, trainCount)) || 1);
+      const upgrade = inputs.upgradeAction === true ? inputs.factoryUpgrade : null;
+      // The engine reads the owner's global Factory count for every spawn
+      // roll, so a build/upgrade also slows productive Factories in other
+      // rail clusters. Score every cluster's rate change with its own route
+      // payout instead of only the target cluster.
+      const ownerClusters = Array.isArray(inputs.ownerFactoryClusters) &&
+          inputs.ownerFactoryClusters.length > 0
+        ? inputs.ownerFactoryClusters
+        : [{
+          productiveFactoryLevels: upgrade
+            ? upgrade.productiveFactoryLevels
+            : productiveLevels,
+          pendingFactoryLevels: upgrade
+            ? upgrade.pendingFactoryLevels
+            : ownPendingLevels,
+          teamGoldPerSpawn: upgrade ? upgrade.teamGoldPerTrain : goldPerTrain,
+          postTeamGoldPerSpawn: upgrade
+            ? upgrade.teamGoldPerTrain
+            : goldPerTrain,
+          eligibleTicks: Infinity,
+          isTarget: true,
+        }];
+      const beforeDenominator = denominatorFor(ownerFactoryCount);
+      const afterDenominator = denominatorFor(ownerFactoryCount + 1);
+      if (upgrade) {
+        const levels = Array.isArray(upgrade.productiveFactoryLevels)
+          ? upgrade.productiveFactoryLevels
+          : [];
+        const pendingLevels = Array.isArray(upgrade.pendingFactoryLevels)
+          ? upgrade.pendingFactoryLevels
+          : ownPendingLevels;
+        const targetIndex = Math.floor(Number(upgrade.upgradeFactoryIndex));
+        if (targetIndex < 0 || targetIndex >= levels.length) return { refused: true };
+        const teamGoldPerTrain = Math.max(
+          0,
+          Number(upgrade.teamGoldPerTrain ?? goldPerTrain),
+        );
+        // A pending paid stop only pays after its own construction completes;
+        // this cluster's delay replaces the global route delay for the window.
+        const upgradeReadyTicks = Math.max(
+          routeDelayTicks,
+          Math.max(0, Number(upgrade.pendingStopDelayTicks ?? 0)),
+        );
+        const upgradeWindowTicks = Math.max(0, horizon - upgradeReadyTicks);
+        const targetCluster = ownerClusters.find((cluster) => cluster.isTarget) ??
+          ownerClusters[0];
+        incomePerTick = ownerClusters.reduce((total, cluster) => {
+          const isTarget = cluster === targetCluster;
+          const clusterLevels = isTarget
+            ? levels
+            : Array.isArray(cluster.productiveFactoryLevels)
+              ? cluster.productiveFactoryLevels
+              : [];
+          const clusterPending = isTarget
+            ? pendingLevels
+            : Array.isArray(cluster.pendingFactoryLevels)
+              ? cluster.pendingFactoryLevels
+              : [];
+          const completedDelta = clusterLevels.reduce(
+            (sum, level, index) =>
+              sum + legendaryExpectedTrainRatePerTick(
+                level + (isTarget && index === targetIndex ? 1 : 0),
+                afterDenominator,
+              ) - legendaryExpectedTrainRatePerTick(level, beforeDenominator),
+            0,
+          );
+          const pendingDelta = clusterPending.reduce(
+            (sum, level) =>
+              sum + legendaryExpectedTrainRatePerTick(level, afterDenominator) -
+                legendaryExpectedTrainRatePerTick(level, beforeDenominator),
+            0,
+          );
+          const rollGold = isTarget
+            ? legendaryExpectedTrainRatePerTick(
+                Number(levels[targetIndex] ?? 1) + 1,
+                afterDenominator,
+              ) -
+                legendaryExpectedTrainRatePerTick(
+                  Number(levels[targetIndex] ?? 1),
+                  afterDenominator,
+                )
+            : 0;
+          const perSpawn = Math.max(
+            0,
+            Number(cluster.teamGoldPerSpawn ?? teamGoldPerTrain),
+          );
+          const postPerSpawn = Math.max(
+            0,
+            Number(
+              cluster.postTeamGoldPerSpawn ?? cluster.teamGoldPerSpawn ?? perSpawn,
+            ),
+          );
+          const eligible = Math.max(0, Number(cluster.eligibleTicks ?? Infinity));
+          const activeFraction = Math.min(1, eligible / Math.max(1, horizon));
+          const perTickValue =
+            perSpawn * activeFraction + postPerSpawn * (1 - activeFraction);
+          const pendingWindow = isTarget ? pendingProductiveTicks : horizon;
+          return total +
+            (completedDelta - rollGold) * perTickValue * horizon +
+            rollGold * perTickValue * upgradeWindowTicks +
+            pendingDelta * perTickValue * pendingWindow;
+        }, 0) / productiveTicks;
+      } else {
+        const newFactoryRate = legendaryExpectedTrainRatePerTick(1, afterDenominator);
+        incomePerTick = ownerClusters.reduce((total, cluster) => {
+          const isTarget = cluster.isTarget === true;
+          const clusterLevels = Array.isArray(cluster.productiveFactoryLevels)
+            ? cluster.productiveFactoryLevels
+            : [];
+          const clusterPending = Array.isArray(cluster.pendingFactoryLevels)
+            ? cluster.pendingFactoryLevels
+            : [];
+          const completedDelta = clusterLevels.reduce(
+            (sum, level) =>
+              sum + legendaryExpectedTrainRatePerTick(level, afterDenominator) -
+                legendaryExpectedTrainRatePerTick(level, beforeDenominator),
+            0,
+          );
+          const pendingDelta = clusterPending.reduce(
+            (sum, level) =>
+              sum + legendaryExpectedTrainRatePerTick(level, afterDenominator) -
+                legendaryExpectedTrainRatePerTick(level, beforeDenominator),
+            0,
+          );
+          const perSpawn = Math.max(
+            0,
+            Number(cluster.teamGoldPerSpawn ?? goldPerTrain),
+          );
+          const postPerSpawn = Math.max(
+            0,
+            Number(cluster.postTeamGoldPerSpawn ?? cluster.teamGoldPerSpawn ?? perSpawn),
+          );
+          const eligible = Math.max(0, Number(cluster.eligibleTicks ?? Infinity));
+          const activeFraction = Math.min(1, eligible / Math.max(1, horizon));
+          const perTickValue =
+            perSpawn * activeFraction + postPerSpawn * (1 - activeFraction);
+          const pendingWindow = isTarget ? pendingProductiveTicks : horizon;
+          const newFactoryGold = isTarget
+            ? newFactoryRate * productiveTicks * perSpawn
+            : 0;
+          return total +
+            completedDelta * perTickValue * horizon +
+            pendingDelta * perTickValue * pendingWindow +
+            newFactoryGold;
+        }, 0) / productiveTicks;
+      }
+      } else {
+      if (sources.length === 0) return { refused: true };
+        // TrainStationExecution samples the destination uniformly from the
+        // cluster's tradeable stops, so a City's marginal value is the change
+        // in total team payout (new share minus displaced shares), not the
+        // new stop's share alone.
+        incomePerTick = sources.reduce((total, source) => {
+        const levels = Array.isArray(source.productiveFactoryLevels)
+          ? source.productiveFactoryLevels
+          : [];
+        const pendingLevels = Array.isArray(source.pendingFactoryLevels)
+          ? source.pendingFactoryLevels
+          : [];
+        const factoryCount = Math.max(
+          0,
+          Math.floor(Number(source.factoryCount ?? 0)),
+        );
+        const denominator = Math.max(
+          1,
+          Number(config.trainSpawnRate(factoryCount, trainCount)) || 1,
+        );
+        const stopShare = (value) => {
+          const destinations = Math.max(
+            1,
+            Math.floor(Number(source.paidStopsAfterBuild ?? 1)),
+          );
+          return Math.max(0, Number(value) || 0) * (destinations - 1) / destinations;
+        };
+        const beforePerSpawn = source.beforeTeamGoldPerSpawn === undefined
+          ? stopShare(source.teamGoldPerStop)
+          : Math.max(0, Number(source.beforeTeamGoldPerSpawn) || 0);
+        const afterPerSpawn = Math.max(
+          0,
+          Number(source.teamGoldPerStop ?? 0),
+        );
+        const beforePostPerSpawn = source.beforePostAllianceTeamGoldPerSpawn === undefined
+          ? stopShare(
+              source.postAllianceTeamGoldPerStop ?? source.teamGoldPerStop ?? 0,
+            )
+          : Math.max(0, Number(source.beforePostAllianceTeamGoldPerSpawn) || 0);
+        const afterPostPerSpawn = Math.max(
+          0,
+          Number(
+            source.postAllianceTeamGoldPerStop ?? source.teamGoldPerStop ?? 0,
+          ),
+        );
+        const stopReadyTicks = Math.max(
+          actionReadyTicks,
+          Math.max(0, Number(source.pendingStopDelayTicks ?? 0)),
+        );
+        const allianceEndsAt = Math.max(0, Number(source.eligibleTicks ?? Infinity));
+        const completedProduction = levels.reduce(
+          (sum, level) =>
+            sum + legendaryExpectedTrainRatePerTick(level, denominator),
+          0,
+        );
+        const pendingProduction = pendingLevels.reduce(
+          (sum, level) =>
+            sum + legendaryExpectedTrainRatePerTick(level, denominator),
+          0,
+        );
+        const goldFrom = (production, readyAt) => {
+          const activeBefore = Math.max(
+            0,
+            Math.min(horizon, allianceEndsAt) - readyAt,
+          );
+          const postBefore = Math.max(
+            0,
+            horizon - Math.max(readyAt, allianceEndsAt),
+          );
+          const afterReady = Math.max(readyAt, stopReadyTicks);
+          const activeAfter = Math.max(
+            0,
+            Math.min(horizon, allianceEndsAt) - afterReady,
+          );
+          const postAfter = Math.max(
+            0,
+            horizon - Math.max(afterReady, allianceEndsAt),
+          );
+          return production * (
+            afterPerSpawn * activeAfter +
+              afterPostPerSpawn * postAfter -
+              beforePerSpawn * activeBefore -
+              beforePostPerSpawn * postBefore
+          );
+        };
+        const sourceReadyTicks = Math.max(
+          actionReadyTicks,
+          Math.max(0, Number(source.factoryConstructionDelayTicks ?? 0)),
+        );
+        return total +
+          goldFrom(completedProduction, actionReadyTicks) +
+          goldFrom(pendingProduction, sourceReadyTicks);
+      }, 0);
+      incomePerTick /= productiveTicks;
+    }
+  } else if (type === "Port") {
+    if (typeof config?.tradeShipSpawnRate !== "function") return null;
+    if (
+      inputs.hasCompletedTradePartner !== true &&
+      inputs.portSeedWindowOpen !== true &&
+      !(inputs.hasPendingTradePartner === true && portHasRouteProfiles)
+    ) {
+      // A first Port without any tradeable partner Port on the shared water
+      // is a seed, not current trade income; the two-owner seed window is the
+      // only no-route exception.
+      return { refused: true };
+    }
+    const tradeShipCount = Math.max(
+      0,
+      Math.floor(Number(inputs.tradeShipCount ?? 0)),
+    );
+    const routeIncome = (
+      profile,
+      level,
+      upgrade = false,
+      startDelayTicks = constructionDelayTicks + additionalDelayTicks,
+    ) => legendaryPortExpectedGold(profile, {
+      level,
+      upgrade,
+      tradeShipCount,
+      config,
+      fallbackDistance: inputs.portRouteDelayTicks ?? 0,
+      startDelayTicks,
+      horizon,
+    });
+    const incomingRouteIncome = (profile) =>
+      (profile?.inboundSources ?? []).reduce((total, source) => {
+        // A completed source Port already dispatches to a destination that is
+        // still under construction (PortExecution.tradingPorts does not check
+        // construction), so inbound value starts at the source's own delay.
+        const sourceDelay = Math.max(
+          0,
+          Math.floor(Number(source.constructionDelayTicks) || 0),
+        );
+        const level = Math.max(1, Math.floor(Number(source.level) || 1));
+        return total +
+          routeIncome(source.afterProfile, level, false, sourceDelay) -
+          routeIncome(source.beforeProfile, level, false, sourceDelay);
+      }, 0);
+    const candidatePortIncome = (profile) =>
+      routeIncome(profile, 1) + incomingRouteIncome(profile);
+    let totalTeamGold;
+    if (inputs.upgradeAction === true) {
+      const portUpgradeProfiles = inputs.portUpgradeProfiles ?? {};
+      const profile =
+        inputs.portUpgradeProfile ??
+          portUpgradeProfiles[String(inputs.upgradeStructureId ?? "")] ??
+          inputs;
+      totalTeamGold = routeIncome(
+        profile,
+        Math.max(1, Math.floor(Number(inputs.portUpgradeLevel ?? 1))),
+        true,
+      ) + incomingRouteIncome(profile);
+    } else if (inputs.hasCompletedTradePartner === true) {
+      const candidateProfiles = inputs.portCandidateProfiles ?? [];
+      totalTeamGold = candidateProfiles.length > 0
+        ? Math.max(...candidateProfiles.map(candidatePortIncome))
+        : candidatePortIncome(inputs);
+    } else {
+      const seedSources = Array.isArray(inputs.portSeedSources)
+        ? inputs.portSeedSources
+        : [];
+      if (seedSources.length > 0) {
+        totalTeamGold = seedSources.reduce(
+          (total, source) => {
+            // A seed pair is only income once the partner has actually
+            // committed a Port; count the partner's stream then, and count
+            // only our own stream otherwise.
+            if (
+              source.portSeedStream === "partner" &&
+              inputs.portSeedPartnerCommitted !== true
+            ) {
+              return total;
+            }
+            return total +
+              routeIncome(source, Math.max(1, Math.floor(Number(source.level) || 1)));
+          },
+          0,
+        );
+      } else if (inputs.hasPendingTradePartner === true) {
+        const candidateProfiles = inputs.portCandidateProfiles ?? [];
+        totalTeamGold = candidateProfiles.length > 0
+          ? Math.max(...candidateProfiles.map(candidatePortIncome))
+          : candidatePortIncome(inputs);
+      } else {
+        return { refused: true };
+      }
+    }
+    if (totalTeamGold <= 0) return null;
+    incomePerTick = totalTeamGold / productiveTicks;
+  } else {
+    return null;
+  }
+
+  const eligibleTicks = productiveTicks;
+  const teamGold = incomePerTick * eligibleTicks;
+  return {
+    netTeamGold: teamGold - costNumber,
+    paybackTicks:
+      incomePerTick > 0 ? costNumber / incomePerTick : Infinity,
+    incomePerTick,
+    productiveTicks: eligibleTicks,
+  };
 }
 
 // Conservative upper-bound threat model used as a construction safety gate.
@@ -969,10 +1656,33 @@ function legendaryObjectiveTotal(candidate) {
 }
 
 function compareLegendaryCandidates(left, right) {
+  const bothEconomicActions =
+    (left.type === "City" || left.type === "Factory" || left.type === "Port") &&
+    (right.type === "City" || right.type === "Factory" || right.type === "Port");
+  if (bothEconomicActions) {
+    const capacityPriority =
+      legendaryScoreValue(right.capacity) - legendaryScoreValue(left.capacity);
+    if (capacityPriority !== 0) return capacityPriority;
+    if (left.netTeamGold !== undefined && right.netTeamGold !== undefined) {
+      const leftNetGold = legendaryBigInt(left.netTeamGold);
+      const rightNetGold = legendaryBigInt(right.netTeamGold);
+      if (leftNetGold !== rightNetGold) return leftNetGold > rightNetGold ? -1 : 1;
+    }
+  }
+
   for (const field of LEGENDARY_PRIORITY_FIELDS) {
     const a = legendaryScoreValue(left[field]);
     const b = legendaryScoreValue(right[field]);
     if (a !== b) return b - a;
+  }
+
+  if (
+    left.netTeamGold !== undefined &&
+    right.netTeamGold !== undefined
+  ) {
+    const leftGold = legendaryBigInt(left.netTeamGold);
+    const rightGold = legendaryBigInt(right.netTeamGold);
+    if (leftGold !== rightGold) return leftGold > rightGold ? -1 : 1;
   }
 
   const leftBalance = legendaryObjectiveBalance(left);
@@ -1028,11 +1738,32 @@ function rankLegendaryConstructionActions(candidates, options = {}) {
     .filter((candidate) => candidate && candidate.legal !== false)
     .slice()
     .sort(compareLegendaryCandidates);
-  const affordable = eligible.filter(
+  // Runtime economy candidates always carry an explicit netTeamGold verdict.
+  // Synthetic/non-economic callers without one preserve their legacy ordering.
+  const valueRanked = eligible.filter((candidate) => {
+    if (candidate.netTeamGold === undefined) return true;
+    let netTeamGold;
+    if (typeof candidate.netTeamGold === "bigint") {
+      netTeamGold = candidate.netTeamGold;
+    } else if (
+      typeof candidate.netTeamGold === "number" &&
+      Number.isFinite(candidate.netTeamGold)
+    ) {
+      netTeamGold = BigInt(Math.round(candidate.netTeamGold));
+    } else {
+      return false;
+    }
+    if (netTeamGold > 0n) return true;
+    return (
+      !["City", "Factory", "Port"].includes(candidate.type) ||
+      Number(candidate.capacity ?? 0) > 0
+    );
+  });
+  const affordable = valueRanked.filter(
     (candidate) =>
       candidate.affordable !== false && legendaryBigInt(candidate.cost) <= available,
   );
-  const bestFuture = eligible.find(
+  const bestFuture = valueRanked.find(
     (candidate) => legendaryBigInt(candidate.cost) > available,
   );
 

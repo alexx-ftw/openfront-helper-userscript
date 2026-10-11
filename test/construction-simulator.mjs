@@ -271,6 +271,40 @@ assert.ok(
   "a City that becomes the transit intersection for several existing trains outranks a Factory that opens only one allied route",
 );
 
+const servedFactoryIncome = expectedRailIncomePerTick({
+  adjacency: new Map([
+    ["factory", ["city"]],
+    ["city", ["factory"]],
+  ]),
+  stationTypes: new Map([
+    ["factory", "Factory"],
+    ["city", "City"],
+  ]),
+  factoryLevels: new Map([["factory", 1]]),
+});
+const idleFactoryIncome = expectedRailIncomePerTick({
+  adjacency: new Map([
+    ["factory", ["unused-factory"]],
+    ["unused-factory", ["factory"]],
+    ["disconnected-city", []],
+  ]),
+  stationTypes: new Map([
+    ["factory", "Factory"],
+    ["unused-factory", "Factory"],
+    ["disconnected-city", "City"],
+  ]),
+  factoryLevels: new Map([
+    ["factory", 1],
+    ["unused-factory", 1],
+  ]),
+});
+assert.ok(servedFactoryIncome.totalIncomePerTick > 0);
+assert.equal(
+  idleFactoryIncome.totalIncomePerTick,
+  0,
+  "a Factory without a reachable City or Port is an idle source",
+);
+
 const expectedTransitIncome = expectedRailIncomePerTick({
   adjacency: transitNetwork,
   stationTypes: new Map([
@@ -302,6 +336,299 @@ assert.ok(
   expectedTransitIncome.revenueByStation.get("port-north") >
     expectedTransitIncome.revenueByStation.get("city-east"),
   "expected-income simulation preserves the higher allied stop payout",
+);
+
+// ── Falsifiable coverage bound to the live engine Config ────────────────────
+// The engine sources are TypeScript, so they load through tsx (a devDependency)
+// with the engine tsconfig that maps the engine's resource imports.
+const { register: registerTsxLoader } = await import("tsx/esm/api");
+const unregisterTsxLoader = registerTsxLoader({
+  tsconfig: path.resolve(ROOT, "openfront-engine/tsconfig.json"),
+});
+const { Config: LiveEngineConfig } =
+  await import("../openfront-engine/src/core/configuration/Config.ts");
+const { UnitType: LiveUnitType, PlayerType: LivePlayerType } =
+  await import("../openfront-engine/src/core/game/Game.ts");
+unregisterTsxLoader();
+
+const liveConfig = new LiveEngineConfig({}, null, false);
+const liveGoldForTradeStop = (stopIndex, relation) =>
+  Number(
+    liveConfig.trainGold(relation, stopIndex, {
+      isLobbyCreator: () => false,
+    }),
+  );
+const livePlayerFactoryUnits = (units) => ({
+  type: () => LivePlayerType.Human,
+  unitsOwned: () => units,
+  unitsConstructed: () => units,
+});
+
+// Saturation: the per-tick spawn probability for one level-one Factory with a
+// single destination must equal 1 / (liveRate + 9) — the live rate under the
+// ten-tick spawn cooldown — at every point of the saturation curve.
+const singleFactoryRoute = {
+  adjacency: new Map([
+    ["factory", ["city"]],
+    ["city", ["factory"]],
+  ]),
+  stationTypes: new Map([
+    ["factory", "Factory"],
+    ["city", "City"],
+  ]),
+  stationOwners: new Map([["city", "self"]]),
+  factoryLevels: new Map([["factory", 1]]),
+};
+let previousSpawnProbability = Infinity;
+for (const trainCount of [0, 35, 300, 560, 900, 1200]) {
+  const expected = expectedRailIncomePerTick({
+    ...singleFactoryRoute,
+    trainCount,
+    trainSpawnRate: (factoryUnits, trains) => liveConfig.trainSpawnRate(factoryUnits, trains),
+  });
+  const liveRate = liveConfig.trainSpawnRate(1, trainCount);
+  assert.ok(
+    Math.abs(expected.totalSpawnProbability - 1 / (liveRate + 9)) < 1e-12,
+    `spawn probability follows live Config.trainSpawnRate under the cooldown at ${trainCount} train units`,
+  );
+  assert.ok(
+    expected.totalIncomePerTick > 0,
+    `a served Factory still earns at ${trainCount} train units`,
+  );
+  assert.ok(
+    expected.totalSpawnProbability < previousSpawnProbability,
+    `global train saturation monotonically lowers spawn probability at ${trainCount} train units`,
+  );
+  previousSpawnProbability = expected.totalSpawnProbability;
+}
+// The helper's built-in default must track the live formula on its own, not
+// only when the test injects the live rate.
+for (const trainCount of [0, 900]) {
+  const defaultMirrored = expectedRailIncomePerTick({
+    ...singleFactoryRoute,
+    trainCount,
+  });
+  const defaultLiveRate = liveConfig.trainSpawnRate(1, trainCount);
+  assert.ok(
+    Math.abs(defaultMirrored.totalSpawnProbability - 1 / (defaultLiveRate + 9)) < 1e-9,
+    `the simulator's default spawn rate mirrors live Config.trainSpawnRate at ${trainCount} train units`,
+  );
+}
+
+// The cooldown never lets one Factory exceed a train every ten ticks.
+const cappedSpawn = expectedRailIncomePerTick({
+  ...singleFactoryRoute,
+  trainSpawnRate: () => 1,
+});
+assert.equal(
+  cappedSpawn.totalSpawnProbability,
+  0.1,
+  "the ten-tick spawn cooldown caps one Factory at 0.1 trains per tick",
+);
+
+// The live trainGold ladder: helper route revenue equals the Config payouts
+// exactly, including the post-ten-stop decay to the 5k floor.
+const decayChain = (stops, relation) => {
+  const names = ["factory", ...Array.from({ length: stops }, (_, i) => `stop${i}`)];
+  const adjacency = new Map(
+    names.map((name, i) => [name, i + 1 < names.length ? [names[i + 1]] : [names[i - 1]]]),
+  );
+  const stationTypes = new Map(names.map((name, i) => [name, i === 0 ? "Factory" : "City"]));
+  const stationRelations = new Map(names.slice(1).map((name) => [name, relation]));
+  return simulateRailTransitRevenue({
+    adjacency,
+    stationTypes,
+    factoryIds: ["factory"],
+    destinationIds: [names.at(-1)],
+    stationRelations,
+  }).totalRevenue;
+};
+for (const [relation, stops] of [
+  ["self", 12],
+  ["team", 12],
+  ["ally", 11],
+]) {
+  const expectedTotal = Array.from({ length: stops }, (_, stop) =>
+    liveGoldForTradeStop(stop, relation),
+  ).reduce((a, b) => a + b, 0);
+  assert.equal(
+    decayChain(stops, relation),
+    expectedTotal,
+    `route revenue equals the live ${relation} trainGold ladder across ${stops} paying stops`,
+  );
+}
+assert.equal(decayChain(12, "self"), 110_000, "self decay floors at 5k after ten full-value stops");
+assert.equal(decayChain(11, "ally"), 380_000, "ally decay prices the eleventh stop at 30k");
+
+// Route connectivity: a City candidate on the shared bridge of an existing
+// route earns a stop on every uniform-destination route and pushes the route
+// endpoint into its decayed second-stop payout.
+const bridgeNetwork = new Map([
+  ["factory", ["bridge"]],
+  ["bridge", ["factory", "city"]],
+  ["city", ["bridge"]],
+]);
+const bridgeTypes = new Map([
+  ["factory", "Factory"],
+  ["city", "City"],
+]);
+const bridgeBaseline = expectedRailIncomePerTick({
+  adjacency: bridgeNetwork,
+  stationTypes: bridgeTypes,
+  factoryLevels: new Map([["factory", 1]]),
+});
+const bridgedCity = expectedRailIncomePerTick({
+  adjacency: bridgeNetwork,
+  stationTypes: bridgeTypes,
+  factoryLevels: new Map([["factory", 1]]),
+  candidate: { id: "bridge", type: "City", owner: "self" },
+});
+const bridgeSpawnProbability = bridgedCity.totalSpawnProbability;
+assert.ok(
+  Math.abs(bridgeBaseline.totalIncomePerTick - bridgeBaseline.totalSpawnProbability * 10_000) <
+    1e-9,
+  "before the bridge candidate the route pays only the endpoint City",
+);
+assert.ok(
+  Math.abs(bridgedCity.totalIncomePerTick - bridgeSpawnProbability * 15_000) < 1e-9 &&
+    Math.abs(bridgedCity.revenueByStation.get("bridge") - bridgeSpawnProbability * 10_000) < 1e-9 &&
+    Math.abs(bridgedCity.revenueByStation.get("city") - bridgeSpawnProbability * 5_000) < 1e-9,
+  "a bridging City earns on every route and decays the endpoint to its second-stop payout",
+);
+
+// Horizon/cost: payback uses the live City cost ladder and construction time.
+const cityUnitInfo = liveConfig.unitInfo(LiveUnitType.City);
+const liveCityCostAt = (owned) => Number(cityUnitInfo.cost({}, livePlayerFactoryUnits(owned)));
+assert.deepEqual(
+  [0, 1, 2, 3, 4].map(liveCityCostAt),
+  [125_000, 250_000, 500_000, 1_000_000, 1_000_000],
+  "live City cost doubles per owned unit and caps at 1M",
+);
+const cityConstructionTicks = cityUnitInfo.constructionDuration;
+const projectedRailGold = (incomePerTick, travelHops, horizonTicks) =>
+  incomePerTick * Math.max(0, horizonTicks - cityConstructionTicks - travelHops);
+assert.equal(
+  projectedRailGold(1_000, 2, cityConstructionTicks + 1),
+  0,
+  "a horizon shorter than construction plus travel yields no rail gold",
+);
+const junctionHorizonIncome = expectedRailIncomePerTick({
+  adjacency: transitNetwork,
+  stationTypes: new Map([
+    ["factory-west", "Factory"],
+    ["factory-south", "Factory"],
+    ["city-east", "City"],
+    ["port-north", "Port"],
+  ]),
+  factoryLevels: new Map([["factory-west", 1]]),
+  candidate: { id: "junction", type: "City", owner: "self" },
+});
+const endpointHorizonIncome = expectedRailIncomePerTick({
+  adjacency: new Map([
+    ["factory-west", ["far-end"]],
+    ["far-end", ["factory-west", "dead-end"]],
+    ["dead-end", ["far-end"]],
+  ]),
+  stationTypes: new Map([
+    ["factory-west", "Factory"],
+    ["dead-end", "City"],
+  ]),
+  factoryLevels: new Map([["factory-west", 1]]),
+  candidate: { id: "dead-end", type: "City", owner: "self" },
+});
+assert.ok(
+  junctionHorizonIncome.totalIncomePerTick > endpointHorizonIncome.totalIncomePerTick,
+  "at equal build/travel delay the transit junction City earns more per tick than a dead-end City",
+);
+const cityCost = liveCityCostAt(2);
+assert.ok(
+  cityCost / junctionHorizonIncome.totalIncomePerTick <
+    cityCost / endpointHorizonIncome.totalIncomePerTick,
+  "the transit junction City pays back the live 500k cost sooner than the dead-end City",
+);
+
+// City cap pressure: each live City level is exactly one cityTroopIncrease of
+// cap, so two level-one cities equal one level-two city.
+const cityUnit = (level) => ({ level: () => level, isUnderConstruction: () => false });
+const liveMaxTroopsWith = (cities) =>
+  liveConfig.maxTroops({
+    type: () => LivePlayerType.Human,
+    numTilesOwned: () => 10_000,
+    units: () => cities,
+  });
+assert.equal(liveConfig.cityTroopIncrease(), 250_000, "live City cap growth is 250k per level");
+assert.equal(
+  liveMaxTroopsWith([cityUnit(2)]) - liveMaxTroopsWith([cityUnit(1)]),
+  250_000,
+  "one City upgrade raises the live maxTroops cap by exactly one cityTroopIncrease",
+);
+assert.equal(
+  liveMaxTroopsWith([cityUnit(1), cityUnit(1)]),
+  liveMaxTroopsWith([cityUnit(2)]),
+  "the cap reads summed City levels, so a new City and an upgrade trade evenly for cap",
+);
+
+// Upgrade-versus-new-route: a capacity-flagged City upgrade outranks a
+// new-route Factory, while the same unflagged City only wins through its
+// troop objective. Detection itself lives in computeTroopCapPressure tests.
+const planningSandbox = {
+  Difficulty: { Impossible: "Impossible", Legendary: "Legendary" },
+  GameMode: { Team: "Team" },
+  UNIT: { City: "City", Port: "Port", Factory: "Factory", SAMLauncher: "SAM Launcher" },
+  currentDifficulty: () => "Legendary",
+  getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
+  isAtLeastHardDifficulty: () => true,
+  isLegendaryDifficulty: () => true,
+  state: { settings: { winFixes: true } },
+  withTimeout: async (promise) => promise,
+  WORKER_TIMEOUT_MS: 1,
+};
+planningSandbox.globalThis = planningSandbox;
+executeClassicScript(
+  `${fs.readFileSync(path.join(ROOT, "engine/ingame/auto-bot/legendaryPlanner.js"), "utf8")}\n` +
+    `${structureSource}\nglobalThis.__StructureBehavior = StructureBehavior;`,
+  planningSandbox,
+  { filename: "construction-simulator-planner.js" },
+);
+const planningBehavior = Object.create(planningSandbox.__StructureBehavior.prototype);
+planningBehavior.player = { gold: () => 600_000n };
+const newRouteFactory = {
+  type: "Factory",
+  cost: 500_000n,
+  gold: 4,
+  troops: 1,
+  defense: 1,
+  strategic: 1,
+};
+const capUpgradeFirst = planningBehavior.legendaryConstructionActionGroups(
+  [
+    newRouteFactory,
+    {
+      type: "City",
+      action: "upgrade",
+      upgradeCost: 250_000n,
+      cost: 250_000n,
+      gold: 3,
+      troops: 5,
+      defense: 1,
+      capacity: 1,
+    },
+  ],
+  true,
+);
+assert.equal(
+  `${capUpgradeFirst[0][0].type}:${capUpgradeFirst[0][0].action ?? "build"}`,
+  "City:upgrade",
+  "the Legendary planner sends a capacity-flagged City upgrade before a new-route Factory",
+);
+const cityBuildFirst = planningBehavior.legendaryConstructionActionGroups(
+  [newRouteFactory, { type: "City", cost: 250_000n, gold: 3, troops: 5, defense: 1 }],
+  true,
+);
+assert.equal(
+  `${cityBuildFirst[0][0].type}:${cityBuildFirst[0][0].action ?? "build"}`,
+  "City:build",
+  "without cap pressure the troop-heavy City objective outranks the new-route Factory",
 );
 
 process.stdout.write("construction simulator tests passed\n");

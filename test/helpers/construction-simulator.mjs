@@ -5,6 +5,21 @@ const defaultGoldForTradeStop = (stopIndex, relation = "self") => {
   return Math.max(5_000, baseGold - Math.max(0, stopIndex - 9) * 5_000);
 };
 
+// Mirror of Config.ts trainSaturation/trainSpawnRate: early boost 1.5x,
+// sigmoid damping past 560 train units, 0.25 plateau, hard collapse past 900.
+// DetMath.exp differs from Math.exp only in the last bits; live parity is
+// asserted against the real Config in test/construction-simulator.mjs.
+const trainSaturation = (trainUnits) => {
+  const sigmoid = (value, decayRate, midpoint) =>
+    1 / (1 + Math.exp(-decayRate * (value - midpoint)));
+  const boost = 1 + 0.5 * Math.exp(-trainUnits / 30);
+  const damping = 1 - sigmoid(trainUnits, Math.LN2 / 100, 560);
+  const plateau = 0.25 * (1 - sigmoid(trainUnits, Math.LN2 / 150, 900));
+  return boost * Math.max(damping, plateau);
+};
+const defaultTrainSpawnRate = (playerFactoryUnits, trainUnits = 0) =>
+  Math.max(1, Math.floor(((playerFactoryUnits + 10) * 15) / trainSaturation(trainUnits)));
+
 export function createConstructionSimulator({
   width,
   height,
@@ -81,6 +96,8 @@ export function expectedRailIncomePerTick({
   factoryLevels = new Map(),
   candidate = null,
   goldForTradeStop = defaultGoldForTradeStop,
+  trainSpawnRate = defaultTrainSpawnRate,
+  trainCount = 0,
 }) {
   const types = new Map(stationTypes);
   const owners = new Map(stationOwners);
@@ -94,8 +111,11 @@ export function expectedRailIncomePerTick({
   const revenueByStation = new Map();
   let totalIncomePerTick = 0;
   let totalSpawnProbability = 0;
-  const factoryCount = Array.from(types.values()).filter((type) => type === "Factory").length;
-  const spawnRate = (factoryCount + 10) * 15;
+  const playerFactoryUnits = Array.from(levels.values()).reduce(
+    (total, level) => total + Math.max(0, Number(level) || 0),
+    0,
+  );
+  const spawnRate = Math.max(1, Number(trainSpawnRate(playerFactoryUnits, trainCount)) || 1);
 
   for (const [factory, level] of levels) {
     if (types.get(factory) !== "Factory" || level <= 0) continue;

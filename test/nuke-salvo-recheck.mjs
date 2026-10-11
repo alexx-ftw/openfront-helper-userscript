@@ -74,6 +74,10 @@ executeClassicScript(
   },
 );
 
+// Fixture stub: harness players lack the real team helpers behind
+// legendaryMissileDefenseUrgent; blocks that test urgency override per instance.
+sandbox.__StructureBehavior.prototype.legendaryMissileDefenseUrgent = () => false;
+
 // ── Synthetic salvo world ────────────────────────────────────────────────────
 // One hostile player owns the SAMs; `covering` is what game.nearbyUnits reports
 // around the plan tile and `targetSams` is the hostile roster the salvo target
@@ -110,6 +114,8 @@ function makeSalvoWorld() {
     { maybeSendEmoji() {} },
   );
   behavior.cost = async () => 1n;
+  behavior.nukeSpawn = () => 11;
+  behavior.isTrajectoryInterceptableBySam = () => false;
   world.sam = (id, level) => ({
     id: () => id,
     level: () => level,
@@ -567,6 +573,68 @@ for (const restriction of [
   assert.equal(upgraded, restriction === "permitted" || restriction === "impossible-capacity");
   sandbox.state.nukeWantSlots = null;
 }
+{
+  // Legendary missile-defense urgency defers silo capacity work while a
+  // hostile missile is live; the structure lane already owns the SAM-vs-silo
+  // affordability tradeoff, so no second probe may re-order it.
+  const { behavior, game, player, world } = makeSalvoWorld();
+  const sam = world.sam(77, 3);
+  game.units = () => [sam];
+  game.config = () => ({
+    isUnitDisabled: () => false,
+    maxSamRange: () => 150,
+    SAMCooldown: () => 100,
+  });
+  player.units = () => [];
+  const failedTarget = behavior.rememberFailedSamTarget({
+    targetSamId: 77,
+    targetTile: 20,
+    totalBombs: 4,
+    siloEntries: [],
+    coveringSamIds: new Set([77]),
+  });
+  const storedRequest = sandbox.state.nukeWantSlots;
+  const silo = { id: () => 1, level: () => 1 };
+  behavior.getRouteEligibleSilos = () => [silo];
+  behavior.hasUsefulSiloUpgradeCapacity = () => true;
+  const structures = new sandbox.__StructureBehavior({}, game, player);
+  structures.nukeBehavior = behavior;
+  behavior.structureBehavior = structures;
+  structures.nukeDemandScopedSilos = (_request, routeEligibleSilos = null) =>
+    routeEligibleSilos ?? [silo];
+  structures.availableGoldAfterReserve = () => 550n;
+  structures.safeStructureCost = () => 150n;
+  structures.economicConstructionPressure = () => ({ cost: 0n });
+  structures.defensiveConstructionReserve = () => 0n;
+  structures.buildableForUnits = async () => [{ cost: 150n, canUpgrade: true }];
+  structures.rankNukeDemandSiloUpgrades = () => [{ silo }];
+  let upgrades = 0;
+  structures.executeStructureUpgradeCandidate = async () => {
+    upgrades++;
+    return true;
+  };
+  structures.legendaryMissileDefenseUrgent = () => true;
+  assert.equal(
+    await behavior.maybeUpgradeHelpfulSilo(failedTarget),
+    false,
+    "an affordable timely SAM defers the silo capacity upgrade",
+  );
+  assert.equal(upgrades, 0, "the urgent-defense guard emits no silo upgrade");
+  assert.equal(
+    sandbox.state.nukeWantSlots,
+    storedRequest,
+    "the guard defers without consuming the capacity demand",
+  );
+  sandbox.state.nukeWantSlots = storedRequest;
+  structures.legendaryMissileDefenseUrgent = () => false;
+  assert.equal(
+    await behavior.maybeUpgradeHelpfulSilo(failedTarget),
+    true,
+    "with no missile emergency the demand lane may upgrade",
+  );
+  assert.equal(upgrades, 1, "the deferred upgrade executes once the emergency clears");
+  sandbox.state.nukeWantSlots = null;
+}
 
 for (const preferredIds of [[], [99], [2]]) {
   const { behavior, game, player, world } = makeSalvoWorld();
@@ -941,7 +1009,7 @@ for (const lane of ["ordinary", "freeze"]) {
   } else {
     behavior.freezeGiantStrikeTarget = () => nukeTarget;
     behavior.selectAffordableNuke = async () => selected;
-    behavior.collectCandidatesWithRetry = async () => ({ list: candidates });
+    behavior.collectNukeCandidates = async () => candidates;
     await behavior.maybeFreezeGiantStrike([silo], "Legendary");
   }
   assert.equal(emitted.length, 1, `${lane}: launch the first atom now`);
@@ -952,6 +1020,242 @@ for (const lane of ["ordinary", "freeze"]) {
   );
   assert.equal(behavior._pendingNukeLaunches[0].salvo.plannedCoveringLevel, 1);
   launchSink = null;
+}
+
+{
+  const { game, nukeTarget, behavior, world, player } = makeSalvoWorld();
+  player.units = () => [];
+  const pinnedSam = world.sam("freeze-demand-sam", 1);
+  nukeTarget.units = (type) => (type === UNIT.SAMLauncher ? [pinnedSam] : []);
+  const giant = {
+    smallID: () => 3,
+    team: () => null,
+    isAlive: () => true,
+    isPlayer: () => true,
+    units: () => [],
+  };
+  game.players = () => [nukeTarget, giant];
+  const request = {
+    need: 4,
+    targetSamId: pinnedSam.id(),
+    targetTile: 20,
+    unblockedSiloIds: [],
+  };
+  sandbox.state.nukeWantSlots = request;
+  let frozenTarget = null;
+  behavior.freezeGiantStrikeTarget = () => giant;
+  behavior.collectNukeCandidates = async () => {
+    throw new Error("a demand pinned to another player must stop the freeze lane");
+  };
+  behavior.sendNuke = async (_tile, _type, target) => {
+    frozenTarget = target;
+  };
+  behavior.coveringSamsForSamFreeTarget = () => [];
+  const samCleanupTargets = [];
+  const maybeDestroyEnemySam = behavior.maybeDestroyEnemySam.bind(behavior);
+  behavior.maybeDestroyEnemySam = async (target) => {
+    samCleanupTargets.push(target);
+    return maybeDestroyEnemySam(target);
+  };
+  await behavior.maybeFreezeGiantStrike([], "Legendary");
+  assert.strictEqual(frozenTarget, null, "a pinned SAM demand prevents the giant fallback shot");
+  assert.deepEqual(
+    samCleanupTargets,
+    [],
+    "a SAM demand pinned to another player suppresses giant SAM cleanup",
+  );
+  assert.strictEqual(
+    sandbox.state.nukeWantSlots,
+    request,
+    "a freeze-giant fallback cannot clear a live SAM demand pinned to another target",
+  );
+  sandbox.state.nukeWantSlots = null;
+}
+
+{
+  const { game, nukeTarget, behavior, world, player } = makeSalvoWorld();
+  player.units = () => [];
+  const pinnedSam = world.sam("freeze-same-target-sam", 1);
+  nukeTarget.units = (type) => (type === UNIT.SAMLauncher ? [pinnedSam] : []);
+  game.players = () => [nukeTarget];
+  const request = {
+    need: 4,
+    targetSamId: pinnedSam.id(),
+    targetTile: 20,
+    unblockedSiloIds: [],
+  };
+  sandbox.state.nukeWantSlots = request;
+  behavior.freezeGiantStrikeTarget = () => nukeTarget;
+  behavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
+  behavior.collectNukeCandidates = async () => [];
+  behavior.partitionCandidatesBySamCoverage = () => ({ clear: [] });
+  behavior.selectBuildableNukeCandidate = async () => null;
+  const samCleanupTargets = [];
+  const maybeDestroyEnemySam = behavior.maybeDestroyEnemySam.bind(behavior);
+  behavior.maybeDestroyEnemySam = async (target) => {
+    samCleanupTargets.push(target);
+    return maybeDestroyEnemySam(target);
+  };
+  await behavior.maybeFreezeGiantStrike([], "Legendary");
+  assert.deepEqual(
+    samCleanupTargets,
+    [nukeTarget],
+    "a freeze strike may service a SAM demand pinned to its own target",
+  );
+  sandbox.state.nukeWantSlots = null;
+}
+
+{
+  const { nukeTarget, behavior, player } = makeSalvoWorld();
+  player.units = () => [];
+  sandbox.state.nukeWantSlots = null;
+  behavior.freezeGiantStrikeTarget = () => nukeTarget;
+  behavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
+  behavior.collectNukeCandidates = async () => [];
+  behavior.partitionCandidatesBySamCoverage = () => ({ clear: [] });
+  behavior.selectBuildableNukeCandidate = async () => null;
+  const samCleanupTargets = [];
+  const maybeDestroyEnemySam = behavior.maybeDestroyEnemySam.bind(behavior);
+  behavior.maybeDestroyEnemySam = async (target) => {
+    samCleanupTargets.push(target);
+    return maybeDestroyEnemySam(target);
+  };
+  await behavior.maybeFreezeGiantStrike([], "Legendary");
+  assert.deepEqual(
+    samCleanupTargets,
+    [nukeTarget],
+    "without a pinned SAM demand the freeze fallback still checks the selected giant",
+  );
+  sandbox.state.nukeWantSlots = null;
+}
+
+{
+  const { nukeTarget, behavior, player } = makeSalvoWorld();
+  const maybeDestroyEnemySam = behavior.maybeDestroyEnemySam.bind(behavior);
+  const silo = { isUnderConstruction: () => false };
+  player.units = (type) => (type === UNIT.MissileSilo ? [silo] : []);
+  const previousDifficulty = sandbox.currentDifficulty;
+  const previousHardGate = sandbox.isAtLeastHardDifficulty;
+  sandbox.currentDifficulty = () => "Easy";
+  sandbox.isAtLeastHardDifficulty = () => false;
+  behavior.canConsiderNukes = () => true;
+  behavior.findBestNukeTarget = () => nukeTarget;
+  behavior.isValidNukeTarget = () => true;
+  behavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
+  behavior.shouldDeferNukeForEconomy = () => false;
+  behavior.collectCandidatesWithRetry = async () => ({
+    list: [{ tile: 30, value: 100 }],
+    retargeted: null,
+  });
+  behavior.partitionCandidatesBySamCoverage = () => ({ clear: [{ tile: 30, value: 100 }] });
+  behavior.selectBuildableNukeCandidate = async () => ({ tile: 30, value: 100 });
+  behavior.nukeHasPositiveExpectedValue = async () => true;
+  behavior.sendNuke = async () => true;
+  behavior.maybeDestroyEnemySam = async () => false;
+  behavior.maybeFirePostSalvoHydrogen = async () => false;
+  let freezeCalls = 0;
+  behavior.maybeFreezeGiantStrike = async () => {
+    freezeCalls += 1;
+  };
+  try {
+    await behavior.maybeSendNuke();
+    assert.equal(
+      freezeCalls,
+      0,
+      "the freeze lane is skipped after the ordinary lane successfully fires",
+    );
+    behavior.selectBuildableNukeCandidate = async () => null;
+    await behavior.maybeSendNuke();
+    assert.equal(
+      freezeCalls,
+      1,
+      "the freeze lane remains available when the ordinary lane has no shot",
+    );
+    sandbox.currentDifficulty = () => "Hard";
+    sandbox.isAtLeastHardDifficulty = () => true;
+    const targetSam = { id: () => 91, level: () => 1, isUnderConstruction: () => false };
+    nukeTarget.units = (type) => (type === UNIT.SAMLauncher ? [targetSam] : []);
+    behavior.createSamOverwhelmPlan = () => ({ capacityMissing: true });
+    behavior.rememberFailedSamTarget = () => ({ targetSamId: targetSam.id() });
+    behavior.maybeUpgradeHelpfulSilo = async () => true;
+    behavior.maybeDestroyEnemySam = maybeDestroyEnemySam;
+    freezeCalls = 0;
+    await behavior.maybeSendNuke();
+    assert.equal(
+      freezeCalls,
+      0,
+      "a targeted Silo upgrade prevents the freeze lane from spending its capacity",
+    );
+
+    const partialPlan = {
+      targetTile: 20,
+      targetSamId: targetSam.id(),
+      totalBombs: 2,
+      coveringSamLevels: 1,
+      coveringSamIds: [],
+      siloEntries: [],
+      window: [],
+      launchSequence: [],
+    };
+    behavior.createSamOverwhelmPlan = () => partialPlan;
+    behavior.getSamSalvo = () => ({ bombsToFire: 2, waits: [0, 0] });
+    behavior.hasPendingNukeLaunches = () => false;
+    let partialSends = 0;
+    behavior.sendNuke = async () => ++partialSends === 1;
+    behavior.queueDelayedNukeLaunch = () => false;
+    sandbox.state.nukeWantSlots = null;
+    freezeCalls = 0;
+    await behavior.maybeSendNuke();
+    assert.equal(partialSends, 2, "the ordinary lane attempts both bombs in the partial salvo");
+    assert.equal(
+      freezeCalls,
+      0,
+      "a partially sent SAM salvo suppresses the same-tick freeze fallback",
+    );
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+    sandbox.isAtLeastHardDifficulty = previousHardGate;
+    sandbox.state.nukeWantSlots = null;
+  }
+}
+
+{
+  const { game, nukeTarget, behavior, player } = makeSalvoWorld();
+  player.units = () => [];
+  const giant = {
+    smallID: () => 3,
+    team: () => null,
+    isAlive: () => true,
+    isPlayer: () => true,
+    units: () => [],
+  };
+  game.players = () => [nukeTarget, giant];
+  behavior.freezeGiantStrikeTarget = () => giant;
+  behavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
+  let candidateOwner = null;
+  behavior.collectNukeCandidates = async (target) => {
+    candidateOwner = target;
+    return [{}];
+  };
+  behavior.collectCandidatesWithRetry = async () => {
+    throw new Error("the freeze fallback must not use value-directed retargeting");
+  };
+  behavior.partitionCandidatesBySamCoverage = () => ({ clear: [{}] });
+  behavior.selectBuildableNukeCandidate = async () => ({ tile: 30 });
+  let strikeTarget = null;
+  let cleanupTarget = null;
+  behavior.sendNuke = async (_tile, _type, target) => {
+    strikeTarget = target;
+    return true;
+  };
+  behavior.maybeDestroyEnemySam = async (target) => {
+    cleanupTarget = target;
+  };
+  await behavior.maybeFreezeGiantStrike([], "Legendary");
+  assert.strictEqual(candidateOwner, giant, "the freeze fallback scores only the selected giant");
+  assert.strictEqual(strikeTarget, giant, "the freeze fallback strikes the selected giant");
+  assert.strictEqual(cleanupTarget, giant, "SAM cleanup remains aligned with the selected giant");
+  sandbox.state.nukeWantSlots = null;
 }
 
 const reservation = () => ({
@@ -2038,6 +2342,98 @@ launchSink = null;
   sandbox.state.nukeWantSlots = null;
 }
 {
+  // Unsatisfiable-demand release: with every silo at its level cap and the
+  // nation silo budget exhausted, no upgrade or spawn can close the request.
+  // The demand must release instead of pinning the surplus lane and the nuke
+  // lanes to this SAM owner forever.
+  const { world, game, player, behavior } = makeSalvoWorld();
+  game.units = () => [world.sam("demand-sam", 2)];
+  const maxedSilos = [1, 2, 3].map((id) => ({
+    id: () => id,
+    level: () => 5,
+    tile: () => 5 + id,
+    isUnderConstruction: () => false,
+  }));
+  player.units = (type) => (type === UNIT.MissileSilo ? maxedSilos : []);
+  const structures = new sandbox.__StructureBehavior({}, game, player);
+  structures.nukeBehavior = behavior;
+  structures.availableGoldAfterReserve = () => 200n;
+  structures.safeStructureCost = () => 20n;
+  structures.economicConstructionPressure = () => ({ cost: 0n });
+  structures.defensiveConstructionReserve = () => 0n;
+  structures.buildableForUnits = async () => [];
+  structures.rankNukeDemandSiloUpgrades = () => [];
+  structures.maybeSpawnStructure = async () => {
+    throw new Error("spawn must not run for an unsatisfiable demand");
+  };
+  behavior.createSamOverwhelmPlan = () => ({ capacityMissing: true });
+  behavior.isTrajectoryInterceptableBySam = () => false;
+  sandbox.state.nukeWantSlots = {
+    need: 12,
+    targetSamId: "demand-sam",
+    at: 800,
+    targetTile: 20,
+    unblockedSiloIds: [],
+  };
+  assert.equal(
+    await structures.maybeUpgradeSiloForNukeDemand(),
+    false,
+    "an unsatisfiable demand declines instead of spawning",
+  );
+  assert.equal(
+    sandbox.state.nukeWantSlots,
+    null,
+    "a demand no upgrade or spawn can ever satisfy is released",
+  );
+}
+{
+  // Counterforce ordering: the anti-SAM lane must strip the umbrella that
+  // actually shields target value (cost per shielded value), not merely the
+  // cheapest launcher. A level-1 SAM covering nothing must not monopolize
+  // atoms while a level-2 SAM over the City cluster stays unpinned.
+  const { game, player, nukeTarget, behavior } = makeSalvoWorld();
+  launches.length = 0;
+  const cheapSam = { id: () => "cheap", level: () => 1, tile: () => 900 };
+  const umbrellaSam = { id: () => "umbrella", level: () => 2, tile: () => 20 };
+  const city = { type: () => UNIT.City, level: () => 3, tile: () => 20 };
+  nukeTarget.units = (type) => {
+    if (type === UNIT.SAMLauncher) return [cheapSam, umbrellaSam];
+    if (type === UNIT.City) return [city];
+    return [];
+  };
+  game.euclideanDistSquared = (a, b) => (a === b ? 0 : 999_999);
+  game.config = () => ({
+    isUnitDisabled: () => false,
+    maxSamRange: () => 150,
+    samRange: () => 150,
+    defaultNukeSpeed: () => 1,
+  });
+  const silo = {
+    id: () => 1,
+    level: () => 2,
+    tile: () => 5,
+    isUnderConstruction: () => false,
+  };
+  player.units = (type) => (type === UNIT.MissileSilo ? [silo] : []);
+  behavior.createSamOverwhelmPlan = (sam) => ({
+    capacityMissing: true,
+    targetSamId: sam.id(),
+    targetTile: sam.tile(),
+    coveringSamIds: new Set([sam.id()]),
+    totalBombs: sam.level() + 1,
+    siloEntries: [],
+  });
+  behavior.maybeUpgradeHelpfulSilo = async () => {};
+  await behavior.maybeDestroyEnemySam(nukeTarget);
+  assert.equal(
+    sandbox.state.nukeWantSlots?.targetSamId,
+    "umbrella",
+    "the salvo demand pins the SAM that shields the target's value, not the cheapest one",
+  );
+  sandbox.state.nukeWantSlots = null;
+  behavior._samDemandRequest = null;
+}
+{
   const { world, player, nukeTarget, behavior } = makeSalvoWorld();
   launches.length = 0;
   const replacement = world.sam("replacement", 3);
@@ -2205,6 +2601,219 @@ launchSink = null;
   sandbox.currentDifficulty = previousDifficulty;
   sandbox.state.nukeWantSlots = null;
   launchSink = null;
+}
+
+{
+  const { behavior, nukeTarget } = makeSalvoWorld();
+  behavior.getSamSalvo = () => ({ bombsToFire: 2, waits: [0, 0] });
+  behavior.hasPendingNukeLaunches = () => false;
+  let sends = 0;
+  behavior.sendNuke = async () => ++sends === 1;
+  behavior.queueDelayedNukeLaunch = () => false;
+  assert.equal(
+    await behavior.fireSamSalvo(
+      {
+        targetTile: 20,
+        targetSamId: 2,
+        totalBombs: 2,
+        coveringSamLevels: 1,
+        coveringSamIds: [],
+        siloEntries: [],
+        window: [],
+        launchSequence: [],
+      },
+      nukeTarget,
+      1n,
+    ),
+    true,
+    "a partially sent ordinary salvo still suppresses a second freeze strike this tick",
+  );
+  assert.equal(sends, 2, "the salvo reports the first send after the second send and queue fail");
+}
+
+{
+  const { game, nukeTarget, behavior, world, player } = makeSalvoWorld();
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => "Legendary";
+  const requestedSam = world.sam("ready-demand-sam", 1);
+  world.targetSams.push(requestedSam);
+  player.units = (type) =>
+    type === UNIT.MissileSilo
+      ? [{ id: () => "silo-1", level: () => 2, isUnderConstruction: () => false }]
+      : [];
+  const ordinaryTarget = {
+    smallID: () => 3,
+    team: () => null,
+    isAlive: () => true,
+    isPlayer: () => true,
+    units: () => [],
+  };
+  game.players = () => [nukeTarget, ordinaryTarget];
+  behavior.isValidNukeTarget = () => true;
+  behavior.isValidNukeDestination = () => true;
+  behavior.canConsiderNukes = () => true;
+  behavior.findBestNukeTarget = () => ordinaryTarget;
+  behavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
+  behavior.shouldDeferNukeForEconomy = () => false;
+  behavior.collectCandidatesWithRetry = async (target) => ({
+    list: [{ tile: 40, value: 100 }],
+    retargeted: target,
+  });
+  behavior.partitionCandidatesBySamCoverage = () => ({ clear: [{ tile: 40, value: 100 }] });
+  const clearShotTargets = [];
+  behavior.fireLegendaryClearFallthrough = async (_clear, target) => {
+    clearShotTargets.push(target);
+    return true;
+  };
+  const salvoTargets = [];
+  behavior.maybeDestroyEnemySam = async (target) => {
+    salvoTargets.push(target);
+    return true;
+  };
+  behavior.rememberFailedSamTarget({
+    targetSamId: requestedSam.id(),
+    targetTile: 20,
+    totalBombs: 2,
+    coveringSamIds: new Set([requestedSam.id()]),
+    siloEntries: [{ silo: { id: () => "silo-1" }, interceptable: false }],
+  });
+  behavior.structureBehavior = { samOverwhelmPlanStillMissing: () => false };
+  // The structure phase closes its shared request once the salvo fits.
+  sandbox.state.nukeWantSlots = null;
+  await behavior.maybeSendNuke();
+  assert.deepEqual(
+    salvoTargets,
+    [nukeTarget],
+    "a capacity-ready SAM demand survives structure-phase closure and is serviced first",
+  );
+  assert.deepEqual(
+    clearShotTargets,
+    [],
+    "a clear Legendary shot at another player cannot bypass a ready SAM salvo",
+  );
+  sandbox.currentDifficulty = previousDifficulty;
+  sandbox.state.nukeWantSlots = null;
+}
+
+{
+  const { game, player, behavior } = makeSalvoWorld();
+  const tribe = {
+    smallID: () => 2,
+    team: () => null,
+    isAlive: () => true,
+    isPlayer: () => true,
+    type: () => sandbox.PlayerType.Bot,
+  };
+  const human = { ...tribe, smallID: () => 3, type: () => sandbox.PlayerType.Human };
+  const nation = { ...tribe, smallID: () => 4, type: () => sandbox.PlayerType.Nation };
+  assert.equal(behavior.isValidNukeTarget(tribe), true, "generic Bot ownership remains valid");
+  assert.equal(behavior.isEligibleNukeTarget(tribe), false, "tribes are not nuclear recipients");
+  assert.equal(behavior.isEligibleNukeTarget(human), true, "human targets remain eligible");
+  assert.equal(behavior.isEligibleNukeTarget(nation), true, "nation targets remain eligible");
+  game.owner = () => tribe;
+  assert.equal(
+    behavior.isValidNukeDestination(20, false),
+    true,
+    "tribe-owned territory remains a valid destination when the recipient is different",
+  );
+
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => "Hard";
+  game.players = () => [player, tribe];
+  try {
+    assert.equal(behavior.findBestNukeTarget(), null, "the selector never returns a Bot tribe");
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+  }
+}
+
+{
+  const { game, player, behavior } = makeSalvoWorld();
+  const target = {
+    smallID: () => 2,
+    team: () => null,
+    isAlive: () => true,
+    isPlayer: () => true,
+    type: () => sandbox.PlayerType.Human,
+  };
+  game.owner = () => target;
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => "Easy";
+  behavior.nukeLaunchRouteViable = () => true;
+  behavior.rememberSuccessfulNukeLaunch = async () => {};
+  let policyChecks = 0;
+  behavior.attackBehavior.shouldAttack = () => ++policyChecks === 1;
+  player.buildables = async () => [{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }];
+  launches.length = 0;
+  launchSink = launches;
+  try {
+    assert.equal(
+      behavior.isEligibleNukeTarget(target),
+      true,
+      "target selection accepts its one policy result",
+    );
+    assert.equal(await behavior.sendNuke(20, UNIT.AtomBomb, target), true);
+    assert.equal(policyChecks, 1, "launch revalidation does not reroll Easy attack policy");
+    assert.equal(launches.length, 1);
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+    launchSink = null;
+  }
+}
+
+{
+  const { game, player, nukeTarget, behavior } = makeSalvoWorld();
+  nukeTarget.isPlayer = () => true;
+  nukeTarget.type = () => sandbox.PlayerType.Human;
+  game.owner = () => nukeTarget;
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => "Easy";
+  behavior.nukeLaunchRouteViable = () => true;
+  behavior.rememberSuccessfulNukeLaunch = async () => {};
+  player.buildables = async () => {
+    nukeTarget.type = () => sandbox.PlayerType.Bot;
+    return [{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }];
+  };
+  launches.length = 0;
+  launchSink = launches;
+  try {
+    assert.equal(await behavior.sendNuke(20, UNIT.AtomBomb, nukeTarget), false);
+    assert.equal(launches.length, 0, "a target that becomes a tribe during the probe is rejected");
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+    launchSink = null;
+  }
+}
+
+for (const difficulty of ["Hard", "Legendary"]) {
+  const { game, player, nukeTarget, behavior } = makeSalvoWorld();
+  nukeTarget.isPlayer = () => true;
+  nukeTarget.type = () => sandbox.PlayerType.Nation;
+  game.owner = () => nukeTarget;
+  let samAppeared = false;
+  behavior.nukeSpawn = () => 11;
+  behavior.isTrajectoryInterceptableBySam = () => samAppeared;
+  behavior.rememberSuccessfulNukeLaunch = async () => {};
+  player.buildables = async () => {
+    samAppeared = true;
+    return [{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }];
+  };
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => difficulty;
+  launches.length = 0;
+  launchSink = launches;
+  try {
+    assert.equal(
+      behavior.nukeLaunchRouteViable(20, UNIT.AtomBomb, nukeTarget, null),
+      true,
+      `${difficulty} initially permits the clear route`,
+    );
+    assert.equal(await behavior.sendNuke(20, UNIT.AtomBomb, nukeTarget), false);
+    assert.equal(launches.length, 0, `${difficulty} rejects a route blocked during the probe`);
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+    launchSink = null;
+  }
 }
 
 process.stdout.write("nuke salvo recheck tests passed\n");

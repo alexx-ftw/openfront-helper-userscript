@@ -1706,15 +1706,20 @@ export class BundledOpponentBot {
     const behavior = this.nationBot?.structureBehavior;
     if (!behavior || behavior.__ofhStructureTraceEnabled === true) return;
     behavior.__ofhStructureTraceEnabled = true;
-    this.enableStructureSpawnTrace(behavior);
-    this.enableStructurePortTrace(behavior);
-    this.enableStructurePlacementTrace(behavior);
-    this.enableStructureSamTrace(behavior);
-    this.enableStructureUpgradeTrace(behavior);
-    this.enableDefensePostTrace(behavior);
-    this.enableLandDefenseTrace();
-    this.enableLegendaryCandidateTrace(behavior);
-    this.enableSamReadinessTrace(behavior);
+    // Bisect knob: OFH_TRACE_ONLY=spawn,port,placement,sam,upgrade,defensepost,
+    // landdefense,candidates,samreadiness installs only the named wrappers so a
+    // behavior flip can be attributed to one trace call instead of all nine.
+    const only = process.env.OFH_TRACE_ONLY;
+    const wanted = (name) => only === undefined || only === "" || only.split(",").includes(name);
+    if (wanted("spawn")) this.enableStructureSpawnTrace(behavior);
+    if (wanted("port")) this.enableStructurePortTrace(behavior);
+    if (wanted("placement")) this.enableStructurePlacementTrace(behavior);
+    if (wanted("sam")) this.enableStructureSamTrace(behavior);
+    if (wanted("upgrade")) this.enableStructureUpgradeTrace(behavior);
+    if (wanted("defensepost")) this.enableDefensePostTrace(behavior);
+    if (wanted("landdefense")) this.enableLandDefenseTrace();
+    if (wanted("candidates")) this.enableLegendaryCandidateTrace(behavior);
+    if (wanted("samreadiness")) this.enableSamReadinessTrace(behavior);
   }
 
   enableSiloQuoteTrace() {
@@ -1767,8 +1772,8 @@ export class BundledOpponentBot {
   enableLegendaryCandidateTrace(behavior) {
     const originalCandidates = behavior.legendaryConstructionCandidates;
     if (typeof originalCandidates === "function") {
-      behavior.legendaryConstructionCandidates = (...args) => {
-        const candidates = originalCandidates.apply(behavior, args);
+      behavior.legendaryConstructionCandidates = async (...args) => {
+        const candidates = await originalCandidates.apply(behavior, args);
         this.structureTrace.push({
           kind: "legendary-candidates",
           tick: this.game.ticks(),
@@ -1787,8 +1792,8 @@ export class BundledOpponentBot {
     }
     const originalGroups = behavior.legendaryConstructionActionGroups;
     if (typeof originalGroups === "function") {
-      behavior.legendaryConstructionActionGroups = (...args) => {
-        const groups = originalGroups.apply(behavior, args);
+      behavior.legendaryConstructionActionGroups = async (...args) => {
+        const groups = await originalGroups.apply(behavior, args);
         this.structureTrace.push({
           kind: "legendary-action-groups",
           tick: this.game.ticks(),

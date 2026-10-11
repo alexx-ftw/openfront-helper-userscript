@@ -220,6 +220,11 @@
   // normal war does not open a second front.
   const CAP_STRIKE_TROOP_RATIO = 0.9;
   const CAP_STRIKE_CONFIRM_DECISIONS = 6;
+  // Endgame bypass: when expansion has been impossible for this many frozen
+  // at-cap decisions, the closer fires without waiting for features.expand.
+  // Baikal 2026-10-11: 182-decision freezes produced 5 strikes in 25000
+  // ticks because expandOn stayed false in the 1v1 stalemate.
+  const CAP_STRIKE_ENDGAME_CONFIRM_DECISIONS = 30;
   // Once aggregate hostile incoming troops match our whole current army, a
   // counterattack removes the exact troops needed at home while still failing
   // to cover the simultaneous invasion. Keep that projected defense budget
@@ -6728,6 +6733,11 @@
 
     updateCapPressureStrikeState() {
       const tiles = Number(this.player?.numTilesOwned?.()) || 0;
+      if (state.settings.winFixes !== true) {
+        this.capStrikeLastTiles = tiles;
+        this.capStrikeFrozenDecisions = 0;
+        return 0;
+      }
       const ownTroops = Number(this.player?.troops?.()) || 0;
       const maximum = this.capStrikeMaxTroops();
       const atCap = maximum > 0 && ownTroops / maximum >= CAP_STRIKE_TROOP_RATIO;
@@ -6750,6 +6760,13 @@
       );
     }
 
+    capStrikeCanFire(frozen, armed, expandOn) {
+      return (
+        (armed && expandOn === true) ||
+        (frozen >= CAP_STRIKE_ENDGAME_CONFIRM_DECISIONS && expandOn !== true)
+      );
+    }
+
     capStrikeTarget(borderingEnemies) {
       let weakest = null;
       for (const enemy of borderingEnemies ?? []) {
@@ -6758,6 +6775,34 @@
         if (weakest === null || enemy.troops() < weakest.troops()) weakest = enemy;
       }
       return weakest;
+    }
+
+    capStrikeIslandSearchDue(frozen, target) {
+      return (
+        target === null &&
+        frozen >= CAP_STRIKE_ENDGAME_CONFIRM_DECISIONS &&
+        frozen % CAP_STRIKE_ENDGAME_CONFIRM_DECISIONS === 0
+      );
+    }
+
+    capStrikeTargetIsLegal(target) {
+      if (target === null) {
+        this.capStrikeVetoNoTarget =
+          (Number(this.capStrikeVetoNoTarget) || 0) + 1;
+        return false;
+      }
+      if (!this.canAttackPlayerNow(target)) {
+        this.capStrikeVetoLegality =
+          (Number(this.capStrikeVetoLegality) || 0) + 1;
+        return false;
+      }
+      return true;
+    }
+
+    sendCapPressureStrike(target, bySea) {
+      return bySea
+        ? this.sendBoatAttack(target, null, null, true)
+        : this.forceSendAttack(target, 1, { capStrike: true });
     }
 
     // WIN-FIX (cap-strike) — NOT in src. A frozen at-cap army with no
@@ -6769,29 +6814,46 @@
     // rows keep the win-pacing commerce stall authoritative. Talented
     // teammates are never targets (borderingEnemies excludes friendly).
     async maybeCapPressureStrike(context) {
-      if (!context.expandOn || !this.capPressureStrikeIsArmed()) return false;
-      const weakest = this.capStrikeTarget(context.borderingEnemies);
-      if (weakest === null || !this.canAttackPlayerNow(weakest)) return false;
+      if (
+        state.settings.winFixes !== true ||
+        !this.isFFA()
+      ) return false;
+      const frozen = Number(this.capStrikeFrozenDecisions) || 0;
+      const armed = this.capPressureStrikeIsArmed();
+      // A long freeze outranks the expansion preference: expansion has had
+      // dozens of decisions to act and did not, so waiting only feeds the
+      // stalemate. Short freezes keep the original expandOn requirement.
+      if (!this.capStrikeCanFire(frozen, armed, context.expandOn)) return false;
+      const endgameBypass = context.expandOn !== true;
+      let weakest = this.capStrikeTarget(context.borderingEnemies);
+      const islandFallback = this.capStrikeIslandSearchDue(frozen, weakest);
+      if (islandFallback) weakest = await this.findNearestIslandEnemy();
+      if (!this.capStrikeTargetIsLegal(weakest)) return false;
       this.capStrikeAttempts = (Number(this.capStrikeAttempts) || 0) + 1;
-      const launched = await this.forceSendAttack(weakest, 1, {
-        capStrike: true,
-      });
+      const launched = await this.sendCapPressureStrike(weakest, islandFallback);
       if (launched) {
         this.capStrikeLaunches = (Number(this.capStrikeLaunches) || 0) + 1;
         this.capStrikeLastLaunchTick = this.currentAttackDecisionTick();
-        this.logCapStrikeLaunch(weakest);
+        if (endgameBypass) {
+          this.capStrikeEndgameBypasses =
+            (Number(this.capStrikeEndgameBypasses) || 0) + 1;
+        }
+        this.logCapStrikeLaunch(weakest, islandFallback);
       }
       return launched;
     }
 
-    logCapStrikeLaunch(weakest) {
+    logCapStrikeLaunch(weakest, bySea = false) {
       if (typeof runtimeDebugLog !== "function") return;
-      runtimeDebugLog("[CapStrike] frozen at-cap army strikes weakest border", {
-        target: weakest.name?.() ?? weakest.smallID?.(),
-        targetTroops: Math.max(0, Number(weakest.troops?.()) || 0),
-        ownTroops: Math.max(0, Number(this.player?.troops?.()) || 0),
-        frozenDecisions: Number(this.capStrikeFrozenDecisions) || 0,
-      });
+      runtimeDebugLog(
+        `[CapStrike] frozen at-cap army strikes weakest ${bySea ? "island" : "border"}`,
+        {
+          target: weakest.name?.() ?? weakest.smallID?.(),
+          targetTroops: Math.max(0, Number(weakest.troops?.()) || 0),
+          ownTroops: Math.max(0, Number(this.player?.troops?.()) || 0),
+          frozenDecisions: Number(this.capStrikeFrozenDecisions) || 0,
+        },
+      );
     }
 
     randomBoatTroops(isTerraNullius) {
@@ -7797,9 +7859,16 @@
     // A TerraNullius target has its own soft reserve ceiling; do not silently
     // replace it with the live production reserve at this final boundary.
     resolveBoatTroops(requestedTroops, reserveTarget, requireExactTroops) {
-      const targetReserve = reserveTarget
-        ? this.getEarlyGameTargetReserveTroops(reserveTarget)
-        : this.getEarlyGameLiveReserveTroops();
+      const capStrike = reserveTarget?.capStrike === true;
+      const target = capStrike ? reserveTarget.target : reserveTarget;
+      let targetReserve;
+      if (capStrike) {
+        targetReserve = this.capStrikeReserveTroops({ capStrike: true }, target);
+      } else if (target) {
+        targetReserve = this.getEarlyGameTargetReserveTroops(target);
+      } else {
+        targetReserve = this.getEarlyGameLiveReserveTroops();
+      }
       return this.getSafeBoatTroops(
         requestedTroops,
         // A transport does not cancel the invasion at home. Preserve the
@@ -10850,6 +10919,7 @@
       target,
       earlyGameCandidate = null,
       reinforcementPlan = null,
+      capStrike,
     ) {
       this.reconcileOutboundAttackIntentCommitments();
       // Honour the panel's "boat" feature toggle (faithful boat attacks must obey
@@ -10897,6 +10967,7 @@
         target,
         earlyGameCandidate,
         reinforcementPlan,
+        capStrike,
       );
       if (troops < 1) {
         return false;
@@ -10912,6 +10983,7 @@
           target,
           targetKey,
           destination,
+          capStrike,
         ))
       ) {
         return false;
@@ -10920,11 +10992,16 @@
         destination,
         troops,
         "⛵ Boat attack",
-        target,
+        this.boatReserveTarget(target, capStrike),
         reinforcementPlan !== null,
       );
       this.recordBoatBeachhead(destination, emitted);
       return emitted;
+    }
+
+    boatReserveTarget(target, capStrike) {
+      if (!capStrike) return target;
+      return { target, capStrike: true };
     }
 
     recordBoatBeachhead(destination, emitted) {
@@ -10941,8 +11018,26 @@
       }
     }
 
-    async allowAndRevalidateBoatPlayerTarget(target, targetKey, destination) {
+    async allowAndRevalidateBoatPlayerTarget(
+      target,
+      targetKey,
+      destination,
+      capStrike,
+    ) {
+      if (
+        capStrike &&
+        !(await this.allowBoatExplorationRoute(destination))
+      ) {
+        return false;
+      }
       if (!(await this.allowEarlyGameBoat(destination))) return false;
+      if (
+        capStrike &&
+        (!this.canAttackPlayerNow(target) ||
+          !this.sendAttackTargetIsAuthorized({ target, capStrike: true }, true))
+      ) {
+        return false;
+      }
       return this.boatPlayerTargetStillValid(target, targetKey, destination);
     }
 
@@ -10991,23 +11086,32 @@
       );
     }
 
-    getBoatAttackTroopsForSend(target, earlyGameCandidate, reinforcementPlan) {
+    getBoatAttackTroopsForSend(
+      target,
+      earlyGameCandidate,
+      reinforcementPlan,
+      capStrike,
+    ) {
       // USER (winFixes): EVERY ordinary boat is a cheap 1% probe. An active
       // conquest reinforcement is the narrow exception: it carries the exact
       // missing amount from the shared plan so maritime and land routes honor
       // the same floor.
-      let troops =
-        reinforcementPlan === null
-          ? this.boatAttackTroops(target, earlyGameCandidate)
-          : this.getReinforcementPlanTroops(
-              target,
-              reinforcementPlan,
-              this.getEarlyGameSpendableTroops(
-                this.getEarlyGameTargetReserveTroops(target),
-              ),
-            );
+      let troops;
+      if (capStrike) {
+        troops = this.player.troops();
+      } else if (reinforcementPlan === null) {
+        troops = this.boatAttackTroops(target, earlyGameCandidate);
+      } else {
+        troops = this.getReinforcementPlanTroops(
+          target,
+          reinforcementPlan,
+          this.getEarlyGameSpendableTroops(
+            this.getEarlyGameTargetReserveTroops(target),
+          ),
+        );
+      }
       if (troops < 1) return 0;
-      if (reinforcementPlan === null) {
+      if (reinforcementPlan === null && !capStrike) {
         troops = this.applyEarlyGameRaceTroops({
           target,
           baseTroops: troops,
@@ -11020,7 +11124,9 @@
 
       // Reapply the target-specific reserve at the final emission boundary.
       const spendableTroops = this.getEarlyGameSpendableTroops(
-        this.getEarlyGameTargetReserveTroops(target),
+        capStrike
+          ? this.capStrikeReserveTroops({ capStrike: true }, target)
+          : this.getEarlyGameTargetReserveTroops(target),
       );
       if (reinforcementPlan !== null && troops > spendableTroops) return 0;
       return Math.min(troops, spendableTroops);

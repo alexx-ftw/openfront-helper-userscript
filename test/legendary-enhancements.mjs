@@ -650,6 +650,121 @@ function makeFakeGame(overrides = {}) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 5b. FULL SAM-placement path: an uncovered City ends up inside the chosen
+//     launcher's coverage radius (Luna/Baikal nuke-loss regression).
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const UNIT = structureSandbox.UNIT;
+  const tileAt = (x, y) => y * 1000 + x;
+  const CITY_TILE = tileAt(500, 500);
+  const SAM_RANGE = 70;
+
+  const cityStub = {
+    tile: () => CITY_TILE,
+    level: () => 1,
+    type: () => "City",
+    isUnderConstruction: () => false,
+  };
+  // Four legal tiles inside SAM range of the City, four decoys far outside it.
+  const ownedTiles = [
+    tileAt(495, 495),
+    tileAt(505, 500),
+    tileAt(500, 510),
+    tileAt(490, 505),
+    tileAt(100, 100),
+    tileAt(150, 120),
+    tileAt(80, 160),
+    tileAt(200, 90),
+  ];
+
+  // Shared-scope engine helpers that live in sibling files at runtime; the
+  // sandbox only loads structureBehavior.js, so provide the exact seams the
+  // placement pipeline crosses (sampler, probe timeout, build emission).
+  structureSandbox.randTerritoryTileArray = (_random, _game, _player, count) =>
+    ownedTiles.slice(0, count);
+  structureSandbox.withTimeout = (promise) => Promise.resolve(promise);
+  structureSandbox.tr = (key) => key;
+  structureSandbox.setLastAction = () => {};
+  structureSandbox.getBuildMenu = () => ({ sendBuildOrUpgrade: () => true });
+  structureSandbox.state.stats = { builds: 0 };
+  const builtTiles = [];
+  structureSandbox.sendAutoBotBuildOrUpgrade = (_menu, buildable, tile) => {
+    builtTiles.push(buildable?.canBuild ?? tile);
+    return true;
+  };
+
+  const behavior = Object.create(structureSandbox.StructureBehavior.prototype);
+  behavior.game = makeFakeGame({
+    config: () => ({
+      defaultSamRange: () => SAM_RANGE,
+      samRange: () => SAM_RANGE,
+      isUnitDisabled: () => false,
+    }),
+    ownerID: () => 1,
+  });
+  behavior.player = {
+    smallID: () => 1,
+    gold: () => 10_000_000n,
+    units: (type) => (type === UNIT.City ? [cityStub] : []),
+    // The occupied City tile refuses construction (as player.buildables does
+    // in-game); every free owned tile returns a build-only descriptor.
+    buildables: async (tile, types) =>
+      tile === CITY_TILE ? [] : [{ type: types[0], canBuild: tile, canUpgrade: false }],
+  };
+  behavior.random = {
+    randElement: (arr) => arr[0],
+    nextInt: (a) => a,
+    chance: () => true,
+  };
+  behavior.legendaryFriendlySamUnits = () => []; // City is uncovered
+  behavior.hasObservedHostileMissileLaunch = () => true; // SAM placement threat gate
+  // Non-geometric bookkeeping seams: no live salvo to fingerprint during the
+  // probe, which is orthogonal to the coverage decision under test.
+  behavior.getMissileDefenseContext = () => ({ mirvDemands: [] });
+  behavior.getMissileDefenseEvaluation = () => ({
+    hasThreats: false,
+    fullyDefended: true,
+  });
+
+  try {
+    const built = await behavior.maybeSpawnStructure(UNIT.SAMLauncher, {
+      forceNewStructure: true,
+      prioritizeStructureCoverage: true,
+      useActualCost: true,
+      ignoreEconomicReserve: true,
+    });
+    assert.equal(built, true, "the full placement path emits a SAM construction");
+    const builtTile = builtTiles[0];
+    const covered =
+      builtTile !== undefined &&
+      behavior.game.euclideanDistSquared(builtTile, CITY_TILE) <= SAM_RANGE * SAM_RANGE;
+    assert.ok(
+      covered,
+      "FULL SAM PLACEMENT PATH REGRESSION (Luna/Baikal nuke-loss mode): the " +
+        "placement pipeline selected tile " +
+        builtTile +
+        " for the first " +
+        "launcher, leaving the uncovered City at " +
+        CITY_TILE +
+        " OUTSIDE " +
+        "SAM coverage radius " +
+        SAM_RANGE +
+        " — own structures would be " +
+        "destroyed by nukes with inSamCoverage=false, the exact production " +
+        "failure mode",
+    );
+  } finally {
+    delete structureSandbox.randTerritoryTileArray;
+    delete structureSandbox.withTimeout;
+    delete structureSandbox.tr;
+    delete structureSandbox.setLastAction;
+    delete structureSandbox.getBuildMenu;
+    delete structureSandbox.sendAutoBotBuildOrUpgrade;
+    delete structureSandbox.state.stats;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // 6. Missile structures refuse hydrogen blast co-location once nukes fly
 // ════════════════════════════════════════════════════════════════════════════
 {
@@ -930,11 +1045,7 @@ function makeFakeGame(overrides = {}) {
   const nextCandidate = attackSandbox.__nextBeachheadRetakeCandidate;
 
   const ledger = new Map();
-  updateLedger(
-    ledger,
-    [{ tile: 111, attackerKey: "k-foe", tick: 5000, troops: 750 }],
-    () => false,
-  );
+  updateLedger(ledger, [{ tile: 111, attackerKey: "k-foe", tick: 5000, troops: 750 }], () => false);
   assert.ok(ledger.has(111), "a hostile sea-invasion landing tile is recorded");
   assert.equal(
     ledger.get(111).invaderTroops,
@@ -945,10 +1056,7 @@ function makeFakeGame(overrides = {}) {
   // The invasion attack expires (no fresh observation) while the tile stays
   // hostile-held: the ledger must keep it actionable.
   updateLedger(ledger, [], () => false);
-  assert.ok(
-    ledger.has(111),
-    "an expired invasion's beachhead stays actionable while hostile-held",
-  );
+  assert.ok(ledger.has(111), "an expired invasion's beachhead stays actionable while hostile-held");
 
   // Our side holds the tile again: recaptured, pruned.
   updateLedger(ledger, [], (tile) => tile === 111);

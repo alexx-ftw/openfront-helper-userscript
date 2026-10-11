@@ -563,7 +563,11 @@ const makeGame = (overrides = {}) => ({
     const behavior = makeDefenseBehavior({ fleet: [raidShip(1, 10), raidShip(2, 20)] });
     behavior.raidingTierActive = () => false;
     const s = raidState();
-    assert.equal(behavior.commerceDefenseSubfleetIds(s).size, 0, "a tier-inactive board reserves nothing");
+    assert.equal(
+      behavior.commerceDefenseSubfleetIds(s).size,
+      0,
+      "a tier-inactive board reserves nothing",
+    );
   }
 
   // A temporarily vanished port reference retains the live reserved IDs.

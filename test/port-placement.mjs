@@ -177,6 +177,8 @@ function makeScenario({
   ocean = false,
   allied = false,
   otherAlive = true,
+  inDoomsdayClock = false,
+  doomsdayClockTicks = 0,
   zeroAllocationNeighbors = false,
   width = 9,
   height = 9,
@@ -217,6 +219,8 @@ function makeScenario({
     id: () => `player-${smallID}`,
     type: () => "NATION",
     isAlive: () => smallID === 1 || otherAlive,
+    inDoomsdayClock: () => inDoomsdayClock,
+    doomsdayClockTicks: () => doomsdayClockTicks,
     borderTiles: () => new Set(coast),
     profile: () => ({ relations: {} }),
     units: () => [],
@@ -321,6 +325,11 @@ async function sharedWater({ ocean, allied, otherAlive }) {
   const shared = scenario.handle.game.sharedWaterComponents(wrappedMe);
   return shared ? [...shared].sort((a, b) => a - b) : null;
 }
+
+const doomsdayScenario = makeScenario({ inDoomsdayClock: true, doomsdayClockTicks: 42 });
+const doomsdayPlayer = await doomsdayScenario.handle.beginTick(doomsdayScenario.me);
+assert.equal(doomsdayPlayer.inDoomsdayClock(), true);
+assert.equal(doomsdayPlayer.doomsdayClockTicks(), 42);
 
 async function nearbyPlayers() {
   const scenario = makeScenario({ ocean: false, allied: true });

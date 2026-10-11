@@ -211,6 +211,7 @@
 
   function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, ...context) {
     const [game, player, trackNuke = false] = context;
+    if (!autoBotTickActionAllowed()) return false;
     if (game === null || typeof game !== "object") return false;
     const dispatch = autoBotBuildDispatch(buildMenu, buildable, tile);
     if (!dispatch) return false;
@@ -234,6 +235,7 @@
     }
     const knownIds = nuclear
       ? new Set(player.units(buildable.type).map((unit) => String(unit.id()))) : null;
+    if (!autoBotTickActionAllowed()) return false;
     dispatch();
     reservations.push({
       playerId,
@@ -426,6 +428,7 @@
   }
 
   function emitIntent(ctor, ...args) {
+    if (!autoBotTickActionAllowed()) return false;
     const eventBus = getEventBus();
     if (!eventBus || typeof ctor !== "function") return false;
     {
@@ -442,9 +445,18 @@
       ) {
         return false;
       }
+      if (!autoBotTickActionAllowed()) return false;
       eventBus.emit(event);
       return true;
     }
+  }
+
+  // shortcut: actions share one tick; pass per-action generations if calls overlap.
+  function autoBotTickActionAllowed() {
+    if (typeof state === "undefined") return true;
+    const generation = state.activeTickGeneration;
+    return generation == null ||
+      (state.settings?.enabled === true && state.tickGeneration === generation);
   }
 
   function diagnosticValue(value, fallback) {

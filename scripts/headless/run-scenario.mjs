@@ -202,16 +202,17 @@ const SCENARIOS = [
       OFH_INJECT_HOSTILE_SAM_COVER: "1",
       OFH_INJECT_OWN_SILO_NETWORK: "1",
       OFH_INJECT_OWN_SILO_LEVEL: "3",
-      OFH_LOG_NUKES: "1",
     },
-    assert: (r, log) =>
+    assert: (r) =>
       r.stopReason !== "engine_stop" &&
       r.stopReason !== "spawn_failed" &&
+      r.won === true &&
+      r.alive === true &&
       Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 3 &&
       Number(r.nuclearStrategy?.hydrogenBombsLaunched ?? 0) >= 1 &&
-      /\[ofh:nuke-detonate\]/.test(log),
+      Number(r.ownAtomDetonations ?? 0) + Number(r.ownHydrogenDetonations ?? 0) >= 1,
     expect:
-      "nuclear layer fully live on this map: salvo-scale atoms (>=3), hydrogen fires (>=1), detonations recorded (first run: 18 atoms + 48 hydrogen, won at t=8191, hostile warhead intercepted by SAM)",
+      "nuclear layer fully live on this map: bot wins, salvo-scale atoms (>=3), hydrogen fires (>=1), and an Atom/Hydrogen detonates",
   },
   {
     name: "baikal-nuke-organic",
@@ -224,15 +225,52 @@ const SCENARIOS = [
       OFH_MAX_TICKS: "25000",
       OFH_INJECT_HOSTILE_ATOM: "1",
       OFH_INJECT_HOSTILE_ATOM_AT_TICK: "1200",
-      OFH_LOG_NUKES: "1",
     },
-    assert: (r, log) =>
+    assert: (r) =>
       r.stopReason !== "engine_stop" &&
       r.stopReason !== "spawn_failed" &&
-      (/"unit":"Missile Silo","action":"build"/.test(log) ||
-        Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 1),
+      r.won === true &&
+      r.alive === true &&
+      r.constructionEvents?.some(
+        (event) =>
+          event.unit === "Missile Silo" &&
+          event.action === "build" &&
+          Number(event.portfolio?.units?.["Missile Silo"]?.count ?? -1) === 0,
+      ) &&
+      Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) +
+        Number(r.nuclearStrategy?.hydrogenBombsLaunched ?? 0) >=
+        1 &&
+      Number(r.ownAtomDetonations ?? 0) + Number(r.ownHydrogenDetonations ?? 0) >= 1,
     expect:
-      "the bot invests in the organic nuclear chain on the nuclear map (silo built, or better: a launch)",
+      "the bot wins, builds its first organic silo, and launches and detonates one of its own Atom/Hydrogen bombs",
+  },
+  {
+    name: "luna-nuke-wars",
+    description:
+      "Luna map (user-nominated second testbed) — silo network + hostile SAM cover exercise nuke targeting, matching the Baikal mechanism test",
+    env: {
+      OFH_MATCH_SEED: "scenario-luna-nuke-wars",
+      OFH_GAME_MAP: "Luna",
+      OFH_GAME_MAP_SIZE: "Small",
+      OFH_MAX_TICKS: "25000",
+      OFH_25MM: "1",
+      OFH_INJECT_HOSTILE_ATOM: "1",
+      OFH_INJECT_HOSTILE_ATOM_AT_TICK: "1200",
+      OFH_INJECT_HOSTILE_ATOM_GOLD: "2000000",
+      OFH_INJECT_HOSTILE_SAM_COVER: "1",
+      OFH_INJECT_OWN_SILO_NETWORK: "1",
+      OFH_INJECT_OWN_SILO_LEVEL: "3",
+    },
+    assert: (r) =>
+      r.stopReason !== "engine_stop" &&
+      r.stopReason !== "spawn_failed" &&
+      r.won === true &&
+      r.alive === true &&
+      Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 3 &&
+      Number(r.nuclearStrategy?.hydrogenBombsLaunched ?? 0) >= 1 &&
+      Number(r.ownAtomDetonations ?? 0) + Number(r.ownHydrogenDetonations ?? 0) >= 1,
+    expect:
+      "nuclear layer fully live on Luna: bot wins, >=3 atoms, >=1 hydrogen, and an Atom/Hydrogen detonates",
   },
 ];
 

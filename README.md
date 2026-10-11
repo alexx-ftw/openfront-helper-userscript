@@ -176,6 +176,13 @@ The salvo forecast also advances enemy silo queues through `SiloCooldown`,
 mirrors the engine's one-tick staggering when multiple ready slots from the same
 silo launch together, reserves gold for a possible Hydrogen finisher, and
 schedules all simultaneous threat routes against one shared SAM inventory.
+Legendary City/Factory/Port construction and next-level upgrades compare net
+team-gold value over the useful match horizon using live spawn rates, network
+routes, and construction/travel delays; only the builder's own treasury can fund
+an action. City troop-cap value applies under cap pressure. Port estimates count
+both endpoint payouts and incoming traffic changes when a destination is added
+or upgraded. An active Doomsday Clock caps the payback horizon to its configured
+elimination deadline.
 Assignment conflicts use a bounded exact fallback; an exhausted search is
 treated as unsafe, never as proof that a greedy miss is impossible to defend.
 

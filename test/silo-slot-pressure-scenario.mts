@@ -4,6 +4,7 @@ import {
   createNativeLoop,
 } from "./helpers/native-bot-fixture.mts";
 import assert from "node:assert/strict";
+import { MissileSiloExecution } from "../openfront-engine/src/core/execution/MissileSiloExecution";
 import { UnitType } from "../openfront-engine/src/core/game/Game";
 import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
@@ -24,6 +25,7 @@ const silo = attacker.buildUnit(UnitType.MissileSilo, source, {});
 silo.increaseLevel();
 silo.reloadMissile();
 silo.reloadMissile();
+game.addExecution(new MissileSiloExecution(silo));
 const targetSam = defender.buildUnit(UnitType.SAMLauncher, target, {});
 targetSam.increaseLevel();
 const valuableCity = defender.buildUnit(UnitType.City, target, {});
@@ -157,6 +159,69 @@ try {
   step(bot.intentBuffer);
   bot.intentBuffer.length = 0;
   assert.equal(newSilo.level(), 3, "the route-clear Silo gains a level for the SAM target");
+
+  const launchSilos = attacker
+    .units(UnitType.MissileSilo)
+    .filter((candidate) => !candidate.isUnderConstruction());
+  const reloadTicks =
+    game.config().SiloCooldown() +
+    Math.max(...launchSilos.map((candidate) => candidate.missileTimerQueue().length));
+  // Accepted levels enter the native cooldown queue before their shots are launchable.
+  for (let tick = 0; tick < reloadTicks; tick++) step();
+  assert.ok(
+    launchSilos.every((candidate) => candidate.missileTimerQueue().length === 0),
+    "the bounded native cooldown window reloads all accepted Silo capacity",
+  );
+  const launchPlan = nuke.createSamOverwhelmPlan(targetSam, launchSilos);
+  assert.equal(launchPlan.targetSamId, targetSam.id());
+  assert.equal(launchPlan.targetTile, state.nukeWantSlots?.targetTile);
+  assert.equal(launchPlan.totalBombs, 7, "the level-5 SAM requires seven Atom slots");
+  const clearSlotCount = launchPlan.launchSequence.filter((slot) => !slot.interceptable).length;
+  assert.equal(
+    launchPlan.capacityMissing,
+    false,
+    `SAM capacity: clear=${clearSlotCount}, window=${launchPlan.window.length}/${launchPlan.totalBombs}`,
+  );
+  const expectedLaunches = nuke.getSamSalvo(launchPlan).bombsToFire;
+  assert.ok(expectedLaunches >= launchPlan.totalBombs);
+  assert.equal(
+    await nuke.maybeDestroyEnemySam(rival),
+    true,
+    "the same NukeBehavior emits or queues the now-capable SAM-overwhelm salvo",
+  );
+  const atomIntents = bot.intentBuffer.filter(
+    (intent) => intent.type === "build_unit" && intent.unit === UnitType.AtomBomb,
+  );
+  const queuedSalvo = nuke._pendingNukeLaunches.filter(
+    (launch) => launch.salvo?.targetSamId === targetSam.id(),
+  );
+  assert.equal(
+    atomIntents.length + queuedSalvo.length,
+    expectedLaunches,
+    "every capacity-planned Atom is either emitted or queued",
+  );
+  assert.ok(
+    atomIntents.every((intent) => intent.tile === launchPlan.targetTile),
+    "emitted Atom intents use the planned destination",
+  );
+  assert.ok(
+    queuedSalvo.every(
+      (launch) =>
+        launch.targetPlayer.smallID() === rival.smallID() &&
+        launch.tile === launchPlan.targetTile &&
+        launch.salvo.targetTile === launchPlan.targetTile,
+    ),
+    "queued salvos preserve the defender, planned destination, and SAM target metadata",
+  );
+  step(bot.intentBuffer);
+  bot.intentBuffer.length = 0;
+  step();
+  step();
+  assert.equal(
+    attacker.units(UnitType.AtomBomb).length,
+    atomIntents.length,
+    "the native engine accepts the emitted Atom prefix",
+  );
 } finally {
   bot.harness.window.close();
 }

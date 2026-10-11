@@ -37,6 +37,10 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const engineRoot = path.resolve(root, "../../openfront-engine");
 const seed = process.env.OFH_MATCH_SEED ?? `ofh-random-team-${Date.now()}`;
 const clientID = "ofh-auto-bot";
+let ownNukeDetonations = 0;
+let ownAtomDetonations = 0;
+let ownHydrogenDetonations = 0;
+let ownMirvWarheadDetonations = 0;
 
 // ── Per-game goal instrumentation ────────────────────────────────────────────
 // Tracks the four in-game achievement requirements for the validation games:
@@ -111,6 +115,7 @@ NukeExecution.prototype.detonate = function (
   const detonationId = logNukes ? ++nukeDetonationSequence : null;
   const nukeType = this.nuke?.type() ?? "unknown";
   const missileId = this.nuke?.id() ?? null;
+  const isOwnDetonation = this.player?.clientID?.() === clientID && this.nuke !== null;
   nukeDetonatingOwner = this.player;
   nukeDetonatingDestination = destination;
   nukeDetonatingType = String(nukeType);
@@ -123,6 +128,12 @@ NukeExecution.prototype.detonate = function (
       );
     }
     originalNukeDetonate.call(this);
+    if (isOwnDetonation) {
+      ownNukeDetonations += 1;
+      if (nukeType === UnitType.AtomBomb) ownAtomDetonations += 1;
+      else if (nukeType === UnitType.HydrogenBomb) ownHydrogenDetonations += 1;
+      else if (nukeType === UnitType.MIRVWarhead) ownMirvWarheadDetonations += 1;
+    }
   } finally {
     nukeDetonatingOwner = previous;
     nukeDetonatingDestination = previousDestination;
@@ -2242,6 +2253,10 @@ const finalResult = {
   hybridEvaluation: bot.getHybridEvaluationSnapshot(),
   hybridTransport: hybridFifo?.snapshot() ?? null,
   nuclearStrategy: nuclearStrategyTelemetry,
+  ownNukeDetonations,
+  ownAtomDetonations,
+  ownHydrogenDetonations,
+  ownMirvWarheadDetonations,
   intentBudget: bot.getIntentBudgetSnapshot() ?? undefined,
   intentBudgetViolated:
     process.env.OFH_ASSERT_INTENT_BUDGET === "1" &&
@@ -2262,6 +2277,9 @@ const finalResult = {
     attempts: Number(bot.nationBot?.attackBehavior?.capStrikeAttempts ?? 0),
     launches: Number(bot.nationBot?.attackBehavior?.capStrikeLaunches ?? 0),
     lastLaunchTick: Number(bot.nationBot?.attackBehavior?.capStrikeLastLaunchTick ?? 0),
+    endgameBypasses: Number(bot.nationBot?.attackBehavior?.capStrikeEndgameBypasses ?? 0),
+    noTargetVetoes: Number(bot.nationBot?.attackBehavior?.capStrikeVetoNoTarget ?? 0),
+    legalityVetoes: Number(bot.nationBot?.attackBehavior?.capStrikeVetoLegality ?? 0),
   },
   performanceProfile: profileBot ? bot.getPerformanceProfile() : undefined,
   emittedIntents,

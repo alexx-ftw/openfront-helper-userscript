@@ -570,6 +570,16 @@
     "initializerPreview": "6"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:CAP_STRIKE_ENDGAME_CONFIRM_DECISIONS#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "CAP_STRIKE_ENDGAME_CONFIRM_DECISIONS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4",
+    "initializerLength": 2,
+    "initializerPreview": "30"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:OVERWHELMING_INCOMING_ATTACK_RATIO#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "OVERWHELMING_INCOMING_ATTACK_RATIO",
@@ -995,9 +1005,9 @@
     "name": "UNIT",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "24e0d195347a2203c07dce70099b311c5d35bee18df046283e33c3ab813faf15",
-    "initializerLength": 390,
-    "initializerPreview": "{\n    City: \"City\",\n    Port: \"Port\",\n    Factory: \"Factory\",\n    SAMLauncher: \"SAM Launcher\",\n    SAMMissile: \"SAMMissile\",\n    MissileSilo: \"Missile Silo\",\n    DefensePost: \"Defense Post\",\n    TransportShip: \"Transport\",\n    TradeShip:..."
+    "initializerHash": "27e045f868640a406f5070c2baaa4d6d33148f9a6c54bd8be12d5271345d074f",
+    "initializerLength": 410,
+    "initializerPreview": "{\n    City: \"City\",\n    Port: \"Port\",\n    Factory: \"Factory\",\n    SAMLauncher: \"SAM Launcher\",\n    SAMMissile: \"SAMMissile\",\n    MissileSilo: \"Missile Silo\",\n    DefensePost: \"Defense Post\",\n    TransportShip: \"Transport\",\n    Train: \"Tr..."
   },
   {
     "id": "engine/ingame/auto-bot/core.js:PANEL_ID#1",
@@ -1705,9 +1715,9 @@
     "name": "LEGENDARY_TIE_FIELDS",
     "declarationKind": "const",
     "initializerKind": "ArrayLiteralExpression",
-    "initializerHash": "41504a014f55ac46cb1b7f58d54114da456d30aa617e7a61e7d30a2379746aba",
-    "initializerLength": 38,
-    "initializerPreview": "[\"strategic\", \"deficit\", \"efficiency\"]"
+    "initializerHash": "53984bb542dc8b5689201a2a85075a6f68bd3703ce5772b5433450e7966b1da4",
+    "initializerLength": 53,
+    "initializerPreview": "[\"strategic\", \"deficit\", \"netTeamGold\", \"efficiency\"]"
   },
   {
     "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_EXACT_SCHEDULE_ROUTE_LIMIT#1",
@@ -1738,6 +1748,36 @@
     "initializerHash": "f853ca6795aa68fe957fa84ed236645c3c9334bced77d67d1c62f3750fc521ea",
     "initializerLength": 256,
     "initializerPreview": "{\n    City: { gold: 3, troops: 5, defense: 1 },\n    Factory: { gold: 3, troops: 1, defense: 1 },\n    Port: { gold: 4, troops: 2, defense: 4 },\n    \"Missile Silo\": { gold: 1, troops: 1, defense: 1 },\n    \"SAM Launcher\": { gold: 1, troops:..."
+  },
+  {
+    "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_TICKS_PER_SECOND#1",
+    "file": "engine/ingame/auto-bot/legendaryPlanner.js",
+    "name": "LEGENDARY_TICKS_PER_SECOND",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
+    "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_STRUCTURE_ROI_TICKS#1",
+    "file": "engine/ingame/auto-bot/legendaryPlanner.js",
+    "name": "LEGENDARY_STRUCTURE_ROI_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "8d284220975da66c6cba4a32aaedfa0b897187d86ed9f7a2419c9bd10a103505",
+    "initializerLength": 4,
+    "initializerPreview": "6000"
+  },
+  {
+    "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_STRUCTURE_MIN_NET_GOLD#1",
+    "file": "engine/ingame/auto-bot/legendaryPlanner.js",
+    "name": "LEGENDARY_STRUCTURE_MIN_NET_GOLD",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "0604cd3138feed202ef293e062da2f4720f77a05d25ee036a7a01c9cfcdd1f0a",
+    "initializerLength": 3,
+    "initializerPreview": "500"
   },
   {
     "id": "engine/ingame/auto-bot/lifecycle.js:ATOM_MACRO_DIALOG_ID#1",
@@ -2298,6 +2338,16 @@
     "initializerHash": "2abaca4911e68fa9bfbf3482ee797fd5b9045b841fdff7253557c5fe15de6477",
     "initializerLength": 3,
     "initializerPreview": "120"
+  },
+  {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_LANDLOCKED_ARSENAL_BACKSTOP_TICK#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "LEGENDARY_LANDLOCKED_ARSENAL_BACKSTOP_TICK",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "a176eeb31e601c3877c87c2843a2f584968975269e369d5c86788b4c2f92d2a2",
+    "initializerLength": 4,
+    "initializerPreview": "3000"
   },
   {
     "id": "engine/ingame/auto-bot/structureBehavior.js:SAM_RATIO_BY_DIFFICULTY#1",

@@ -39,6 +39,9 @@ try {
   // SAM, price two Atom slots, and upgrade the level-1 Silo (one slot short).
   neighbour.conquer(samTile);
   const neighbourSam = neighbour.buildUnit(UnitType.SAMLauncher, samTile, {});
+  // gameApi caches unit snapshots per authoritative tick; a launcher built
+  // mid-tick is only observable after the next one, like in a real match.
+  step();
   await nuke.maybeDestroyEnemySam(rival);
   assert.equal(
     state.nukeWantSlots?.targetSamId,

@@ -572,6 +572,54 @@ assert.equal(
   1,
   "active-missile handling attempts the capacity upgrade exactly once",
 );
+const pendingSamFirstSiloBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+pendingSamFirstSiloBehavior.game = {
+  config: () => ({ isUnitDisabled: () => false }),
+};
+pendingSamFirstSiloBehavior.missileDefenseSignalSnapshot = () => ({
+  hasActiveHostileMissile: true,
+});
+pendingSamFirstSiloBehavior.activeMissileDefenseContext = () => ({
+  threats: [{ inFlight: true }],
+});
+pendingSamFirstSiloBehavior.legendaryDefenseEvaluation = () => ({
+  hasThreats: true,
+  fullyDefended: false,
+});
+pendingSamFirstSiloBehavior.uncoveredActiveMirvDemands = () => [];
+pendingSamFirstSiloBehavior.maybeUpgradeMissileDefenseSam = async () => false;
+pendingSamFirstSiloBehavior.activeMissilePendingSamImproves = () => false;
+pendingSamFirstSiloBehavior.ownedLevels = () => 0;
+pendingSamFirstSiloBehavior.safeConstructionCost = () => 1_000_000n;
+pendingSamFirstSiloBehavior.availableGoldAfterReserve = () => 1_000_000n;
+pendingSamFirstSiloBehavior.player = {
+  units: (type) => (type === UNIT.SAMLauncher ? [{ isUnderConstruction: () => true }] : []),
+};
+pendingSamFirstSiloBehavior.hasOwnSamUnderConstruction = () => true;
+let pendingSamSiloOptions = null;
+const pendingSamBuildOrder = [];
+pendingSamFirstSiloBehavior.maybeSpawnStructure = async (type, options) => {
+  pendingSamBuildOrder.push(type);
+  if (type === UNIT.SAMLauncher) return false;
+  assert.equal(type, UNIT.MissileSilo);
+  pendingSamSiloOptions = options;
+  return true;
+};
+assert.equal(
+  await pendingSamFirstSiloBehavior.handleActiveMissileSamMaximumPriority(),
+  true,
+  "a first Silo starts alongside a funded SAM after no additional interception action can be placed",
+);
+assert.deepEqual(
+  pendingSamBuildOrder,
+  [UNIT.SAMLauncher, UNIT.MissileSilo],
+  "the active SAM fallback keeps first priority before the paired Silo",
+);
+assert.equal(
+  pendingSamSiloOptions?.ignoreEconomicReserve,
+  true,
+  "the paired first-Silo lane uses only its protected nuclear opening budget",
+);
 const emergencyTileCacheBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 let emergencyTileEvaluationCalls = 0;
 emergencyTileCacheBehavior.activeMissileSamConstructionImproves = () => {
@@ -2227,7 +2275,11 @@ const originalReserveForBudget = behavior.legendaryReserveGold;
     "Ports keep the full budget during the first-SAM window: on water maps they are the economy that funds the interceptor, and gating them starved the trade economy (measured team-basket regression, 2026-09-11)",
   );
   assert.equal(budget.availableGoldAfterReserve(UNIT.SAMLauncher), gold);
-  assert.equal(budget.availableGoldAfterReserve(UNIT.DefensePost), gold);
+  assert.equal(
+    budget.availableGoldAfterReserve(UNIT.DefensePost),
+    0n,
+    "Defense Posts also wait behind the first-Silo fund while the nuclear opening is missing",
+  );
   gold = 2_500_000n;
   assert.equal(
     budget.availableGoldAfterReserve(UNIT.City),
@@ -2422,9 +2474,16 @@ behavior._hostileSiloSamRetryNotBeforeTick = null;
 const originalReservedSlotMaybeUpgradeLegendarySam = behavior.maybeUpgradeLegendarySam;
 const originalReservedSlotMaybeUpgradeHydrogenProtectionSam =
   behavior.maybeUpgradeHydrogenProtectionSam;
+const originalReservedSlotMaybeOpenLegendaryArsenal = behavior.maybeOpenLegendaryArsenal;
 const originalReservedSlotMaybeSpawnHostileSiloSam = behavior.maybeSpawnHostileSiloSam;
+const originalReservedSlotOwnSamCapacity = behavior.ownSamCapacity;
 const originalReservedSlotShouldBuildHostileSiloSam = behavior.shouldBuildHostileSiloSam;
 const originalReservedSlotHostileSiloSamActionBlocked = behavior.hostileSiloSamActionBlocked;
+const originalReservedSlotMaybeOpenLegendaryFirstSilo = behavior.maybeOpenLegendaryFirstSilo;
+const originalReservedSlotMaybeArmFreezeStrikeSilo = behavior.maybeArmFreezeStrikeSilo;
+const originalReservedSlotMaybeUpgradeSiloForNuclearSlotPressure =
+  behavior.maybeUpgradeSiloForNuclearSlotPressure;
+const originalReservedSlotMaybeUpgradeSiloFromSurplus = behavior.maybeUpgradeSiloFromSurplus;
 const originalReservedSlotMaybeUpgradeSamForSiloParity = behavior.maybeUpgradeSamForSiloParity;
 const originalReservedSlotLegendaryMissileDefenseUrgent = behavior.legendaryMissileDefenseUrgent;
 const originalReservedSlotLegendaryConstructionCandidates =
@@ -2432,10 +2491,16 @@ const originalReservedSlotLegendaryConstructionCandidates =
 const legendaryPostSamAttempts = [];
 behavior.maybeUpgradeLegendarySam = async () => false;
 behavior.maybeUpgradeHydrogenProtectionSam = async () => false;
+behavior.maybeOpenLegendaryArsenal = async () => false;
 behavior.maybeSpawnHostileSiloSam = async () => false;
+behavior.ownSamCapacity = () => 1;
 behavior.shouldBuildHostileSiloSam = () => true;
 behavior.hostileSiloSamActionBlocked = () => true;
 behavior.legendaryMissileDefenseUrgent = () => false;
+behavior.maybeOpenLegendaryFirstSilo = async () => false;
+behavior.maybeArmFreezeStrikeSilo = async () => false;
+behavior.maybeUpgradeSiloForNuclearSlotPressure = async () => false;
+behavior.maybeUpgradeSiloFromSurplus = async () => false;
 behavior.legendaryConstructionCandidates = () => [{ type: UNIT.City, cost: 0n, score: 1 }];
 behavior.maybeUpgradeSamForSiloParity = async () => {
   legendaryPostSamAttempts.push("upgrade");
@@ -2461,14 +2526,21 @@ assert.equal(
 );
 assert.deepEqual(
   legendaryPostSamAttempts,
-  [UNIT.Port],
-  "Legendary opens the naval economy between bounded hostile-Silo SAM retries",
+  [UNIT.City],
+  "Legendary sends ordinary construction through the shared ranked selector after a SAM retry",
 );
 behavior.maybeUpgradeLegendarySam = originalReservedSlotMaybeUpgradeLegendarySam;
 behavior.maybeUpgradeHydrogenProtectionSam = originalReservedSlotMaybeUpgradeHydrogenProtectionSam;
+behavior.maybeOpenLegendaryArsenal = originalReservedSlotMaybeOpenLegendaryArsenal;
 behavior.maybeSpawnHostileSiloSam = originalReservedSlotMaybeSpawnHostileSiloSam;
+behavior.ownSamCapacity = originalReservedSlotOwnSamCapacity;
 behavior.shouldBuildHostileSiloSam = originalReservedSlotShouldBuildHostileSiloSam;
 behavior.hostileSiloSamActionBlocked = originalReservedSlotHostileSiloSamActionBlocked;
+behavior.maybeOpenLegendaryFirstSilo = originalReservedSlotMaybeOpenLegendaryFirstSilo;
+behavior.maybeArmFreezeStrikeSilo = originalReservedSlotMaybeArmFreezeStrikeSilo;
+behavior.maybeUpgradeSiloForNuclearSlotPressure =
+  originalReservedSlotMaybeUpgradeSiloForNuclearSlotPressure;
+behavior.maybeUpgradeSiloFromSurplus = originalReservedSlotMaybeUpgradeSiloFromSurplus;
 behavior.maybeUpgradeSamForSiloParity = originalReservedSlotMaybeUpgradeSamForSiloParity;
 behavior.legendaryMissileDefenseUrgent = originalReservedSlotLegendaryMissileDefenseUrgent;
 behavior.legendaryConstructionCandidates = originalReservedSlotLegendaryConstructionCandidates;
@@ -3694,6 +3766,8 @@ structureCoverageBehavior.game = {
 };
 structureCoverageBehavior.liveNuclearHostilePlayers = () => [enemyTwoLevelOneSilos];
 structureCoverageBehavior.cost = () => 1n;
+structureCoverageBehavior.safeConstructionCost = () => 1n;
+structureCoverageBehavior.legendaryMissileDefenseUrgent = () => false;
 structureCoverageBehavior.legendaryReserveGold = () => 0n;
 structureCoverageBehavior.buildableForUnits = async () => [
   { type: UNIT.SAMLauncher, canUpgrade: true, cost: 1n },
@@ -4122,6 +4196,10 @@ assert.equal(
 assert.equal(sentBuilds.length, preemptiveBuildCount + 1);
 assert.equal(sentBuilds.at(-1), preemptiveSamBuildable);
 
+const originalEconomicBuildDifficulty = testDifficulty;
+const originalEconomicBuildLegendaryCheck = sandbox.isLegendaryDifficulty;
+testDifficulty = Difficulty.Legendary;
+sandbox.isLegendaryDifficulty = () => true;
 const economicBuildFirstBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const existingEconomicStructure = { isUnderConstruction: () => false };
 let economicUpgradeCalls = 0;
@@ -4130,6 +4208,7 @@ economicBuildFirstBehavior.structureSpawnEligible = () => true;
 economicBuildFirstBehavior.getConstructionCost = () => 1n;
 economicBuildFirstBehavior.availableGoldAfterReserve = () => 10n;
 economicBuildFirstBehavior.player = { units: () => [existingEconomicStructure] };
+economicBuildFirstBehavior.getOrBuildFactoryTradeDestinations = () => [{ tile: 1 }];
 economicBuildFirstBehavior.hasStructureUnderConstruction = () => false;
 economicBuildFirstBehavior.structureSpawnTile = async () => newCityBuildable;
 economicBuildFirstBehavior.structureUpgradeBeforeSpawn = async () => {
@@ -4158,6 +4237,7 @@ for (const type of [UNIT.Factory, UNIT.Port]) {
   legalNewBuildBehavior.player = {
     units: () => [existingEconomicStructure],
   };
+  legalNewBuildBehavior.getOrBuildFactoryTradeDestinations = () => [{ tile: 1 }];
   legalNewBuildBehavior.hasStructureUnderConstruction = () => false;
   legalNewBuildBehavior.structureSpawnTile = async () => legalBuildable;
   legalNewBuildBehavior.structureUpgradeBeforeSpawn = async () => {
@@ -4197,16 +4277,35 @@ assert.equal(
   true,
   "Legendary urgent SAM construction uses the authoritative engine cost",
 );
+assert.equal(
+  urgentLegendarySamOptions?.prioritizeStructureCoverage,
+  true,
+  "Legendary urgent SAM construction ranks placements by added defensive coverage",
+);
+assert.equal(
+  urgentLegendarySamOptions?.activeMissileDefense,
+  true,
+  "Legendary urgent SAM placements must improve the active interception schedule",
+);
 
+const originalLegalBuildLegendaryCheck = sandbox.isLegendaryDifficulty;
+sandbox.isLegendaryDifficulty = () => true;
 for (const type of [UNIT.City, UNIT.Factory, UNIT.Port]) {
   const legendaryLegalBuildBehavior = Object.create(sandbox.__StructureBehavior.prototype);
   let upgradeProbeCount = 0;
   const legalBuildable = { canBuild: `${type}-legendary-site`, canUpgrade: false };
   legendaryLegalBuildBehavior.player = {
     gold: () => 10n,
-    units: () => [existingEconomicStructure],
+    units: (unitType) =>
+      [UNIT.City, UNIT.Factory, UNIT.Port].includes(unitType) ? [existingEconomicStructure] : [],
   };
+  legendaryLegalBuildBehavior.getOrBuildFactoryTradeDestinations = () => [{ tile: 1 }];
   legendaryLegalBuildBehavior.maybeUpgradeLegendarySam = async () => false;
+  legendaryLegalBuildBehavior.maybeOpenLegendaryArsenal = async () => false;
+  legendaryLegalBuildBehavior.maybeOpenLegendaryFirstSilo = async () => false;
+  legendaryLegalBuildBehavior.maybeArmFreezeStrikeSilo = async () => false;
+  legendaryLegalBuildBehavior.maybeUpgradeSiloForNuclearSlotPressure = async () => false;
+  legendaryLegalBuildBehavior.maybeUpgradeSiloFromSurplus = async () => false;
   legendaryLegalBuildBehavior.ownSamCapacity = () => 1;
   legendaryLegalBuildBehavior.legendaryMissileDefenseUrgent = () => false;
   legendaryLegalBuildBehavior.legendaryConstructionCandidates = () => [{ type }];
@@ -4245,15 +4344,17 @@ for (const type of [UNIT.City, UNIT.Factory, UNIT.Port]) {
   );
   assert.equal(sentBuilds.at(-1), legalBuildable);
 }
+sandbox.isLegendaryDifficulty = originalLegalBuildLegendaryCheck;
 
 const resumedEconomicScanBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+resumedEconomicScanBehavior.isLegendaryDifficulty = () => true;
 const resumedEconomicBuildable = { canBuild: 901, canUpgrade: false };
 let resumedRandomProbeCalls = 0;
 let resumedScanCalls = 0;
 resumedEconomicScanBehavior.structureSpawnEligible = () => true;
 resumedEconomicScanBehavior.getConstructionCost = () => 1n;
 resumedEconomicScanBehavior.availableGoldAfterReserve = () => 10n;
-resumedEconomicScanBehavior.player = { units: () => [] };
+resumedEconomicScanBehavior.player = { units: () => [], numTilesOwned: () => 1 };
 resumedEconomicScanBehavior.hasStructureUnderConstruction = () => false;
 resumedEconomicScanBehavior._economicPlacementScans = new Map([
   [String(UNIT.City), { context: { fingerprint: "unchanged" } }],
@@ -4334,6 +4435,8 @@ assert.equal(
 );
 assert.equal(economicUpgradeCalls, 1);
 
+testDifficulty = Difficulty.Legendary;
+sandbox.isLegendaryDifficulty = () => true;
 const directEconomicUpgradeGuard = Object.create(sandbox.__StructureBehavior.prototype);
 const guardedEconomicStructure = { type: () => UNIT.City };
 let directEconomicUpgradeProbeCalls = 0;
@@ -4352,6 +4455,8 @@ assert.equal(
   0,
   "The economic no-space guard runs before any upgrade selection work",
 );
+testDifficulty = originalEconomicBuildDifficulty;
+sandbox.isLegendaryDifficulty = originalEconomicBuildLegendaryCheck;
 
 const foundationalCityBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 const foundationalCityAttempts = [];
@@ -4572,6 +4677,9 @@ const failedCandidateProbes = [];
 let failedCandidateUpgradeCalls = 0;
 failedBestCandidateBehavior.economicPlacementScanState = () => failedBestCandidateScan;
 failedBestCandidateBehavior.game = { ticks: () => failedCandidateTick };
+failedBestCandidateBehavior.game.config = () => ({
+  unitInfo: () => ({ upgradable: false }),
+});
 failedBestCandidateBehavior.economicPlacementBudgetLimit = () => 25;
 failedBestCandidateBehavior.consumeEconomicPlacementBudget = () => {};
 failedBestCandidateBehavior.economicLandTileCandidate = (_type, _context, x) => ({
@@ -4588,7 +4696,10 @@ failedBestCandidateBehavior.economicPlacementFingerprint = () => "two-sites";
 failedBestCandidateBehavior.structureSpawnEligible = () => true;
 failedBestCandidateBehavior.getConstructionCost = () => 1n;
 failedBestCandidateBehavior.availableGoldAfterReserve = () => 10n;
-failedBestCandidateBehavior.player = { units: () => [existingEconomicStructure] };
+failedBestCandidateBehavior.player = {
+  units: () => [existingEconomicStructure],
+  numTilesOwned: () => 1,
+};
 failedBestCandidateBehavior.hasStructureUnderConstruction = () => false;
 failedBestCandidateBehavior.structureSpawnTile = async () => null;
 failedBestCandidateBehavior.maybeUpgradeStructure = async () => {
@@ -6373,53 +6484,6 @@ assert.match(
     makeBigStartBehavior({ tick: 1_600, gold: 5_000_000n }).legendaryBigStartGame(),
     false,
     "detection stops trusting the treasury after the opening window",
-  );
-
-  // Naval economy burst: big-start buys past the first port, capped at 5.
-  // Reset BOTH memos: earlier chain tests drive the real naval-economy path
-  // and leave pacing/big-start state behind.
-  delete state.bigStartGold;
-  delete state.bigStartStructurePacing;
-  const burstBehavior = makeBigStartBehavior({
-    tick: 6,
-    gold: 5_000_000n,
-    ports: [{}, {}],
-  });
-  burstBehavior.legendaryPortCapable = () => true;
-  burstBehavior.legendaryBigStartGame = () => true;
-  let portSpawns = 0;
-  burstBehavior.maybeSpawnStructure = async () => {
-    portSpawns += 1;
-    return true;
-  };
-  assert.equal(
-    await burstBehavior.maybeOpenLegendaryNavalEconomy({
-      citiesDisabled: false,
-      cityCount: 1,
-      hasCoastalTiles: true,
-      hasOceanPortTiles: true,
-    }),
-    true,
-    "the burst continues past two ports",
-  );
-  assert.equal(portSpawns, 1, "one more port is attempted");
-  const burstFull = makeBigStartBehavior({
-    tick: 6,
-    gold: 5_000_000n,
-    ports: [{}, {}, {}, {}, {}],
-  });
-  burstFull.legendaryPortCapable = () => true;
-  burstFull.legendaryBigStartGame = () => true;
-  burstFull.maybeSpawnStructure = async () => true;
-  assert.equal(
-    await burstFull.maybeOpenLegendaryNavalEconomy({
-      citiesDisabled: false,
-      cityCount: 1,
-      hasCoastalTiles: true,
-      hasOceanPortTiles: true,
-    }),
-    false,
-    "the burst stops at five ports",
   );
 
   // First silo deferral: big-start with <5 ports defers the speculative

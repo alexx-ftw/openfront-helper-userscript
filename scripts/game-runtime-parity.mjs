@@ -495,14 +495,14 @@ export function assertRuntimeParity() {
       `UNIT.${name} no longer matches OpenFront UnitType.${name}`,
     );
   }
-  const intentionallyUnmodeledUnitTypes = ["Shell", "Train"];
+  const intentionallyUnmodeledUnitTypes = ["Shell"];
   const missingUnitTypes = [...upstreamUnitTypes.keys()]
     .filter((name) => !helperUnits.has(name))
     .sort();
   assert.deepEqual(
     missingUnitTypes,
     intentionallyUnmodeledUnitTypes,
-    "the helper UnitType coverage changed; review projectile/train handling explicitly",
+    "the helper UnitType coverage changed; review projectile handling explicitly",
   );
 
   const upstreamMapIds = mapIdsFromSource(

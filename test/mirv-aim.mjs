@@ -21,6 +21,7 @@ const UNIT = {
 };
 const sandbox = {
   UNIT,
+  PlayerType: { Bot: "Bot" },
   state: { settings: { winFixes: true } },
   WORKER_TIMEOUT_MS: 100,
   withTimeout: async (promise) => promise,
@@ -99,7 +100,73 @@ assert.equal(
   "the aim moves onto the weighted structure core (silo 3 : city 2)",
 );
 
-// 3. The core is clamped inside the territory bounds.
+const ownPlayer = { smallID: () => 7 };
+const hostilePlayer = { smallID: () => 99 };
+const samTile = behavior.game.ref(200, 200);
+const hostileSam = {
+  tile: () => samTile,
+  owner: () => hostilePlayer,
+  level: () => 1,
+};
+const samGame = {
+  ...behavior.game,
+  euclideanDistSquared: (a, b) => {
+    const dx = behavior.game.x(a) - behavior.game.x(b);
+    const dy = behavior.game.y(a) - behavior.game.y(b);
+    return dx * dx + dy * dy;
+  },
+  config: () => ({ maxSamRange: () => 100, samRange: () => 30 }),
+  nearbyUnits: (tile, maxRange, type) => {
+    assert.equal(type, UNIT.SAMLauncher);
+    const maxRangeSquared = maxRange * maxRange;
+    return [hostileSam]
+      .map((unit) => ({
+        unit,
+        distSquared: samGame.euclideanDistSquared(tile, unit.tile()),
+      }))
+      .filter((sam) => sam.distSquared <= maxRangeSquared);
+  },
+};
+const samBehavior = Object.create(sandbox.__MirvBehavior.prototype);
+samBehavior.game = samGame;
+samBehavior.player = ownPlayer;
+
+// 3. With winFixes on, a covered weighted core falls back to the next uncovered
+// structure cluster in descending structure weight.
+assert.equal(
+  await samBehavior.calculateTerritoryCenter(coreTarget),
+  behavior.game.ref(240, 200),
+  "a covered silo core falls back to the uncovered city cluster",
+);
+
+// 4. If every structure cluster is covered, keep the existing border-center fallback.
+const noFreeStructureTarget = makeTarget({
+  [UNIT.MissileSilo]: [{ tile: () => behavior.game.ref(200, 200) }],
+  [UNIT.City]: [{ tile: () => behavior.game.ref(220, 200) }],
+});
+const coveringSamGame = {
+  ...samGame,
+  config: () => ({ maxSamRange: () => 100, samRange: () => 60 }),
+};
+const coveringSamBehavior = Object.create(sandbox.__MirvBehavior.prototype);
+coveringSamBehavior.game = coveringSamGame;
+coveringSamBehavior.player = ownPlayer;
+assert.equal(
+  await coveringSamBehavior.calculateTerritoryCenter(noFreeStructureTarget),
+  behavior.game.ref(400, 400),
+  "when every structure cluster is covered, the existing border-center fallback is preserved",
+);
+
+// 5. winFixes off retains the original weighted-core aim even under SAM coverage.
+sandbox.state.settings.winFixes = false;
+assert.equal(
+  await samBehavior.calculateTerritoryCenter(coreTarget),
+  behavior.game.ref(216, 200),
+  "SAM avoidance is gated by winFixes",
+);
+sandbox.state.settings.winFixes = true;
+
+// 6. The core is clamped inside the territory bounds.
 const clampTarget = makeTarget({
   [UNIT.City]: [
     { tile: () => behavior.game.ref(120, 120) },
@@ -112,7 +179,7 @@ assert.equal(
   "the weighted core is used verbatim when it lies inside the border bounds",
 );
 
-// 4. Unowned core tile falls back to the closest border tile toward the core.
+// 7. Unowned core tile falls back to the closest border tile toward the core.
 const denyGame = {
   ...behavior.game,
   hasOwner: (tile) => Number(tile) !== behavior.game.ref(216, 200),
@@ -125,7 +192,7 @@ assert.equal(
   "an unowned core tile snaps to the border tile nearest the core",
 );
 
-// 5. Shared-tube cohesion: pending nuke intents are not in the live silo
+// 8. Shared-tube cohesion: pending nuke intents are not in the live silo
 // queues yet, so the MIRV lane must defer to the nuke lane's projection.
 behavior.player = {};
 sandbox.autoBotBuildNukeSlots = (_game, player) => player.__projection ?? null;
@@ -140,7 +207,7 @@ assert.equal(behavior.hasReadyMIRVSlot(), true, "a free projected tube admits th
 behavior.player.__projection = null;
 delete sandbox.autoBotBuildNukeSlots;
 
-// 5. A stub without units() keeps the original path.
+// 9. A stub without units() keeps the original path.
 const stubTarget = {
   smallID: () => 42,
   borderTilesAsync: async () => borderTiles,
@@ -150,5 +217,67 @@ assert.equal(
   behavior.game.ref(400, 400),
   "targets without a units accessor fall back to the geometric centre",
 );
+
+let targetAlive = true;
+let currentDispatchTarget;
+let dispatches = 0;
+const dispatchTarget = {
+  smallID: () => 99,
+  isPlayer: () => true,
+  isAlive: () => targetAlive,
+  type: () => "Human",
+};
+const previousBuildSender = sandbox.sendAutoBotBuildOrUpgrade;
+sandbox.sendAutoBotBuildOrUpgrade = () => {
+  dispatches++;
+  return true;
+};
+const emitAfterBuildables = async (afterBuildables) => {
+  const dispatchBehavior = Object.create(sandbox.__MirvBehavior.prototype);
+  dispatchBehavior.player = {
+    smallID: () => 7,
+    isFriendly: () => false,
+    gold: () => 10n,
+    buildables: async () => {
+      afterBuildables();
+      return [{ type: UNIT.MIRV, canBuild: true, cost: 1n }];
+    },
+  };
+  dispatchBehavior.game = {
+    playerBySmallID: (sid) => (sid === 99 ? currentDispatchTarget : null),
+  };
+  return dispatchBehavior.emitMIRVBuildIntent(dispatchTarget, 1);
+};
+
+currentDispatchTarget = dispatchTarget;
+assert.equal(
+  await emitAfterBuildables(() => {}),
+  true,
+  "a live hostile remains eligible after the async buildables probe",
+);
+assert.equal(dispatches, 1, "the live hostile's MIRV intent is dispatched");
+
+targetAlive = true;
+currentDispatchTarget = dispatchTarget;
+assert.equal(
+  await emitAfterBuildables(() => {
+    targetAlive = false;
+  }),
+  false,
+  "a target that dies during the async buildables probe cancels dispatch",
+);
+assert.equal(dispatches, 1, "a dead target does not dispatch a MIRV");
+
+targetAlive = true;
+currentDispatchTarget = dispatchTarget;
+assert.equal(
+  await emitAfterBuildables(() => {
+    currentDispatchTarget = null;
+  }),
+  false,
+  "a target removed during the async buildables probe cancels dispatch",
+);
+assert.equal(dispatches, 1, "a removed target does not dispatch a MIRV");
+sandbox.sendAutoBotBuildOrUpgrade = previousBuildSender;
 
 process.stdout.write("mirv aim tests passed\n");

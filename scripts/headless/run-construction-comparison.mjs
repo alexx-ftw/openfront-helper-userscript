@@ -50,6 +50,18 @@ const candidate = JSON.parse(
   await readFile(path.join(candidateRun.outputDirectory, "matrix.json"), "utf8"),
 );
 
+function assertMatchingSeeds(baselineGame, candidateGame, scenarioId, index) {
+  if (
+    baselineGame?.seed == null ||
+    candidateGame?.seed == null ||
+    baselineGame.seed !== candidateGame.seed
+  ) {
+    throw new Error(
+      `Unmatched construction seeds for ${scenarioId} pair ${index}: baseline=${baselineGame?.seed ?? "missing"}, candidate=${candidateGame?.seed ?? "missing"}`,
+    );
+  }
+}
+
 const finalTiles = (result) => result?.finalBotState?.tiles ?? 0;
 const finalGold = (result) => Number(result?.finalBotState?.gold ?? 0);
 const constructionActionCount = (result, action, unit = null) =>
@@ -107,6 +119,7 @@ const scenarios = candidate.results.map((candidateEntry) => {
   }
   const pairs = candidateGames.map((candidateGame, index) => {
     const baselineGame = baselineGames[index];
+    assertMatchingSeeds(baselineGame, candidateGame, candidateEntry.scenario.id, index);
     return {
       index,
       baselineSeed: baselineGame?.seed ?? null,
