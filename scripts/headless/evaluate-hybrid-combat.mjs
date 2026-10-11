@@ -26,7 +26,7 @@ import {
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const modes = ["baseline", "shadow", "learned"];
-const format = "ofh-hybrid-combat-evaluation-v2";
+export const format = "ofh-hybrid-combat-evaluation-v2";
 const extendedKeys = [
   "harnessHash",
   "evaluationContractHash",
@@ -417,7 +417,8 @@ function cohortCoverage(cohorts, pairs) {
 }
 
 // shortcut: cap native files at 64 MiB; use a disk-backed export for larger runs.
-const nativeEventLimit = 64 * 1024 * 1024;
+// Full-match histories exceeded 128 MiB; bound decoding within the 4 GiB evaluator budget.
+export const nativeEventLimit = 256 * 1024 * 1024;
 
 function readNativeEvents(file, outDir) {
   assert.equal(fs.realpathSync(outDir), path.dirname(file), "Native event path escape");
@@ -550,7 +551,7 @@ function validateNativeRetention(
     ["entries", entries, evidence.entries],
     ["decisionRows", decisions, evidence.retainedDecisionRows],
     ["latencyMs", latency, evidence.retainedLatencyMs],
-    ["safetyRows", safetyRows, evidence.safetyRows],
+    ["safetyRows", safetyRows.map(({ kind: _kind, ...row }) => row), evidence.safetyRows],
     ["transitions", transitions.map(({ kind: _kind, ...row }) => row), evidence.transitionRows],
   ]) {
     assert.ok(
@@ -839,7 +840,7 @@ function evaluationEnvironment(environment) {
   );
 }
 
-function modelProvenance(model, sourceHash) {
+export function modelProvenance(model, sourceHash) {
   return {
     modelHash: hash(canonical(model)),
     featureHash: hash(

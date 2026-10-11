@@ -629,6 +629,107 @@ function controlledRecord(decision, state) {
   };
 }
 
+function validateUncontrolledScope(event, actorSmallID) {
+  assert.ok(
+    event.learned === false &&
+      event.controlledAction === null &&
+      event.decisionStep === null &&
+      event.decisionSequence === null &&
+      event.actorSmallID === actorSmallID &&
+      event.behaviorPolicy === "legendary-unknown" &&
+      event.behaviorProbability === null &&
+      event.logProbability === null,
+    "Orphan action/receipt/outcome reference: uncontrolled scope unproven",
+  );
+  if (kind(event) !== "outcome")
+    assert.ok(
+      integer(event.tick) && integer(event.targetSmallID),
+      "Invalid uncontrolled event tick/target",
+    );
+}
+
+function validateUncontrolledOutcome(outcome, result) {
+  assert.ok(
+    ["wait", "attack"].includes(outcome.action) &&
+      integer(outcome.actionTick) &&
+      integer(outcome.outcomeTick) &&
+      outcome.actionTick <= outcome.outcomeTick &&
+      outcome.outcomeTick <= result.ticks &&
+      typeof outcome.confirmed === "boolean" &&
+      typeof outcome.terminal === "boolean" &&
+      outcome.truncated === false &&
+      outcome.envError !== true &&
+      outcome.error == null &&
+      Number.isFinite(outcome.reward),
+    "Invalid uncontrolled outcome timing/flags",
+  );
+}
+
+function excludeUncontrolledEvents(state, actorSmallID) {
+  const { selected, consumed, seenReceipts, result, excluded } = state;
+  const events = selected.filter(
+    (event) => ["accepted", "receipt", "outcome"].includes(kind(event)) && !consumed.has(event),
+  );
+  for (const event of events) validateUncontrolledScope(event, actorSmallID);
+  for (const outcome of events.filter((event) => kind(event) === "outcome")) {
+    validateUncontrolledOutcome(outcome, result);
+    if (outcome.action === "wait") {
+      assert.equal(outcome.targetSmallID, null, "Invalid uncontrolled WAIT target");
+      validateWait(outcome, [], []);
+    } else {
+      assert.ok(integer(outcome.targetSmallID), "Invalid uncontrolled attack target");
+      const accepted = events.filter(
+        (event) => kind(event) === "accepted" && event.sequence === outcome.acceptedSequence,
+      );
+      assert.equal(accepted.length, 1, "Missing uncontrolled attack acceptance");
+      const acceptance = accepted[0];
+      assert.ok(
+        !consumed.has(acceptance) &&
+          acceptance.acceptedSequence === acceptance.sequence &&
+          acceptance.sequence < outcome.sequence &&
+          acceptance.tick === outcome.actionTick &&
+          acceptance.targetSmallID === outcome.targetSmallID,
+        "Invalid uncontrolled acceptance reference",
+      );
+      for (const field of ["gate", "features", "geometry"])
+        exact(outcome[field], acceptance[field], "Uncontrolled accepted/pending features mismatch");
+      const receipts = events.filter(
+        (event) => kind(event) === "receipt" && event.acceptedSequence === acceptance.sequence,
+      );
+      if (outcome.confirmed) {
+        assert.equal(receipts.length, 1, "Missing uncontrolled native receipt");
+        validateReceipt(
+          outcome,
+          { actorSmallID, tick: outcome.actionTick },
+          acceptance,
+          receipts[0],
+          seenReceipts,
+        );
+        consumed.add(receipts[0]);
+      } else {
+        assert.equal(receipts.length, 0, "Unconfirmed uncontrolled action has receipt");
+        assert.equal(outcome.receiptID, null, "Unconfirmed uncontrolled receipt claimed");
+      }
+      consumed.add(acceptance);
+    }
+    consumed.add(outcome);
+  }
+  assert.ok(
+    events.every((event) => consumed.has(event)),
+    "Orphan uncontrolled acceptance/receipt",
+  );
+  for (const event of events)
+    excluded.push({
+      eventSequence: event.sequence,
+      eventKind: event.kind,
+      actorSmallID: event.actorSmallID,
+      targetSmallID: event.targetSmallID,
+      acceptedSequence: event.acceptedSequence,
+      receiptID: event.receiptID ?? null,
+      reason: "uncontrolled-policy-event",
+    });
+}
+
 function validateDeclined(decision, { selected, proposals }) {
   assert.ok(text(decision.reason), "Declined decision reason missing");
   assert.equal(decision.fallback, true, "Declined decision is not an authoritative fallback");
@@ -721,6 +822,7 @@ export function validateTrajectory(
     const record = controlledRecord(decision, state);
     if (record) records.push(record);
   }
+  excludeUncontrolledEvents(state, decisions[0].actorSmallID);
   assert.ok(
     selected
       .filter((event) => ["accepted", "receipt", "outcome"].includes(kind(event)))

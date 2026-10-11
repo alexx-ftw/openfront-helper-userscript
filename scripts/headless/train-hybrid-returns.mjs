@@ -11,7 +11,7 @@ import {
   validateTrajectory,
   PRODUCER_CONTRACT,
 } from "./hybrid-trajectory-contract.mjs";
-import { validateSeedIdentities } from "./evaluate-hybrid-combat.mjs";
+import { validateSeedIdentities, format, modelProvenance } from "./evaluate-hybrid-combat.mjs";
 
 const sourcePath = fileURLToPath(
   new URL("../../engine/ingame/auto-bot/hybridModelContract.js", import.meta.url),
@@ -162,6 +162,27 @@ export function trainReturns(options) {
   let complete = false;
   try {
     immutableJSON(path.join(directory, "model.json"), fitted.model);
+    const manifest = trajectory.manifest;
+    const inherited = Object.fromEntries(
+      [
+        "bundleHash",
+        "sourceHash",
+        "harnessHash",
+        "evaluationContractHash",
+        "configurationHash",
+        "engineRevision",
+        "engineDiffHash",
+      ].map((key) => [key, manifest[key]]),
+    );
+    immutableJSON(path.join(directory, "trained-model.json"), {
+      format,
+      policy: "compact-neural",
+      ...inherited,
+      model: fitted.model,
+      ...modelProvenance(fitted.model, manifest.sourceHash),
+      trainingSeeds: uniqueTrainingSeeds,
+      returnTraining: provenance,
+    });
     verifyFrozen();
     immutableJSON(path.join(directory, "provenance.json"), provenance);
     complete = true;
@@ -170,6 +191,8 @@ export function trainReturns(options) {
       for (const name of [
         "model.json",
         "model.json.tmp",
+        "trained-model.json",
+        "trained-model.json.tmp",
         "provenance.json",
         "provenance.json.tmp",
       ]) {

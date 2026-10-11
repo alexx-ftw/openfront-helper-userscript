@@ -64,7 +64,7 @@ productor nativo verifica identidad y cierre. La exportación separa propuestas,
 decisiones controladas, aceptación, recibo y resultado. Una cola retenida con
 eventos descartados no se convierte en una trayectoria completa.
 
-La lectura del archivo incremental admite hasta 64 MiB por partida; superar ese
+La lectura del archivo incremental admite hasta 256 MiB por partida; superar ese
 límite rechaza la evidencia completa. Las decisiones observadas conservan su
 numeración original. Solo se ajustan acciones controladas con enlaces verificados;
 las decisiones excluidas deben tener un motivo comprobado y cubrir explícitamente
@@ -77,6 +77,18 @@ por tener el mismo número. El descuento por tick es obligatorio. La salida incl
 el modelo y su procedencia nueva; el holdout futuro sigue pendiente y bloquea la
 promoción. Solicitar entrenamiento estocástico con probabilidades desconocidas
 debe fallar.
+
+La salida también incluye `trained-model.json`, un sobre nuevo que puede importar
+el evaluador estricto. Conserva las huellas reales del run de origen, recalcula
+las del modelo ajustado y su recompensa, e incluye la procedencia del ajuste.
+No modifica el manifiesto original ni habilita aprendizaje táctico en vivo.
+El evaluador rechazará el sobre si las fuentes, el harness o la configuración
+actuales ya no coinciden; en ese caso hace falta nueva evidencia compatible.
+
+El historial incremental compara el contenido de las filas de seguridad tras
+quitar únicamente el discriminador de transporte `kind`. Sigue comprobando
+contenido, identidad, recuentos, retención y cierre; no acepta un historial
+incompleto solo porque la partida haya terminado correctamente.
 
 El resultado debe acreditar ejecución completada, procedencia positiva y revisión
 y diff del motor coincidentes al inicio. Una derrota terminal válida puede aportar

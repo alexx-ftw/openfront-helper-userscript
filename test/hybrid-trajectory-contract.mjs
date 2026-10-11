@@ -445,7 +445,150 @@ export function validateFixture(input, options = {}) {
   );
 }
 
+function uncontrolledFixture(confirmed = true) {
+  const input = fixture({ actions: ["attack"] });
+  const ordinary = fixture({ confirmed });
+  const sequenceMap = new Map();
+  for (const row of ordinary.dataset.records) {
+    if (!["accepted", "receipt", "outcome"].some((type) => row.event.kind.endsWith(type))) continue;
+    const event = structuredClone(row.event);
+    sequenceMap.set(event.sequence, input.dataset.records.length);
+    event.sequence = input.dataset.records.length;
+    Object.assign(event, {
+      learned: false,
+      controlledAction: null,
+      decisionStep: null,
+      decisionSequence: null,
+      behaviorProbability: null,
+      logProbability: null,
+      behaviorPolicy: "legendary-unknown",
+    });
+    if (event.acceptedSequence !== null)
+      event.acceptedSequence = sequenceMap.get(event.acceptedSequence);
+    for (const field of ["tick", "actionTick", "outcomeTick"])
+      if (event[field] !== undefined) event[field] += 15;
+    if (event.receiptID) event.receiptID = `ordinary-${event.receiptID}`;
+    input.dataset.records.push({ manifest: input.selection.manifest, event });
+    input.nativeRun.result.hybridEvaluation.ledger.entries.splice(-1, 0, event);
+  }
+  input.dataset.recordCount = input.dataset.records.length;
+  input.nativeRun.result.ticks = 40;
+  input.nativeRun.result.hybridEvaluation.latestClosure.tick = 40;
+  return input;
+}
+
+function uncontrolledChecks() {
+  const input = uncontrolledFixture();
+  const original = canonical(input);
+  const trajectory = validateFixture(input, { gammaTick: 1 });
+  assert.equal(trajectory.trainable, true);
+  assert.equal(trajectory.records.length, 1, "Only the controlled attack trains");
+  assert.equal(trajectory.context.coverage.decisionCount, 1);
+  const fitted = loadNativeContract().fitEpisodeReturns(
+    trajectory.snapshot,
+    trajectory.records,
+    trajectory.context,
+  );
+  assert.equal(fitted.summary.fitted, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(fitted.model.offline.originalDecisionSteps)), [0]);
+  assert.deepEqual(trajectory.context.coverage.excluded, []);
+  assert.equal(trajectory.excluded.length, 5, "Every ordinary event is audited");
+  assert.ok(trajectory.excluded.every((entry) => entry.decisionStep === undefined));
+  assert.equal(canonical(input), original, "Full original ledger remains untouched");
+  assert.equal(validateFixture(uncontrolledFixture(false)).records.length, 1);
+  for (const mutate of [
+    (events) => {
+      events[0].learned = true;
+    },
+    (events) => {
+      delete events[1].learned;
+    },
+    (events) => {
+      events[2].controlledAction = "attack";
+    },
+    (events) => {
+      events[3].decisionStep = 0;
+    },
+    (events) => {
+      events[3].decisionSequence = 0;
+    },
+    (events) => {
+      events[0].actorSmallID = 2;
+    },
+    (events) => {
+      events[0].outcomeTick = 41;
+    },
+    (events) => {
+      events[0].actionTick = 99;
+    },
+    (events) => {
+      events[0].confirmed = false;
+    },
+    (events) => {
+      events[0].receiptID = "fake-wait-receipt";
+    },
+    (events) => {
+      events[1].acceptedSequence++;
+    },
+    (events) => {
+      events[1].tick++;
+    },
+    (events) => {
+      events[1].targetSmallID++;
+    },
+    (events) => {
+      events[2].acceptedSequence++;
+    },
+    (events) => {
+      events[2].actorSmallID++;
+    },
+    (events) => {
+      events[2].tick = 40;
+    },
+    (events) => {
+      events[2].tick = String(events[2].tick);
+    },
+    (events) => {
+      events[2].receiptID = "receipt-0";
+      events[3].receiptID = "receipt-0";
+    },
+    (events) => {
+      events[3].acceptedSequence = 1;
+    },
+    (events) => {
+      events[3].confirmed = false;
+    },
+    (events) => {
+      events[3].features[0]++;
+    },
+    (events) => {
+      events[1].kind = "hybrid-combat-observation-omitted";
+    },
+    (events) => {
+      events[2].kind = "hybrid-combat-observation-omitted";
+    },
+    (events) => {
+      events[3].kind = "hybrid-combat-observation-omitted";
+    },
+  ]) {
+    const invalid = uncontrolledFixture();
+    mutate(
+      invalid.dataset.records.filter((row) => row.event.learned === false).map((row) => row.event),
+    );
+    assert.throws(() => validateFixture(invalid), /uncontrolled|WAIT|receipt|reference|features/i);
+  }
+  const missingControlled = uncontrolledFixture();
+  missingControlled.dataset.records.find(
+    (row) => row.event.kind === "hybrid-combat-outcome" && row.event.learned === true,
+  ).event.kind = "hybrid-combat-observation-omitted";
+  assert.throws(
+    () => validateFixture(missingControlled),
+    /Controlled decision missing pending outcome/,
+  );
+}
+
 function integrityChecks() {
+  uncontrolledChecks();
   const original = fixture();
   for (const index of [0, 4, original.dataset.records.length - 1]) {
     const input = structuredClone(original);

@@ -18,6 +18,7 @@ import {
   validateModel,
   validateProvenance,
   evaluate,
+  nativeEventLimit,
 } from "../scripts/headless/evaluate-hybrid-combat.mjs";
 
 assert.throws(() => parseArgs([]), /seeds/);
@@ -423,7 +424,7 @@ function nativeLedgerFixture(runID) {
       retainedDecisionRows: rows.slice(44, 300),
       retainedLatencyMs: Array.from({ length: 256 }, (_, index) => index + 45),
       transitionRows: transitions.slice(-256),
-      safetyRows,
+      safetyRows: safetyRows.map(({ kind: _kind, ...row }) => row),
       dropped: {
         entries: entries.length - 256,
         decisionRows: 44,
@@ -497,6 +498,7 @@ async function nativeLedgerLaunch(
   return launch;
 }
 const nativeLedger = await nativeLedgerLaunch();
+assert.equal(nativeLedger.nativeEventError, undefined);
 assert.equal(nativeLedger.result.hybridEvaluation.decisionRows.length, 300);
 assert.equal(nativeLedger.result.hybridEvaluation.decisionRows[0].modelIdentity, "original-0");
 assert.equal(nativeLedger.result.hybridEvaluation.ledger.fullDataset, true);
@@ -511,7 +513,24 @@ assert.equal(
   "original-outcome-model-0",
 );
 assert.equal(nativeLedger.result.hybridEvaluation.coverage.unknownAttempts, 1);
+const fullMatchSizeLedger = await nativeLedgerLaunch((rows, _result, file) => {
+  const padding = " ".repeat(Math.ceil((64 * 1024 * 1024) / rows.length));
+  fs.writeFileSync(file, rows.map((row) => `${padding}${JSON.stringify(row)}\n`).join(""), {
+    flag: "wx",
+  });
+});
+assert.equal(fullMatchSizeLedger.nativeEventError, undefined);
+assert.equal(fullMatchSizeLedger.result.hybridEvaluation.ledger.fullDataset, true);
+assert.equal(fullMatchSizeLedger.result.hybridEvaluation.decisionRows.length, 300);
 assert.equal(nativeLedger.result.hybridEvaluation.safety.reserveChecks, 1);
+const retainedSafetyTail = await nativeLedgerLaunch((_rows, result) => {
+  result.hybridEvaluation.safetyRows.shift();
+  result.hybridEvaluation.dropped.safetyRows = 1;
+});
+assert.equal(retainedSafetyTail.nativeEventError, undefined);
+assert.equal(retainedSafetyTail.result.hybridEvaluation.ledger.fullDataset, true);
+assert.equal(retainedSafetyTail.result.hybridEvaluation.safety.reserveChecks, 1);
+assert.equal(retainedSafetyTail.result.hybridEvaluation.coverage.unknownAttempts, 1);
 const repeatedLaunch = await nativeLedgerLaunch();
 const traversalIdentity = await nativeLedgerLaunch(() => {}, 2, false, "../../bound-run");
 assert.equal(traversalIdentity.result.hybridEvaluation.ledger.fullDataset, true);
@@ -551,6 +570,18 @@ for (const mutate of [
     result.hybridEvaluation.retainedLatencyMs[0]++;
   },
   (_rows, result) => {
+    result.hybridEvaluation.safetyRows[0].emitted = false;
+  },
+  (_rows, result) => {
+    result.hybridEvaluation.safetyRows[0].runIdentity = "tampered";
+  },
+  (_rows, result) => {
+    result.hybridEvaluation.dropped.safetyRows++;
+  },
+  (rows) => {
+    rows.find((row) => row.kind === "hybrid-latency").durationMs = -1;
+  },
+  (_rows, result) => {
     delete result.hybridEvaluation.dropped;
   },
   (_rows, result) => {
@@ -561,7 +592,7 @@ for (const mutate of [
   },
   (_rows, _result, file) => {
     const fd = fs.openSync(file, "wx");
-    fs.ftruncateSync(fd, 64 * 1024 * 1024 + 1);
+    fs.ftruncateSync(fd, nativeEventLimit + 1);
     fs.closeSync(fd);
   },
   (_rows, _result, file) => () => fs.appendFileSync(file, " "),

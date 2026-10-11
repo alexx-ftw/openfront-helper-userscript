@@ -214,6 +214,18 @@ try {
   );
   const nativeModel = JSON.parse(fs.readFileSync(path.join(options.out, "model.json")));
   const provenance = JSON.parse(fs.readFileSync(path.join(options.out, "provenance.json")));
+  const envelope = JSON.parse(fs.readFileSync(path.join(options.out, "trained-model.json")));
+  assert.equal(envelope.format, "ofh-hybrid-combat-evaluation-v2");
+  assert.equal(envelope.modelHash, hash(canonical(nativeModel)));
+  assert.deepEqual(envelope.model, nativeModel);
+  assert.equal(envelope.configurationHash, input.selection.manifest.configurationHash);
+  assert.equal(envelope.sourceHash, input.selection.manifest.sourceHash);
+  assert.equal(
+    envelope.rewardHash,
+    hash(canonical({ reward: nativeModel.reward, offline: nativeModel.offline })),
+  );
+  assert.deepEqual(envelope.returnTraining, provenance);
+  assert.deepEqual(envelope.trainingSeeds, provenance.trainingSeeds);
   C.validate(nativeModel);
   assert.equal(nativeModel.schema, "ofh-combat-compact-tanh-v2", "Old snapshot remains importable");
   assert.equal(provenance.futureHoldout.status, "unverified");
