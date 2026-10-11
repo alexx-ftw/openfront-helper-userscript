@@ -19,6 +19,8 @@ import {
   validateProvenance,
   evaluate,
   nativeEventLimit,
+  validateNativeEvidence,
+  save,
 } from "../scripts/headless/evaluate-hybrid-combat.mjs";
 
 assert.throws(() => parseArgs([]), /seeds/);
@@ -497,6 +499,94 @@ async function nativeLedgerLaunch(
   });
   return launch;
 }
+function repeatedIdentityHistoryChecks() {
+  const runID = "repeated-identity-native";
+  const { rows, result, entries } = nativeLedgerFixture(runID);
+  const identity = 'exact-"\\\\-identity-' + "x".repeat(512 * 1024);
+  for (const row of rows) if (typeof row.modelIdentity === "string") row.modelIdentity = identity;
+  const outDir = fs.mkdtempSync(path.join(temporary, "repeated-identity-"));
+  const file = path.join(outDir, "native.jsonl");
+  const descriptor = fs.openSync(file, "wx");
+  for (const row of rows) fs.writeSync(descriptor, JSON.stringify(row) + "\n");
+  fs.closeSync(descriptor);
+  result.hybridEvaluation.eventFile = file;
+  result.hybridEvaluation.ledger = {
+    entries: entries.slice(-256),
+    dropped: entries.length - 256,
+    fullDataset: false,
+    incrementalFile: { path: file, fullDataset: true, policyEvents: entries.length },
+  };
+  assert.ok(fs.statSync(file).size > nativeEventLimit);
+  const restored = validateNativeEvidence({ seed: "../seed", result }, file, outDir, runID);
+  assert.equal(restored.ledger.fullDataset, true);
+  assert.equal(restored.decisionRows.length, 300);
+  assert.ok(restored.decisionRows.every((row) => row.modelIdentity === identity));
+  for (const extra of ["unique", "padding"]) {
+    const invalidFile = path.join(outDir, `${extra}.jsonl`);
+    const fd = fs.openSync(invalidFile, "wx");
+    for (const [index, row] of rows.entries()) {
+      const changed = { ...row };
+      if (typeof changed.modelIdentity === "string") {
+        if (extra === "unique") changed.modelIdentity += index;
+        else changed.padding = " ".repeat(512 * 1024);
+      }
+      fs.writeSync(fd, JSON.stringify(changed) + "\n");
+    }
+    fs.closeSync(fd);
+    result.hybridEvaluation.eventFile = invalidFile;
+    result.hybridEvaluation.ledger.incrementalFile.path = invalidFile;
+    assert.throws(
+      () => validateNativeEvidence({ seed: "../seed", result }, invalidFile, outDir, runID),
+      /unique event payload/,
+    );
+  }
+  const largeOutput = path.join(outDir, "large-report.json");
+  save(largeOutput, { records: Array(1025).fill(identity) });
+  assert.ok(fs.statSync(largeOutput).size > 512 * 1024 * 1024);
+  const tail = Buffer.alloc(8);
+  const fd = fs.openSync(largeOutput, "r");
+  fs.readSync(fd, tail, 0, tail.length, fs.statSync(largeOutput).size - tail.length);
+  fs.closeSync(fd);
+  assert.equal(tail.toString().endsWith("\n  ]\n}\n"), true);
+  const output = path.join(outDir, "report.json");
+  save(output, {
+    values: [undefined, null, false, 1, identity],
+    nested: { omitted: undefined, value: 2 },
+  });
+  assert.deepEqual(JSON.parse(fs.readFileSync(output, "utf8")), {
+    values: [null, null, false, 1, identity],
+    nested: { value: 2 },
+  });
+  const compatible = {
+    date: new Date("2026-10-11T00:00:00Z"),
+    bytes: Buffer.from([1, 2]),
+    omitted: {
+      toJSON() {
+        return undefined;
+      },
+    },
+    keyed: {
+      toJSON(key) {
+        return key;
+      },
+    },
+  };
+  const compatibilityOutput = path.join(outDir, "compatible.json");
+  save(compatibilityOutput, compatible);
+  assert.equal(
+    fs.readFileSync(compatibilityOutput, "utf8"),
+    JSON.stringify(compatible, null, 2) + "\n",
+  );
+  assert.throws(() => save(output, {}), /EEXIST/);
+  const cyclic = {};
+  cyclic.self = cyclic;
+  const failed = path.join(outDir, "failed.json");
+  assert.throws(() => save(failed, cyclic));
+  assert.equal(fs.existsSync(failed), false);
+  assert.ok(!fs.readdirSync(outDir).some((name) => name.endsWith(".tmp")));
+}
+repeatedIdentityHistoryChecks();
+
 const nativeLedger = await nativeLedgerLaunch();
 assert.equal(nativeLedger.nativeEventError, undefined);
 assert.equal(nativeLedger.result.hybridEvaluation.decisionRows.length, 300);
@@ -551,6 +641,9 @@ for (const mutate of [
   (_rows, result) => {
     result.hybridEvaluation.ledger.incrementalFile.policyEvents++;
   },
+  (_rows, result) => {
+    result.hybridEvaluation.ledger.incrementalFile.transitionEvents = 301;
+  },
   (rows) => {
     rows.pop();
   },
@@ -594,6 +687,11 @@ for (const mutate of [
     const fd = fs.openSync(file, "wx");
     fs.ftruncateSync(fd, nativeEventLimit + 1);
     fs.closeSync(fd);
+  },
+  (rows, _result, file) => {
+    const bytes = Buffer.from(rows.map(JSON.stringify).join("\n") + "\n");
+    bytes[bytes.indexOf("original-0")] = 255;
+    fs.writeFileSync(file, bytes, { flag: "wx" });
   },
   (_rows, _result, file) => () => fs.appendFileSync(file, " "),
   (rows, _result, file) => {

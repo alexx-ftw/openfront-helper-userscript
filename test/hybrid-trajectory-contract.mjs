@@ -669,7 +669,221 @@ function mixedRunChecks(original) {
   assert.equal(selected.excluded.length, second.dataset.recordCount);
 }
 
+function ambiguousFixture() {
+  const input = fixture({ actions: ["attack", "attack"] });
+  const events = input.dataset.records.map((row) => row.event);
+  const decision = structuredClone(events[2]);
+  const scope = { episodeId: 1, generation: 3, runIdentity: input.selection.manifest.runID };
+  const replacements = [
+    {
+      kind: "hybrid-combat-dispatch-attempt",
+      sequence: 1,
+      dispatchID: 1,
+      decisionStep: 0,
+      decisionSequence: 0,
+      tick: 2,
+      targetSmallID: 2,
+    },
+    {
+      kind: "hybrid-combat-observation-omitted",
+      sequence: 2,
+      reason: "ambiguous-commitment",
+      targetSmallID: 2,
+    },
+    { ...decision, sequence: 3, reason: "controlled-attack", fallback: false },
+    { kind: "hybrid-combat-observation-omitted", sequence: 4, reason: "forced-action" },
+  ];
+  replacements.forEach((replacement, index) => {
+    for (const key of Object.keys(events[index + 1])) delete events[index + 1][key];
+    Object.assign(events[index + 1], scope, replacement);
+  });
+  const safety = {
+    ...scope,
+    kind: "hybrid-safety",
+    step: 0,
+    attemptId: 1,
+    tick: 2,
+    targetSmallID: 2,
+    emitted: true,
+    reservePassed: true,
+    legalityPassed: true,
+    payloadTroops: 10,
+    spendableTroops: 10,
+  };
+  input.nativeRun.result.hybridEvaluation.ledger.entries.splice(3, 0, safety);
+  input.nativeRun.result.hybridEvaluation.safetyRows = [{ ...safety }];
+  return input;
+}
+
+function censoredChecks() {
+  const input = ambiguousFixture();
+  const original = canonical(input);
+  const trajectory = validateFixture(input, { gammaTick: 1 });
+  assert.equal(trajectory.trainable, true);
+  assert.deepEqual(
+    trajectory.records.map((row) => row.decisionStep),
+    [1],
+  );
+  assert.equal(trajectory.excluded[0].reason, "censored-ambiguous-commitment");
+  assert.equal(canonical(input), original);
+  assert.equal(
+    loadNativeContract().fitEpisodeReturns(
+      trajectory.snapshot,
+      trajectory.records,
+      trajectory.context,
+    ).summary.fitted,
+    1,
+  );
+  for (const mutate of [
+    (safety) => {
+      safety.emitted = false;
+    },
+    (safety) => {
+      safety.reservePassed = false;
+    },
+    (safety) => {
+      safety.legalityPassed = false;
+    },
+    (safety) => {
+      safety.attemptId = 7;
+    },
+    (safety) => {
+      safety.tick = 3;
+    },
+    (safety) => {
+      safety.targetSmallID = 3;
+    },
+    (safety) => {
+      delete safety.runIdentity;
+    },
+    (_safety, copy) => {
+      copy.nativeRun.result.hybridEvaluation.ledger.entries.splice(3, 1);
+    },
+    (safety, copy) => {
+      copy.nativeRun.result.hybridEvaluation.ledger.entries.splice(3, 0, { ...safety });
+    },
+    (_safety, copy) => {
+      copy.dataset.records[2].event.reason = "unknown";
+    },
+    (_safety, copy) => {
+      copy.dataset.records[2].event.targetSmallID = 3;
+    },
+    (_safety, copy) => {
+      copy.dataset.records[2].event.tick = 1;
+    },
+    (_safety, copy) => {
+      copy.dataset.records[1].event.decisionSequence = 3;
+    },
+    (_safety, copy) => {
+      delete copy.dataset.records[3].event.actorSmallID;
+    },
+  ]) {
+    const copy = ambiguousFixture();
+    mutate(copy.nativeRun.result.hybridEvaluation.ledger.entries[3], copy);
+    assert.throws(() => validateFixture(copy));
+  }
+}
+
+function uncontrolledCancellationChecks() {
+  const input = uncontrolledFixture();
+  const last = input.dataset.records.at(-1).event;
+  Object.assign(last, {
+    reward: null,
+    reason: "winner",
+    terminal: false,
+    truncated: true,
+    envError: false,
+    outcomeTick: 40,
+  });
+  const trajectory = validateFixture(input);
+  assert.equal(trajectory.records.length, 1);
+  assert.ok(
+    trajectory.excluded.some((entry) => entry.reason === "uncontrolled-censored-winner-pending"),
+  );
+  const attack = input.dataset.records.find(
+    (row) =>
+      row.event.learned === false &&
+      row.event.action === "attack" &&
+      row.event.kind.endsWith("outcome"),
+  ).event;
+  Object.assign(attack, {
+    reward: null,
+    reason: "winner",
+    terminal: false,
+    truncated: true,
+    envError: false,
+    outcomeTick: 40,
+  });
+  assert.throws(() => validateFixture(input), /uncontrolled/);
+}
+
+function cancellationChecks() {
+  const wait = fixture({ actions: ["wait", "wait"] });
+  Object.assign(wait.dataset.records.at(-1).event, {
+    reward: null,
+    reason: "winner",
+    terminal: false,
+    truncated: true,
+    envError: false,
+    outcomeTick: 12,
+  });
+  assert.equal(validateFixture(wait).records.length, 1);
+  wait.dataset.records.at(-1).event.confirmed = false;
+  assert.throws(() => validateFixture(wait), /WAIT/);
+  const input = fixture({ actions: ["attack", "attack"] });
+  const last = input.dataset.records.at(-1).event;
+  Object.assign(last, {
+    reward: null,
+    reason: "winner",
+    terminal: false,
+    truncated: true,
+    envError: false,
+    outcomeTick: 12,
+  });
+  const trajectory = validateFixture(input);
+  assert.deepEqual(
+    trajectory.records.map((row) => row.decisionStep),
+    [0],
+  );
+  assert.equal(trajectory.excluded[0].reason, "censored-winner-pending");
+  for (const mutate of [
+    (copy) => {
+      copy.dataset.records.at(-1).event.reason = "unknown";
+    },
+    (copy) => {
+      copy.dataset.records.at(-1).event.outcomeTick = 11;
+    },
+    (copy) => {
+      copy.dataset.records.at(-1).event.decisionSequence = 0;
+    },
+    (copy) => {
+      copy.dataset.records.at(-1).event.actorSmallID = 7;
+    },
+    (copy) => {
+      copy.dataset.records.at(-2).event.kind = "hybrid-combat-observation-omitted";
+    },
+  ]) {
+    const copy = structuredClone(input);
+    mutate(copy);
+    assert.throws(() => validateFixture(copy));
+  }
+  const ordinary = uncontrolledFixture(false);
+  const outcome = ordinary.dataset.records.find(
+    (row) =>
+      row.event.action === "attack" &&
+      row.event.learned === false &&
+      row.event.kind.endsWith("outcome"),
+  ).event;
+  outcome.reward = null;
+  assert.equal(validateFixture(ordinary).records.length, 1);
+  outcome.confirmed = true;
+  assert.throws(() => validateFixture(ordinary), /uncontrolled/);
+}
+
 function coverageChecks() {
+  censoredChecks();
+  cancellationChecks();
+  uncontrolledCancellationChecks();
   const gappedInput = fixture({ actions: ["wait", "declined", "wait"] });
   const gapped = validateFixture(gappedInput);
   assert.equal(

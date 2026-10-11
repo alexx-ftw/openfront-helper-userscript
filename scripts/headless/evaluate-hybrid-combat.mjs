@@ -2,6 +2,7 @@
 // Holdout: node scripts/headless/evaluate-hybrid-combat.mjs --model /path/trained-model.json --seeds holdout-01,holdout-02 --timeout-ms 60000
 // OFH_* match settings are shared by every mode. Tick caps are censored, never losses.
 import assert from "node:assert/strict";
+import { isUtf8 } from "node:buffer";
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -36,8 +37,58 @@ const extendedKeys = [
   "rewardHash",
   "configurationHash",
 ];
-const save = (file, value) =>
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
+const jsonValue = (value, key) =>
+  value && typeof value.toJSON === "function" ? value.toJSON(key) : value;
+
+function jsonEntries(value, array) {
+  const entries = array ? Array.from(value, (item, index) => [index, item]) : Object.entries(value);
+  return entries
+    .map(([key, item]) => [key, jsonValue(item, String(key))])
+    .filter(([, item]) => array || !["undefined", "function", "symbol"].includes(typeof item));
+}
+
+function* jsonChunks(value, depth = 0, ancestors = new Set()) {
+  if (depth === 0) value = jsonValue(value, "");
+  if (value === null || typeof value !== "object") {
+    yield JSON.stringify(value) ?? "null";
+    return;
+  }
+  assert.ok(!ancestors.has(value), "Circular JSON value");
+  ancestors.add(value);
+  const array = Array.isArray(value);
+  const entries = jsonEntries(value, array);
+  yield array ? "[" : "{";
+  for (const [index, [key, item]] of entries.entries()) {
+    yield `${index ? "," : ""}\n${"  ".repeat(depth + 1)}`;
+    if (!array) yield `${JSON.stringify(key)}: `;
+    yield* jsonChunks(item, depth + 1, ancestors);
+  }
+  if (entries.length) yield `\n${"  ".repeat(depth)}`;
+  yield array ? "]" : "}";
+  ancestors.delete(value);
+}
+
+export function save(file, value) {
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  const descriptor = fs.openSync(temporary, "wx");
+  try {
+    let pending = "";
+    for (const chunk of jsonChunks(value)) {
+      pending += chunk;
+      if (pending.length >= 64 * 1024) {
+        fs.writeFileSync(descriptor, pending);
+        pending = "";
+      }
+    }
+    fs.writeFileSync(descriptor, `${pending}\n`);
+    fs.fsyncSync(descriptor);
+    // Exclusive publication preserves the existing save contract without exposing partial JSON.
+    fs.linkSync(temporary, file);
+  } finally {
+    fs.closeSync(descriptor);
+    fs.unlinkSync(temporary);
+  }
+}
 
 export function validateProvenance(saved, current, strict = false) {
   const keys = [
@@ -416,38 +467,84 @@ function cohortCoverage(cohorts, pairs) {
   };
 }
 
-// shortcut: cap native files at 64 MiB; use a disk-backed export for larger runs.
-// Full-match histories exceeded 128 MiB; bound decoding within the 4 GiB evaluator budget.
+// Bound unique encoded payload and individual lines; repeated exact identities are interned.
 export const nativeEventLimit = 256 * 1024 * 1024;
 
-function readNativeEvents(file, outDir) {
+function* nativeLines(descriptor, size) {
+  const buffer = Buffer.alloc(64 * 1024);
+  let parts = [];
+  let lineBytes = 0;
+  let bytes = 0;
+  let count;
+  while ((count = fs.readSync(descriptor, buffer, 0, buffer.length, null))) {
+    bytes += count;
+    assert.ok(bytes <= size, "Native event file drift");
+    let start = 0;
+    while (start < count) {
+      const newline = buffer.indexOf(10, start);
+      const end = newline >= 0 && newline < count ? newline + 1 : count;
+      const part = Buffer.from(buffer.subarray(start, end));
+      parts.push(part);
+      lineBytes += part.length;
+      assert.ok(lineBytes <= nativeEventLimit, "Native event line exceeds bounded reader");
+      if (end <= count && buffer[end - 1] === 10) {
+        yield Buffer.concat(parts, lineBytes);
+        parts = [];
+        lineBytes = 0;
+      }
+      start = end;
+    }
+  }
+  assert.equal(lineBytes, 0, "Incomplete native event line");
+  assert.equal(bytes, size, "Native event file drift");
+}
+
+function readNativeEvents(file, outDir, evidence) {
   assert.equal(fs.realpathSync(outDir), path.dirname(file), "Native event path escape");
   const before = fs.lstatSync(file);
   assert.ok(before.isFile() && !before.isSymbolicLink(), "Native event symlink/type");
-  assert.ok(before.size <= nativeEventLimit, "Native event file exceeds bounded reader");
+  const incremental = evidence.ledger.incrementalFile;
+  const transitionCount =
+    incremental.transitionEvents ?? evidence.transitionRows.length + evidence.dropped.transitions;
+  assert.ok(
+    Number.isSafeInteger(incremental.policyEvents) &&
+      incremental.policyEvents >= 0 &&
+      Number.isSafeInteger(transitionCount) &&
+      transitionCount >= 0 &&
+      Number.isSafeInteger(incremental.policyEvents + transitionCount),
+    "Native event count missing",
+  );
+  const rowLimit = incremental.policyEvents + transitionCount;
+  const identities = new Map();
+  let duplicateBytes = 0;
+  let decodedBytes = 0;
+  const intern = (key, value) => {
+    if (key !== "modelIdentity" || typeof value !== "string") return value;
+    if (!identities.has(value)) {
+      identities.set(value, value);
+      return value;
+    }
+    // Credit only canonical escaped content bytes, never keys, quotes, padding or other fields.
+    duplicateBytes += Buffer.byteLength(JSON.stringify(value)) - 2;
+    return identities.get(value);
+  };
   const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
   const rows = [];
   try {
     const opened = fs.fstatSync(fd);
     assert.equal(opened.ino, before.ino, "Native event file drift");
     assert.equal(opened.dev, before.dev, "Native event file drift");
-    const buffer = Buffer.alloc(64 * 1024);
-    let pending = Buffer.alloc(0);
-    let bytes = 0;
-    let count;
-    while ((count = fs.readSync(fd, buffer, 0, buffer.length, null))) {
-      bytes += count;
-      assert.ok(bytes <= before.size, "Native event file drift");
-      assert.ok(bytes <= nativeEventLimit, "Native event file exceeds bounded reader");
-      pending = Buffer.concat([pending, buffer.subarray(0, count)]);
-      let newline;
-      while ((newline = pending.indexOf(10)) !== -1) {
-        rows.push(JSON.parse(pending.subarray(0, newline).toString("utf8")));
-        pending = pending.subarray(newline + 1);
-      }
+    for (const line of nativeLines(fd, before.size)) {
+      assert.ok(isUtf8(line), "Invalid native event UTF-8");
+      assert.ok(rows.length < rowLimit, "Native event count exceeds declared coverage");
+      rows.push(JSON.parse(line.toString("utf8"), intern));
+      decodedBytes += line.length;
+      assert.ok(
+        decodedBytes - duplicateBytes <= nativeEventLimit,
+        "Native unique event payload exceeds bounded reader",
+      );
     }
-    assert.equal(pending.length, 0, "Incomplete native event line");
-    assert.equal(bytes, before.size, "Native event file drift");
+    assert.equal(rows.length, rowLimit, "Native event count differs from declared coverage");
     for (const after of [fs.fstatSync(fd), fs.lstatSync(file)])
       for (const key of ["dev", "ino", "size", "mtimeMs", "ctimeMs"])
         assert.equal(after[key], before[key], "Native event file drift");
@@ -564,11 +661,12 @@ function validateNativeRetention(
       retained.length + evidence.dropped[key],
       "Native retention count mismatch",
     );
-    assert.equal(
-      canonical(retained),
-      canonical(values.slice(values.length - retained.length)),
-      "Native retained content mismatch",
-    );
+    for (const [index, row] of retained.entries())
+      assert.equal(
+        canonical(row),
+        canonical(values[values.length - retained.length + index]),
+        "Native retained content mismatch",
+      );
   }
   assert.equal(
     evidence.ledger.dropped,
@@ -576,13 +674,19 @@ function validateNativeRetention(
     "Native ledger retention mismatch",
   );
   assert.equal(
-    canonical(evidence.ledger.entries),
-    canonical(evidence.entries),
+    evidence.ledger.entries.length,
+    evidence.entries.length,
     "Native ledger retained content mismatch",
   );
+  for (const [index, row] of evidence.entries.entries())
+    assert.equal(
+      canonical(row),
+      canonical(evidence.ledger.entries[index]),
+      "Native ledger retained content mismatch",
+    );
 }
 
-function validateNativeEvidence(run, file, outDir, runID) {
+export function validateNativeEvidence(run, file, outDir, runID) {
   const evidence = run.result.hybridEvaluation;
   assert.equal(run.result.seed, run.seed, "Native result seed mismatch");
   assert.ok(
@@ -593,7 +697,7 @@ function validateNativeEvidence(run, file, outDir, runID) {
   const incremental = evidence.ledger?.incrementalFile;
   assert.equal(incremental?.path, file, "Native incremental path mismatch");
   assert.equal(incremental.fullDataset, true, "Native incremental coverage unknown");
-  const rows = readNativeEvents(file, outDir);
+  const rows = readNativeEvents(file, outDir, evidence);
   assert.ok(
     rows.every((row) => row.runIdentity === runID),
     "Native event run identity mismatch",
@@ -1379,7 +1483,22 @@ if (
   import.meta.url === new URL(`file://${path.resolve(process.argv[1])}`).href
 ) {
   const { outDir, report } = await evaluate(parseArgs(process.argv.slice(2)));
-  process.stdout.write(`${JSON.stringify({ outDir, ...report }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        outDir,
+        resultPath: path.join(outDir, "evaluation.json"),
+        collection: report.collection === true,
+        counts: report.counts,
+        completedPairs: report.completedPairs,
+        requestedPairs: report.requestedPairs,
+        summary: report.summary,
+        eligibility: report.eligibility,
+      },
+      null,
+      2,
+    )}\n`,
+  );
   process.exitCode = report.collection
     ? Number(report.counts.errors > 0)
     : Number(report.completedPairs !== report.requestedPairs);

@@ -64,8 +64,13 @@ productor nativo verifica identidad y cierre. La exportación separa propuestas,
 decisiones controladas, aceptación, recibo y resultado. Una cola retenida con
 eventos descartados no se convierte en una trayectoria completa.
 
-La lectura del archivo incremental admite hasta 256 MiB por partida; superar ese
-límite rechaza la evidencia completa. Las decisiones observadas conservan su
+La lectura incremental limita cada línea y el contenido codificado único a
+256 MiB. Comparte internamente cadenas `modelIdentity` exactamente iguales, sin
+cambiar sus valores, y contrasta el número de filas con los recuentos nativos.
+Así admite historiales físicos mayores sin eliminar eventos ni quitar límites
+de memoria. Los informes se escriben por bloques y se publican de forma atómica
+y exclusiva; la CLI devuelve un resumen y la ruta del informe.
+Las decisiones observadas conservan su
 numeración original. Solo se ajustan acciones controladas con enlaces verificados;
 las decisiones excluidas deben tener un motivo comprobado y cubrir explícitamente
 los huecos, sin convertir fallbacks en esperas aprendidas.
@@ -94,6 +99,21 @@ El resultado debe acreditar ejecución completada, procedencia positiva y revisi
 y diff del motor coincidentes al inicio. Una derrota terminal válida puede aportar
 retorno negativo; un error, una interrupción o una infracción del presupuesto no
 se convierte en una derrota de entrenamiento.
+
+Una emisión aprendida sobre un ataque ya activo puede carecer de resultado
+atribuible. Solo se excluye ese paso si el intento enlazado tiene una única
+comprobación nativa de emisión, reserva y legalidad aceptadas, y un aviso de
+`ambiguous-commitment` para el mismo objetivo entre el intento y la decisión.
+La exclusión conserva el paso original y su razón; no fabrica recompensa ni
+aceptación observada. Un pendiente cancelado por el vencedor requiere el cierre
+nativo exacto y sus referencias. Los huecos sin prueba y las confirmaciones sin
+recibo siguen rechazándose, aunque el resto de la partida haya terminado.
+
+Al comparar WAIT y ACT, ambos deben usar recompensas compatibles. Ajustar solo
+ACT con derrotas terminales y dejar WAIT con recompensas locales puede cambiar
+la acción elegida por diferencia de escala. La calibración exige WAIT realmente
+controlados en nuevas partidas de entrenamiento; los fallbacks no se convierten
+en ejemplos de WAIT. La cobertura mínima del modelo no acredita mejora.
 
 ## Qué evitamos de los otros proyectos
 

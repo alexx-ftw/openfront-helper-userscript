@@ -475,7 +475,7 @@ function actionReferences(selected, proposal, selection, consumed) {
   return { outcomes, accepted, receipts };
 }
 
-function validatePending(outcome, decision, result) {
+function validatePending(outcome, decision, result, cancelled) {
   assert.ok(outcome.sequence > decision.sequence, "Pending outcome precedes controlled decision");
   assert.equal(outcome.action, decision.controlledAction, "Chosen/executed action mismatch");
   assert.equal(
@@ -495,7 +495,7 @@ function validatePending(outcome, decision, result) {
   assert.equal(typeof outcome.confirmed, "boolean", "Unknown native confirmation status");
   assert.equal(outcome.behaviorProbability, null, "Outcome probabilities must remain null");
   assert.equal(outcome.logProbability, null, "Outcome log probability must remain null");
-  assert.equal(outcome.truncated, false, "Truncated outcome cannot train");
+  assert.equal(outcome.truncated, cancelled, "Truncated outcome cannot train");
   assert.ok(outcome.envError !== true, "Error outcome cannot train");
   assert.ok(
     outcome.error == null && typeof outcome.terminal === "boolean",
@@ -580,6 +580,118 @@ function validateReceipt(outcome, decision, accepted, receipt, seenReceipts) {
   seenReceipts.add(outcome.receiptID);
 }
 
+function excludeAmbiguousDispatch(decision, proposal, linked, state) {
+  assert.ok(
+    decision.controlledAction === "attack" &&
+      decision.reason === "controlled-attack" &&
+      decision.fallback === false &&
+      linked.accepted.length === 0 &&
+      linked.receipts.length === 0,
+    "Controlled decision missing pending outcome: no omission proof",
+  );
+  assert.ok(
+    proposal.candidates.some((candidate) => candidate.targetSmallID === decision.targetSmallID),
+    "Censored selected target absent from legal mask",
+  );
+  const attempts = state.selected.filter(
+    (event) => kind(event) === "dispatch-attempt" && event.decisionStep === decision.step,
+  );
+  assert.equal(attempts.length, 1, "Missing/duplicate censored dispatch");
+  const attempt = attempts[0];
+  assert.ok(
+    attempt.dispatchID === attempt.sequence &&
+      integer(attempt.dispatchID) &&
+      attempt.decisionSequence === proposal.sequence &&
+      attempt.tick === decision.tick &&
+      attempt.targetSmallID === decision.targetSmallID,
+    "Censored dispatch reference mismatch",
+  );
+  const omissions = state.selected.filter(
+    (event) =>
+      kind(event) === "observation-omitted" &&
+      event.sequence > attempt.sequence &&
+      event.sequence < decision.sequence,
+  );
+  assert.equal(omissions.length, 1, "Missing/duplicate interval omission proof");
+  const omission = omissions[0];
+  assert.ok(
+    omission.reason === "ambiguous-commitment" &&
+      omission.targetSmallID === decision.targetSmallID &&
+      (omission.tick === undefined || omission.tick === decision.tick),
+    "Censored observation omission mismatch",
+  );
+  validateDispatchSafety(attempt, decision, state);
+  state.excluded.push({
+    decisionStep: decision.step,
+    reason: "censored-ambiguous-commitment",
+    dispatchID: attempt.dispatchID,
+    omissionSequence: omission.sequence,
+  });
+  return null;
+}
+
+function validateDispatchSafety(attempt, decision, state) {
+  const entries = state.result.hybridEvaluation.ledger.entries;
+  const rows = entries.filter(
+    (event) =>
+      event.kind === "hybrid-safety" &&
+      event.episodeId === decision.episodeId &&
+      event.generation === decision.generation &&
+      event.attemptId === attempt.dispatchID,
+  );
+  assert.equal(rows.length, 1, "Missing/duplicate native dispatch safety proof");
+  const safety = rows[0];
+  assert.ok(
+    safety.runIdentity === state.selection.manifest.runID &&
+      safety.step === decision.step &&
+      safety.tick === decision.tick &&
+      safety.targetSmallID === decision.targetSmallID &&
+      safety.emitted === true &&
+      safety.reservePassed === true &&
+      safety.legalityPassed === true &&
+      Number.isFinite(safety.payloadTroops) &&
+      safety.payloadTroops > 0 &&
+      Number.isFinite(safety.spendableTroops) &&
+      safety.payloadTroops <= safety.spendableTroops,
+    "Native dispatch safety proof mismatch",
+  );
+  assert.ok(
+    entries.findIndex(
+      (event) =>
+        event.kind === attempt.kind &&
+        event.sequence === attempt.sequence &&
+        event.episodeId === attempt.episodeId &&
+        event.generation === attempt.generation,
+    ) < entries.indexOf(safety) &&
+      entries.indexOf(safety) <
+        entries.findIndex(
+          (event) =>
+            event.kind === decision.kind &&
+            event.sequence === decision.sequence &&
+            event.episodeId === decision.episodeId &&
+            event.generation === decision.generation,
+        ),
+    "Native safety interval mismatch",
+  );
+}
+
+function winnerCancellation(outcome, state) {
+  const closure = state.result.hybridEvaluation.latestClosure;
+  return (
+    outcome === state.selected.at(-1) &&
+    outcome.reward === null &&
+    outcome.reason === "winner" &&
+    outcome.terminal === false &&
+    outcome.truncated === true &&
+    outcome.envError === false &&
+    outcome.outcomeTick === closure.tick &&
+    closure.reason === "winner" &&
+    closure.terminated === true &&
+    closure.truncated === false &&
+    closure.envError === false
+  );
+}
+
 function controlledRecord(decision, state) {
   const {
     selected,
@@ -597,15 +709,13 @@ function controlledRecord(decision, state) {
     return null;
   }
   const proposal = controlledProposal(decision, proposals, selection, requireStochastic);
-  const { outcomes, accepted, receipts } = actionReferences(
-    selected,
-    proposal,
-    selection,
-    consumed,
-  );
+  const linked = actionReferences(selected, proposal, selection, consumed);
+  const { outcomes, accepted, receipts } = linked;
+  if (outcomes.length === 0) return excludeAmbiguousDispatch(decision, proposal, linked, state);
   assert.equal(outcomes.length, 1, "Controlled decision missing pending outcome");
   const outcome = outcomes[0];
-  validatePending(outcome, decision, result);
+  const cancelled = winnerCancellation(outcome, state);
+  validatePending(outcome, decision, result, cancelled);
   if (decision.controlledAction === "wait") validateWait(outcome, accepted, receipts);
   else {
     assert.equal(accepted.length, 1, "Missing attack acceptance");
@@ -613,11 +723,18 @@ function controlledRecord(decision, state) {
     if (outcome.confirmed !== true) {
       assert.equal(receipts.length, 0, "Unconfirmed action has receipt");
       assert.equal(outcome.receiptID, null, "Unconfirmed action claims native receipt");
-      excluded.push({ decisionStep: decision.step, reason: "unconfirmed-attack" });
+      excluded.push({
+        decisionStep: decision.step,
+        reason: cancelled ? "censored-winner-pending" : "unconfirmed-attack",
+      });
       return null;
     }
     assert.equal(receipts.length, 1, "Missing native attack receipt");
     validateReceipt(outcome, decision, accepted[0], receipts[0], seenReceipts);
+  }
+  if (cancelled) {
+    excluded.push({ decisionStep: decision.step, reason: "censored-winner-pending" });
+    return null;
   }
   const manifest = selection.manifest;
   return {
@@ -648,7 +765,7 @@ function validateUncontrolledScope(event, actorSmallID) {
     );
 }
 
-function validateUncontrolledOutcome(outcome, result) {
+function validateUncontrolledOutcome(outcome, result, cancelled) {
   assert.ok(
     ["wait", "attack"].includes(outcome.action) &&
       integer(outcome.actionTick) &&
@@ -657,12 +774,20 @@ function validateUncontrolledOutcome(outcome, result) {
       outcome.outcomeTick <= result.ticks &&
       typeof outcome.confirmed === "boolean" &&
       typeof outcome.terminal === "boolean" &&
-      outcome.truncated === false &&
+      outcome.truncated === cancelled &&
       outcome.envError !== true &&
       outcome.error == null &&
-      Number.isFinite(outcome.reward),
+      (Number.isFinite(outcome.reward) ||
+        cancelled ||
+        (outcome.reward === null && outcome.action === "attack" && outcome.confirmed === false)),
     "Invalid uncontrolled outcome timing/flags",
   );
+}
+
+function uncontrolledExclusionReason(event, state) {
+  if (winnerCancellation(event, state)) return "uncontrolled-censored-winner-pending";
+  if (kind(event) === "outcome" && event.reward === null) return "uncontrolled-unconfirmed-attack";
+  return "uncontrolled-policy-event";
 }
 
 function excludeUncontrolledEvents(state, actorSmallID) {
@@ -672,7 +797,7 @@ function excludeUncontrolledEvents(state, actorSmallID) {
   );
   for (const event of events) validateUncontrolledScope(event, actorSmallID);
   for (const outcome of events.filter((event) => kind(event) === "outcome")) {
-    validateUncontrolledOutcome(outcome, result);
+    validateUncontrolledOutcome(outcome, result, winnerCancellation(outcome, state));
     if (outcome.action === "wait") {
       assert.equal(outcome.targetSmallID, null, "Invalid uncontrolled WAIT target");
       validateWait(outcome, [], []);
@@ -726,7 +851,7 @@ function excludeUncontrolledEvents(state, actorSmallID) {
       targetSmallID: event.targetSmallID,
       acceptedSequence: event.acceptedSequence,
       receiptID: event.receiptID ?? null,
-      reason: "uncontrolled-policy-event",
+      reason: uncontrolledExclusionReason(event, state),
     });
 }
 
