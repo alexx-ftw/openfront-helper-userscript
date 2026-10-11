@@ -67,6 +67,17 @@ const planNavalInterceptions = sandbox.planNavalInterceptions as (options: unkno
   coveredIds: string[];
   uncoveredIds: string[];
 };
+function interceptionGeometry() {
+  return {
+    route: (from: number) => [from],
+    distance: (from: number, to: number) => Math.sqrt(game.euclideanDistSquared(from, to)),
+    targetDistanceSquared: (from: number, to: number) => game.euclideanDistSquared(from, to),
+    boatSpeed: 1,
+    warshipSpeed: 1,
+    attackRange: game.config().warshipTargettingRange(),
+  };
+}
+
 const plan = planNavalInterceptions({
   ships: [
     { id: leftWarship.id(), tile: leftTile },
@@ -76,12 +87,7 @@ const plan = planNavalInterceptions({
     { id: nearTransport.id(), path: [nearTile, nearTile] },
     { id: farTransport.id(), path: [farTile, farTile] },
   ],
-  route: (from: number) => [from],
-  distance: (from: number, to: number) => Math.sqrt(game.euclideanDistSquared(from, to)),
-  targetDistanceSquared: (from: number, to: number) => game.euclideanDistSquared(from, to),
-  boatSpeed: 1,
-  warshipSpeed: 1,
-  attackRange: game.config().warshipTargettingRange(),
+  ...interceptionGeometry(),
 });
 
 assert.deepEqual(plan.coveredIds, [nearTransport.id()]);
@@ -90,12 +96,7 @@ assert.deepEqual(plan.uncoveredIds, [farTransport.id()]);
 const delayedPlan = planNavalInterceptions({
   ships: [{ id: leftWarship.id(), tile: leftTile, time: 1 }],
   invasions: [{ id: nearTransport.id(), path: [nearTile, nearTile] }],
-  route: (from: number) => [from],
-  distance: (from: number, to: number) => Math.sqrt(game.euclideanDistSquared(from, to)),
-  targetDistanceSquared: (from: number, to: number) => game.euclideanDistSquared(from, to),
-  boatSpeed: 1,
-  warshipSpeed: 1,
-  attackRange: game.config().warshipTargettingRange(),
+  ...interceptionGeometry(),
 });
 assert.deepEqual(
   delayedPlan.uncoveredIds,

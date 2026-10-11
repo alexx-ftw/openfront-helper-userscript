@@ -172,16 +172,19 @@ const SCENARIOS = [
     },
     assert: (r, logText) =>
       Number(r.nuclearStrategy?.atomBombsLaunched ?? 0) >= 3 &&
-      logText.split("\n")
+      logText
+        .split("\n")
         .filter((line) => line.includes('"kind":"nuke-aim"'))
         .map((line) => JSON.parse(line))
-        .some((aim) =>
-          aim.sourceName === "OFH Auto Bot" &&
-          aim.targetName === "Isle of Margins" &&
-          aim.tick < 2183 &&
-          aim.fired === true,
+        .some(
+          (aim) =>
+            aim.sourceName === "OFH Auto Bot" &&
+            aim.targetName === "Isle of Margins" &&
+            aim.tick < 2183 &&
+            aim.fired === true,
         ),
-    expect: ">= 3 atoms and a successful pre-invasion counterforce aim at Isle of Margins; won observed honestly",
+    expect:
+      ">= 3 atoms and a successful pre-invasion counterforce aim at Isle of Margins; won observed honestly",
   },
   {
     name: "baikal-nuke-wars",
@@ -325,7 +328,7 @@ if (only && selected.length === 0) {
   console.error(`[run-scenario] no scenario matched --only: ${only.join(",")}`);
   process.exit(2);
 }
-console.log(`[run-scenario] ${selected.length} scenario(s) -> ${outDir}`);
+process.stdout.write(`[run-scenario] ${selected.length} scenario(s) -> ${outDir}\n`);
 
 let failures = 0;
 for (const scenario of selected) {
@@ -335,13 +338,13 @@ for (const scenario of selected) {
   const { result, text: logText } = parseResult(logPath);
   if (result === null) {
     failures += 1;
-    console.log("FAIL (no result line)");
+    process.stdout.write("FAIL (no result line)\n");
     continue;
   }
   const ok = scenario.assert(result.result ?? result, logText);
   if (!ok) failures += 1;
-  console.log(ok ? "PASS" : `FAIL (expected: ${scenario.expect})`);
+  process.stdout.write(ok ? "PASS\n" : `FAIL (expected: ${scenario.expect})\n`);
 }
 
-console.log(`[run-scenario] ${selected.length - failures}/${selected.length} passed`);
+process.stdout.write(`[run-scenario] ${selected.length - failures}/${selected.length} passed\n`);
 process.exit(failures > 0 ? 1 : 0);

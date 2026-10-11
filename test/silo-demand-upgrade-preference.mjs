@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { createStructureUpgradeFixture } from "./helpers/structure-upgrade-fixture.mjs";
 
 // A live SAM-overwhelm demand must fund the route-eligible silo upgrade
 // instead of spending the same gold on another level-one silo. A new silo
@@ -12,10 +12,7 @@ const UNIT = {
 };
 const Difficulty = { LEGENDARY: "LEGENDARY" };
 
-const script = readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js");
-
 function makeWorld({ gold, upgradeCost, routes, canUpgrade = true }) {
-  const emitted = [];
   let spawnCalls = 0;
   const silo = {
     id: () => 1,
@@ -37,26 +34,11 @@ function makeWorld({ gold, upgradeCost, routes, canUpgrade = true }) {
       unblockedSiloIds: [1],
     },
   };
-  const sandbox = {
+  const { behavior, emitted } = createStructureUpgradeFixture({
     UNIT,
     Difficulty,
     state,
-    console,
-    tr: (key) => key,
-    setLastAction: (text, cat) => {
-      state.lastAction = { text, cat };
-    },
-    getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
-    sendAutoBotBuildOrUpgrade: (menu, bu) => {
-      emitted.push(bu);
-      return true;
-    },
-    autoBotBuildAllowed: () => true,
-  };
-  const behavior = executeClassicScript(
-    script + "\nObject.create(StructureBehavior.prototype);",
-    sandbox,
-  );
+  });
   behavior.game = {
     units: (type) => (type === UNIT.SAMLauncher ? [targetSam] : []),
     config: () => ({ isUnitDisabled: () => false }),

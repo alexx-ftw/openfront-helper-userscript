@@ -1,11 +1,15 @@
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, createReadStream, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
+import { foreignGitEnvironment } from "../git-environment.mjs";
 
 import {
   Difficulty,
   GameMapSize,
+  GameMapType,
   GameMode,
   HumansVsNations,
   PlayerType,
@@ -598,9 +602,38 @@ runner.game.conquerPlayer = (conqueror, conquered) => {
   originalConquerPlayer(conqueror, conquered);
 };
 
+let evaluationFingerprints:
+  { engineFingerprint: { revision: string; diffHash: string }; mapFingerprint: string } | undefined;
+if (process.env.OFH_HYBRID_COMBAT_MODE) {
+  const digest = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
+  const mapKey = Object.keys(GameMapType).find(
+    (key) => GameMapType[key as keyof typeof GameMapType] === config.gameMap,
+  );
+  if (!mapKey) throw new Error(`Cannot fingerprint unknown map ${config.gameMap}`);
+  const mapHash = createHash("sha256");
+  for (const file of ["manifest.json", "map.bin", "map4x.bin", "map16x.bin"]) {
+    mapHash.update(file);
+    for await (const chunk of createReadStream(
+      path.join(engineRoot, "resources/maps", mapKey.toLowerCase(), file),
+    )) {
+      mapHash.update(chunk);
+    }
+  }
+  evaluationFingerprints = {
+    engineFingerprint: {
+      revision: execFileSync("git", ["-C", engineRoot, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+        env: foreignGitEnvironment(),
+      }).trim(),
+      diffHash: digest(execFileSync("git", ["-C", engineRoot, "diff", "HEAD", "--binary"], { env: foreignGitEnvironment() })),
+    },
+    mapFingerprint: mapHash.digest("hex"),
+  };
+}
 console.warn(
   JSON.stringify({
     phase: "start",
+    ...evaluationFingerprints,
     seed,
     map: config.gameMap,
     mapSize: config.gameMapSize,
@@ -2182,6 +2215,7 @@ const finalResult = {
   stopReason,
   goalRequirements: goalRequirementsSnapshot(),
   spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
+  hybridCombat: bot.getHybridCombatSnapshot(),
   nuclearStrategy: nuclearStrategyTelemetry,
   intentBudget: bot.getIntentBudgetSnapshot() ?? undefined,
   intentBudgetViolated:

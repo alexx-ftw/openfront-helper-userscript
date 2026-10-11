@@ -1,14 +1,12 @@
-import assert from "node:assert/strict";
-import { GameRunner } from "../openfront-engine/src/core/GameRunner";
-import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
-import { TurnSchema } from "../openfront-engine/src/core/Schemas";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
-import { setup } from "../openfront-engine/tests/util/Setup";
-import { engineTestsUtil } from "./helpers/two-player-game.mts";
 import {
-  createBuildMenu,
-  createMaxDifficultyOpponent,
-} from "../scripts/headless/opponent-adapter.js";
+  useProductionNukeMagnitudes,
+  attachNativeCombatBot,
+  setupNativeDuel,
+  createNativeLoop,
+} from "./helpers/native-bot-fixture.mts";
+import assert from "node:assert/strict";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
+import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
 // The post-salvo Hydrogen finisher fires the largest blast circle the bot
 // owns (outer 100). Offensive-reach silo placement deliberately moves our
@@ -27,31 +25,12 @@ for (const c of [
   },
   { forwardSilo: false, expectFired: true, label: "no friendly structure inside" },
 ]) {
-  const game = await setup(
-    "big_plains",
-    { instantBuild: true },
-    [
-      new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
-      new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
-    ],
-    engineTestsUtil,
-  );
-  const attacker = game.player("attacker");
-  const defender = game.player("defender");
+  const { game, attacker, defender } = await setupNativeDuel();
   // The shared test config stubs every magnitude to {1,1} for tick
   // predictability. Restore the production hydrogen magnitudes so the
   // finisher gate prices blast geometry at real radii (same override as
   // nuke-blast-radius-fixture).
-  game.config().nukeMagnitudes = (unitType) => {
-    switch (unitType) {
-      case UnitType.MIRVWarhead:
-        return { inner: 12, outer: 18 };
-      case UnitType.AtomBomb:
-        return { inner: 12, outer: 30 };
-      default:
-        return { inner: 80, outer: 100 };
-    }
-  };
+  useProductionNukeMagnitudes(game);
   const source = game.ref(1, 80);
   const target = game.ref(80, 1);
   const farCity = game.ref(140, 50);
@@ -73,35 +52,12 @@ for (const c of [
     defender.buildUnit(UnitType.MissileSilo, target, {});
   }
   const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
-  const runner = new GameRunner(
-    game,
-    new Executor(game, "finisher-friendly-gate", "attacker"),
-    (update) => {
-      assert.ok(!("errMsg" in update));
-      bot.applyGameUpdate(update);
-    },
+  const { runner, step } = createNativeLoop(game, "finisher-friendly-gate", (update) =>
+    bot.applyGameUpdate(update),
   );
-  const step = (intents = []) => {
-    runner.addTurn(
-      TurnSchema.parse({
-        turnNumber: game.ticks(),
-        intents: intents.map((intent) => ({ ...intent, clientID: "attacker" })),
-      }),
-    );
-    assert.equal(runner.executeNextTick(), true);
-  };
   try {
-    bot.attach({ runner, clientID: "attacker" });
-    await bot.api.beginTick(bot.pageGame.myPlayer());
-    bot.nationBot.player = bot.api.game.myPlayer();
-    bot.nationBot.initializeBehaviors();
-    const menu = createBuildMenu(bot);
-    bot.harness.current.buildMenu = menu;
-    bot.harness.current.eventBus = menu.eventBus;
-    bot.harness.internals.state.settings.enabled = true;
-    bot.harness.internals.state.settings.winFixes = true;
-    const nuke = bot.nationBot.nukeBehavior;
-    const rival = bot.api.game.playerBySmallID(defender.smallID());
+    const { nuke, rival } = await attachNativeCombatBot(bot, runner, defender);
+
     await bot.api.beginTick(bot.pageGame.myPlayer());
     bot.harness.internals.state.postSalvoHydrogen = {
       salvoId: 4242,

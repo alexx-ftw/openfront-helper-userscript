@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/attack-highlight.js"), "utf8");
+const SOURCE = readRepositoryFile("engine/ingame/attack-highlight.js");
 const TEST_SOURCE = `${SOURCE}\nwindow.__scanAttackHighlight = scanAttackHighlight;\nwindow.__getAttackHighlightScan = () => _attackHighlightScan;`;
 
 const hostile = { nameLocation: () => ({ x: 10, y: 20 }) };

@@ -1,18 +1,4 @@
 {
-  "engine/ingame/auto-bot/attackBehavior.js": {
-    "sonarjs/cognitive-complexity": {
-      "warning": 0,
-      "error": 1
-    },
-    "complexity": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/no-nested-conditional": {
-      "warning": 0,
-      "error": 2
-    }
-  },
   "engine/ingame/auto-bot/legendaryPlanner.js": {
     "complexity": {
       "warning": 0,
@@ -21,36 +7,6 @@
     "sonarjs/cognitive-complexity": {
       "warning": 0,
       "error": 1
-    }
-  },
-  "engine/ingame/auto-bot/nationExecution.js": {
-    "complexity": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/cognitive-complexity": {
-      "warning": 0,
-      "error": 1
-    }
-  },
-  "engine/ingame/auto-bot/nukeBehavior.js": {
-    "sonarjs/cognitive-complexity": {
-      "warning": 0,
-      "error": 1
-    },
-    "complexity": {
-      "warning": 0,
-      "error": 1
-    },
-    "sonarjs/no-inverted-boolean-check": {
-      "warning": 0,
-      "error": 1
-    }
-  },
-  "engine/ingame/auto-bot/structureBehavior.js": {
-    "complexity": {
-      "warning": 0,
-      "error": 2
     }
   },
   "engine/ingame/auto-bot/warshipBehavior.js": {

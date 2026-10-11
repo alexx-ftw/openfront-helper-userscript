@@ -528,23 +528,10 @@
       if (state.settings.winFixes !== true) return null;
       const request = state.nukeWantSlots;
       const targetSamId = request?.targetSamId;
-      if (
-        request == null || request.pendingLaunches === true ||
-        targetSamId === null || targetSamId === undefined
-      ) {
-        return null;
-      }
-      for (const player of this.game.players?.() ?? []) {
-        if (player === this.player ||
-            playersArePermanentTeammates(this.player, player)) {
-          continue;
-        }
-        const sam = (player.units?.(UNIT.SAMLauncher) ?? []).find(
-          (unit) => String(unit.id?.()) === String(targetSamId),
-        );
-        if (!sam || sam.isAlive?.() === false) continue;
-        const owner = sam.owner?.();
-        if (!owner || !this.isValidNukeTarget(owner)) continue;
+      if (this.samDemandRequestInvalid(request, targetSamId)) return null;
+      for (const player of this.samDemandPlayers()) {
+        const { owner } = this.samDemandOwner(player, targetSamId);
+        if (!owner) continue;
         if (!this.isValidNukeDestination(request.targetTile)) return null;
         return owner;
       }
@@ -623,14 +610,8 @@
       if (!isLegendaryDifficulty(difficulty)) {
         const best = await this.selectBuildableNukeCandidate(clear, selectedNuke.type);
         if (
-          best &&
-          (best.value > 0 || difficulty !== Difficulty.Impossible) &&
-          await this.nukeHasPositiveExpectedValue(
-            best,
-            target,
-            selectedNuke,
-            silos,
-          )
+          this.ordinaryNukeCandidateHasValue(best, difficulty) &&
+          await this.nukeHasPositiveExpectedValue(best, target, selectedNuke, silos)
         ) {
           await this.sendNuke(best.tile, selectedNuke.type, target);
         }
@@ -710,27 +691,9 @@
     freezeGiantStrikeTarget() {
       if (state.settings.winFixes !== true) return null;
       if (currentDifficulty() !== Difficulty.Legendary) return null;
-      const gameMode = String(
-        this.game.config()?.gameConfig?.()?.gameMode ?? "",
-      );
-      if (gameMode !== "Free For All" && gameMode !== "FFA") return null;
-      const tiles = Number(this.player.numTilesOwned?.() ?? 0);
-      if (tiles < 50_000) return null;
-      const ourTroops = Number(this.player.troops?.() ?? 0);
-      const ourMax = Number(this.player.maxTroops?.() ?? 0);
-      if (!(ourMax > 0) || ourTroops < ourMax * 0.85) return null;
-      let giant = null;
-      let giantTroops = 0;
-      for (const other of this.game.players()) {
-        if (other === this.player || !other?.isPlayer?.()) continue;
-        if (other.isAlive?.() === false) continue;
-        if (this.player.isFriendly?.(other) === true) continue;
-        const troops = Number(other.troops?.() ?? 0);
-        if (troops > giantTroops) {
-          giant = other;
-          giantTroops = troops;
-        }
-      }
+      const ourTroops = this.freezeGiantOwnTroops();
+      if (ourTroops === null) return null;
+      const { giant, giantTroops } = this.largestHostileGiant();
       if (giant === null || giantTroops < ourTroops * 1.5) return null;
       return giant;
     }
@@ -777,7 +740,7 @@
         return { list, retargeted: null };
       }
       if (
-        this.samDemandStrikeTarget()?.smallID?.() === target?.smallID?.()
+        this.samDemandMatchesTarget(target)
       ) return { list, retargeted: null };
       const retried = await this.retryWithHigherValueTarget(
         target, selectedNuke, silos, difficulty, list,
@@ -1123,33 +1086,7 @@
         const denseTarget = this.findHighDensityTarget();
         if (denseTarget !== null) return denseTarget;
       }
-      const dominantCrown = this.findDominantCrownNukeTarget(difficulty);
-      if (dominantCrown) return dominantCrown;
-      const allyTarget = this.findAllyNukeTarget();
-      if (allyTarget) return allyTarget;
-      const hostileTarget = this.findHostileNukeTarget();
-      if (hostileTarget) return hostileTarget;
-
-      // In FFAs, nuke the crown if they're far enough ahead
-      const crownTarget = this.findFFACrownTarget();
-      if (crownTarget) {
-        return crownTarget;
-      }
-
-      // In Teams, nuke the strongest team
-      const teamTarget = this.findStrongestTeamTarget();
-      if (teamTarget) {
-        return teamTarget;
-      }
-
-      // Legendary fallback: an affordable silo must not remain idle merely
-      // because the ordinary relation/crown ladder found no target. Select the
-      // densest enemy structure owner, but never a permanent teammate or our
-      // own player; nukeTileScore still rejects friendly-fire geometry.
-      if (isLegendaryDifficulty(difficulty)) {
-        return this.findLegendaryStructureTarget();
-      }
-      return null;
+      return this.findNukeRelationTarget(difficulty);
     }
 
     // Hostile attacker with the largest aggregate invasion pressure on our
@@ -1159,25 +1096,7 @@
       if (state.settings.winFixes !== true) return null;
       const pressureByAttacker = new Map();
       for (const ally of this.game.players?.() ?? []) {
-        if (ally.smallID?.() === this.player.smallID?.()) continue;
-        if (ally.isAlive?.() === false) continue;
-        if (!playersArePermanentTeammates(this.player, ally)) continue;
-        if (typeof ally.incomingAttacks !== "function") continue;
-        for (const attack of ally.incomingAttacks() ?? []) {
-          const attacker = attack.attacker?.();
-          if (!attacker || attacker.isAlive?.() === false) continue;
-          if (playersArePermanentTeammates(this.player, attacker)) continue;
-          if (attacker.smallID?.() === this.player.smallID?.()) continue;
-          if (!this.isValidNukeTarget(attacker)) continue;
-          const troops = Math.max(0, Number(attack.troops?.()) || 0);
-          if (troops <= 0) continue;
-          const current = pressureByAttacker.get(attacker.smallID()) ?? {
-            attacker,
-            troops: 0,
-          };
-          current.troops += troops;
-          pressureByAttacker.set(attacker.smallID(), current);
-        }
+        this.collectAllyRescuePressure(ally, pressureByAttacker);
       }
       let largest = null;
       for (const pressure of pressureByAttacker.values()) {
@@ -1189,13 +1108,7 @@
     }
 
     observeHostileNukeThreats() {
-      if (
-        typeof this._hostileNukeThreats?.get !== "function" ||
-        typeof this._hostileNukeThreats?.set !== "function" ||
-        typeof this._hostileNukeThreats?.clear !== "function"
-      ) {
-        this._hostileNukeThreats = new Map();
-      }
+      this.ensureHostileNukeThreatMap();
       if (
         state.settings.winFixes !== true ||
         !isLegendaryDifficulty(currentDifficulty())
@@ -1212,41 +1125,12 @@
       }
       if (typeof this.game?.units !== "function") return;
       const selfId = this.player.smallID();
-      let friendlyStructures = null;
+      const context = { friendlyStructures: null };
       for (const missile of this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb) || []) {
-        const owner = missile?.owner?.();
-        const ownerId = owner?.smallID?.();
-        const targetTile = missile?.targetTile?.();
-        if (
-          ownerId === null ||
-          ownerId === undefined ||
-          ownerId === selfId ||
-          playersArePermanentTeammates(this.player, owner) ||
-          targetTile === null ||
-          targetTile === undefined
-        ) {
-          continue;
-        }
-        const targetOwner = this.game.owner?.(targetTile);
-        const targetsFriendlyTile =
-          targetOwner?.smallID?.() === selfId ||
-          playersArePermanentTeammates(this.player, targetOwner);
-        if (!targetsFriendlyTile) {
-          friendlyStructures ??= this.collectFriendlyNukeStructureUnits();
-          const type = missile?.type?.();
-          const radius = Number(
-            this.game.config?.()?.nukeMagnitudes?.(type)?.outer,
-          );
-          if (!Number.isFinite(radius) || radius <= 0) continue;
-          const withinBlast = euclDistFN(targetTile, radius, false);
-          if (
-            !friendlyStructures.some((unit) =>
-              withinBlast(this.game, unit?.tile?.()),
-            )
-          ) {
-            continue;
-          }
-        }
+        const threat = this.hostileMissileTarget(missile, selfId);
+        if (threat === null) continue;
+        const { ownerId, targetTile } = threat;
+        if (!this.missileThreatensFriendlyTarget(missile, targetTile, selfId, context)) continue;
         this._hostileNukeThreats.set(ownerId, now);
       }
     }
@@ -1296,23 +1180,7 @@
         return this._strategicBorderArmyTarget;
       }
 
-      let target = null;
-      const strongest =
-        this.structureBehavior?.strongestQuietStrategicBorderOpponent?.();
-      const ownTroops = Number(this.player?.troops?.() ?? 0);
-      const hostileTroops = Number(strongest?.troops);
-      if (
-        strongest !== null &&
-        Number.isFinite(ownTroops) &&
-        ownTroops > 0 &&
-        Number.isFinite(hostileTroops) &&
-        hostileTroops >= ownTroops
-      ) {
-        target = this.game.players().find(
-          (other) => other.smallID?.() === strongest.opponentSid,
-        ) ?? null;
-        if (!this.isValidNukeTarget(target)) target = null;
-      }
+      const target = this.resolveStrategicBorderArmyTarget();
 
       if (Number.isFinite(tick)) {
         this._strategicBorderArmyTargetTick = tick;
@@ -1663,8 +1531,7 @@
           // Water, fallout and unowned land have no player owner
           const owner = this.game.owner(this.game.ref(cx + dx, cy + dy));
           if (
-            owner && owner.isPlayer && owner.isPlayer() &&
-            !this.player.isFriendly(owner, true)
+            this.isEnemyNukeLand(owner)
           ) {
             enemyLand += weight;
           }
@@ -2129,14 +1996,7 @@
       // Planned saturation atoms retain their intentional interception budget
       // through their exempted covering set; everything else is re-checked
       // per launch (see samSalvoLaunchStillViable).
-      if (isLegendaryDifficulty(currentDifficulty())) {
-        if (salvo) {
-          if (!this.samSalvoLaunchStillViable(tile, targetPlayer, salvo)) return false;
-        } else {
-          const spawnTile = this.nukeSpawn(nukeType, tile);
-          if (spawnTile === false || this.isTrajectoryInterceptableBySam(spawnTile, tile)) return false;
-        }
-      }
+      if (!this.nukeLaunchRouteViable(tile, nukeType, targetPlayer, salvo)) return false;
       this.observeHostileNukeThreats();
       if (
         await this.shouldHoldCounterforceNuke(
@@ -2149,17 +2009,7 @@
         return false;
       }
       // DIVERGENCE: the source can change while the worker prices this shot.
-      const liveFlight = salvo && typeof this.player.units === "function"
-        ? this.getAvailableSiloEntries(this.player.units(UNIT.MissileSilo), tile, new Set())[0]?.flightTicks
-        : undefined;
-      if (!this.emitNukeBuildable(buildable, tile, salvo)) return false;
-      if (Number.isFinite(liveFlight)) salvo.flightTicks = liveFlight;
-      if (salvo) {
-        // Every launched atom of a salvo keeps counting toward its
-        // penetration budget (see getAbortedSalvoIds), however it was sent.
-        const fired = (this._salvoFiredCounts ??= new Map());
-        fired.set(salvo.salvoId, (fired.get(salvo.salvoId) ?? 0) + 1);
-      }
+      if (!this.emitNukeWithSalvoFlight(buildable, tile, salvo)) return false;
       await this.rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer);
       return true;
     }
@@ -2299,47 +2149,20 @@
           droppedAbortedEntries.push(pending);
           continue;
         }
-        if (pending.dueTick > now || (pending.salvo && blockedSalvoIds.has(pending.salvo.salvoId))) {
-          if (pending.dueTick <= now) pending.dueTick = now + 1;
-          remaining.push(pending);
-          if (pending.salvo) blockedSalvoIds.add(pending.salvo.salvoId);
-          continue;
-        }
+        if (this.deferPendingNukeLaunch(pending, now, remaining, blockedSalvoIds)) continue;
         const outcome = await this.firePendingNukeLaunch(
           pending, sendsThisTick, awaitingSalvoIds.has(pending.salvo?.salvoId),
         );
         if (outcome === "fired") {
           launched = true;
           sendsThisTick += 1;
-        } else if (
-          outcome === "drop" && pending.salvo &&
-          this._salvoLaunchAbort === pending.salvo.salvoId
-        ) {
-          droppedAbortedEntries.push(pending);
-          this._salvoLaunchAbort = null;
-        } else if (outcome === "retry") {
-          pending.dueTick = now + 1;
-          remaining.push(pending);
-          if (pending.salvo) blockedSalvoIds.add(pending.salvo.salvoId);
+        } else {
+          this.recordPendingNukeFailure(
+            outcome, pending, now, { droppedAbortedEntries, remaining }, blockedSalvoIds,
+          );
         }
       }
-      const kept =
-        abortedSalvoIds.size > 0
-          ? remaining.filter(
-              (pending) =>
-                !pending.salvo || !abortedSalvoIds.has(pending.salvo.salvoId),
-            )
-          : remaining;
-      this._pendingNukeLaunches = kept;
-      for (const salvoId of abortedSalvoIds) this._salvoFiredCounts?.delete(salvoId);
-      if (
-        kept.length === 0 &&
-        state.nukeWantSlots?.pendingLaunches === true
-      ) {
-        // The whole queue drained through aborts: either the demand still has
-        // live SAM coverage to re-arm against, or it is obsolete and released.
-        this.rearmAbortedSamDemand(droppedAbortedEntries);
-      }
+      this.finishPendingNukePass(abortedSalvoIds, remaining, droppedAbortedEntries);
       return launched;
     }
 
@@ -2367,12 +2190,7 @@
         0,
         pending.salvo,
       );
-      const finisher = state.postSalvoHydrogen;
-      if (sent && pending.salvo && finisher?.salvoId === pending.salvo.salvoId &&
-          Number.isFinite(pending.salvo.flightTicks)) {
-        finisher.dueTick = Math.max(finisher.dueTick,
-          Number(this.game.ticks()) + pending.salvo.flightTicks + 5);
-      }
+      this.extendPendingSalvoFinisher(sent, pending);
       if (sent) return "fired";
       if (pending.salvo && this._salvoLaunchAbort === pending.salvo.salvoId) {
         // The per-launch revalidation rejected this exact salvo (see
@@ -2539,13 +2357,7 @@
       }
       const entry = (Array.isArray(droppedEntries) ? droppedEntries : [])
         .find((item) => item.salvo);
-      const tile = entry ? (entry.tile ?? entry.salvo?.targetTile) : null;
-      const covering = tile === null || tile === undefined ||
-        typeof this.game?.nearbyUnits !== "function"
-        ? []
-        : this.findEnemySamsCoveringTile(tile)
-            .filter((sam) => this.isValidNukeTarget(sam.owner?.()))
-            .sort((a, b) => a.level() - b.level());
+      const covering = this.abortedSamCoverage(entry);
       if (covering.length === 0) {
         state.nukeWantSlots = null;
         return false;
@@ -2836,14 +2648,7 @@
       // processPendingNukeLaunches can re-validate the enemy SAM layout
       // mid-flight (see samSalvoStillViable). plannedCoveringLevel records the
       // hostile SAM level sum the bomb count was sized against at planning time.
-      this._nextSalvoId = (this._nextSalvoId || 0) + 1;
-      const salvoPlan = {
-        salvoId: this._nextSalvoId,
-        plannedCoveringLevel: Number(plan.coveringSamLevels ?? 0),
-        targetTile: plan.targetTile,
-        targetSamId: plan.targetSamId ?? null,
-        coveringSamIds: [...(plan.coveringSamIds ?? [])],
-      };
+      const salvoPlan = this.nextSamSalvoPlan(plan);
       try {
         let queued = false;
         for (let i = 0; i < salvo.bombsToFire; i++) {
@@ -2852,7 +2657,7 @@
           const sent = await this.sendNuke(
             plan.targetTile, UNIT.AtomBomb, nukeTarget, wait, metadata,
           );
-          flightTicks[i] = metadata.flightTicks;
+          this.recordSalvoFlight(flightTicks, i, metadata.flightTicks);
           // A stale worker probe or exhausted intent budget is retryable.
           // Retain this bomb and the tail; the queue rechecks target and SAMs.
           if (!sent && !this.queueDelayedNukeLaunch(
@@ -2871,14 +2676,7 @@
       // Hydrogen finisher (goal rule): the saturating atoms exist to strip the
       // covering SAMs; once the last bomb lands the target cluster is bare, so
       // schedule the 5MM follow-up for the next nuclear decision pass.
-      const lastArrivalTick = this.game.ticks() +
-        Math.max(
-          0,
-          ...salvo.waits.map((wait, index) => {
-            const flight = flightTicks[index] ?? 0;
-            return wait + flight;
-          }),
-        );
+      const lastArrivalTick = this.samSalvoLastArrivalTick(salvo, flightTicks);
       state.postSalvoHydrogen = {
         salvoId: salvoPlan.salvoId,
         targetTile: plan.targetTile,
@@ -2901,16 +2699,7 @@
         return false;
       }
       // DIVERGENCE: silo staggering or retries can outlive the planned deadline.
-      let atomsInFlight = false;
-      for (const atom of this.player.units?.(UNIT.AtomBomb) ?? []) {
-        if (atom.isActive?.() === false || atom.targetTile?.() !== pending.targetTile) continue;
-        atomsInFlight = true;
-        const motion = this.structureBehavior?.legendaryActiveMissileMotion?.(atom, atom.tile?.());
-        if (Number.isFinite(motion?.impactTick) && motion.impactTick >= 0) {
-          pending.dueTick = Math.max(pending.dueTick,
-            Number(this.game.ticks()) + motion.impactTick + 5);
-        }
-      }
+      const atomsInFlight = this.extendFinisherForLiveAtoms(pending);
       if (atomsInFlight) return false;
       if (this.game.ticks() < pending.dueTick) return false;
       // A delayed/retried atom must land before its finisher is evaluated.
@@ -2958,27 +2747,7 @@
       // Degenerate magnitudes (config shims without nukeMagnitudes) price
       // every blast as empty, so the finisher safely holds instead of firing
       // unpriced.
-      const magnitude = config.nukeMagnitudes?.(UNIT.HydrogenBomb) ?? {
-        inner: 0,
-        outer: 0,
-      };
-      // Enemy MissileSilos count through mirvCapableSiloPriority: finishing a
-      // silo cluster that can already pay for a MIRV is worth trading own
-      // replacement loss for, matching the tile scorer's counterforce logic.
-      const enemyValue = unitsOfTypes(target)
-        .filter((unit) =>
-          this.game.euclideanDistSquared(pending.targetTile, unit.tile()) <
-            magnitude.outer * magnitude.outer)
-        .reduce((sum, unit) =>
-          sum + this.nukeStructureValue(unit) * this.mirvCapableSiloPriority(unit), 0);
-      const friendlyPenalty = this.friendlyFirePenalty(
-        pending.targetTile,
-        magnitude,
-        true,
-      );
-      if (enemyValue - friendlyPenalty <= 0) {
-        return false;
-      }
+      if (!this.postSalvoHydrogenHasValue(config, target, pending)) return false;
       const sent = await this.sendNuke(
         pending.targetTile,
         UNIT.HydrogenBomb,
@@ -3020,21 +2789,7 @@
       const atomCost = await this.cost(UNIT.AtomBomb);
       let failedTarget = null;
       const orderedSams = enemySams.slice().sort((a, b) => a.level() - b.level());
-      // A live capacity demand pins the strike to the SAM it was priced
-      // against; otherwise the lowest-level SAM can soak the budget while the
-      // requested target keeps covering the value tile.
-      if (state.settings.winFixes === true) {
-        const demandSamId = state.nukeWantSlots?.targetSamId;
-        if (demandSamId !== null && demandSamId !== undefined) {
-          const pinnedIndex = orderedSams.findIndex(
-            (sam) => String(sam.id()) === String(demandSamId),
-          );
-          if (pinnedIndex > 0) {
-            const [pinned] = orderedSams.splice(pinnedIndex, 1);
-            orderedSams.unshift(pinned);
-          }
-        }
-      }
+      this.pinDemandSam(orderedSams);
       for (const targetSam of orderedSams) {
         const plan = this.createSamOverwhelmPlan(targetSam, silos);
         if (plan.capacityMissing) {
@@ -3252,13 +3007,7 @@
       let best = false;
       let bestDist = Infinity;
       for (const silo of silos) {
-        if (silo.isActive && silo.isActive() === false) continue;
-        if (silo.isUnderConstruction()) continue;
-        if (projected) {
-          if ((projected.get(String(silo.id())) ?? 0) <= 0) continue;
-        } else if (typeof silo.ticksLeftInCooldown === "function" && silo.ticksLeftInCooldown() > 0) {
-          continue;
-        }
+        if (!this.siloCanSpawnNuke(silo, projected)) continue;
         const d = this.game.manhattanDist(silo.tile(), targetTile);
         if (d < bestDist) {
           bestDist = d;
@@ -3266,6 +3015,395 @@
         }
       }
       return best;
+    }
+
+    samDemandOwner(player, targetSamId) {
+      if (player === this.player ||
+          playersArePermanentTeammates(this.player, player)) {
+        return {};
+      }
+      const sam = (player.units?.(UNIT.SAMLauncher) ?? []).find(
+        (unit) => String(unit.id?.()) === String(targetSamId),
+      );
+      if (!sam || sam.isAlive?.() === false) return {};
+      const owner = sam.owner?.();
+      if (!owner || !this.isValidNukeTarget(owner)) return {};
+      return { sam, owner };
+    }
+
+    freezeGiantOwnTroops() {
+      const gameMode = String(
+        this.game.config()?.gameConfig?.()?.gameMode ?? "",
+      );
+      if (gameMode !== "Free For All" && gameMode !== "FFA") return null;
+      const tiles = Number(this.player.numTilesOwned?.() ?? 0);
+      if (tiles < 50_000) return null;
+      const ourTroops = Number(this.player.troops?.() ?? 0);
+      if (!this.freezeGiantArmyReady(ourTroops)) return null;
+      return ourTroops;
+    }
+
+    largestHostileGiant() {
+      let giant = null;
+      let giantTroops = 0;
+      for (const other of this.game.players()) {
+        if (other === this.player || !other?.isPlayer?.()) continue;
+        if (other.isAlive?.() === false) continue;
+        if (this.player.isFriendly?.(other) === true) continue;
+        const troops = Number(other.troops?.() ?? 0);
+        if (troops > giantTroops) {
+          giant = other;
+          giantTroops = troops;
+        }
+      }
+      return { giant, giantTroops };
+    }
+
+    ordinaryNukeCandidateHasValue(best, difficulty) {
+      return best && (best.value > 0 || difficulty !== Difficulty.Impossible);
+    }
+
+    findNukeRelationTarget(difficulty) {
+      const dominantCrown = this.findDominantCrownNukeTarget(difficulty);
+      if (dominantCrown) return dominantCrown;
+      const allyTarget = this.findAllyNukeTarget();
+      if (allyTarget) return allyTarget;
+      const hostileTarget = this.findHostileNukeTarget();
+      if (hostileTarget) return hostileTarget;
+
+      // In FFAs, nuke the crown if they're far enough ahead
+      const crownTarget = this.findFFACrownTarget();
+      if (crownTarget) {
+        return crownTarget;
+      }
+
+      // In Teams, nuke the strongest team
+      const teamTarget = this.findStrongestTeamTarget();
+      if (teamTarget) {
+        return teamTarget;
+      }
+
+      // Legendary fallback: an affordable silo must not remain idle merely
+      // because the ordinary relation/crown ladder found no target. Select the
+      // densest enemy structure owner, but never a permanent teammate or our
+      // own player; nukeTileScore still rejects friendly-fire geometry.
+      if (isLegendaryDifficulty(difficulty)) {
+        return this.findLegendaryStructureTarget();
+      }
+      return null;
+    }
+
+    collectAllyRescuePressure(ally, pressureByAttacker) {
+      if (ally.smallID?.() === this.player.smallID?.()) return;
+      if (ally.isAlive?.() === false) return;
+      if (!playersArePermanentTeammates(this.player, ally)) return;
+      if (typeof ally.incomingAttacks !== "function") return;
+      for (const attack of ally.incomingAttacks() ?? []) {
+        this.addAllyRescuePressure(attack, pressureByAttacker);
+      }
+    }
+
+    addAllyRescuePressure(attack, pressureByAttacker) {
+      const attacker = attack.attacker?.();
+      if (!attacker || attacker.isAlive?.() === false) return;
+      if (playersArePermanentTeammates(this.player, attacker)) return;
+      if (attacker.smallID?.() === this.player.smallID?.()) return;
+      if (!this.isValidNukeTarget(attacker)) return;
+      const troops = Math.max(0, Number(attack.troops?.()) || 0);
+      if (troops <= 0) return;
+      const current = pressureByAttacker.get(attacker.smallID()) ?? {
+        attacker,
+        troops: 0,
+      };
+      current.troops += troops;
+      pressureByAttacker.set(attacker.smallID(), current);
+    }
+
+    hostileMissileTarget(missile, selfId) {
+      const owner = missile?.owner?.();
+      const ownerId = owner?.smallID?.();
+      const targetTile = missile?.targetTile?.();
+      if (
+        ownerId === null ||
+        ownerId === undefined ||
+        ownerId === selfId ||
+        playersArePermanentTeammates(this.player, owner) ||
+        targetTile === null ||
+        targetTile === undefined
+      ) {
+        return null;
+      }
+      return { ownerId, targetTile };
+    }
+
+    missileThreatensFriendlyStructures(missile, targetTile, context) {
+      context.friendlyStructures ??= this.collectFriendlyNukeStructureUnits();
+      const type = missile?.type?.();
+      const radius = Number(
+        this.game.config?.()?.nukeMagnitudes?.(type)?.outer,
+      );
+      if (!Number.isFinite(radius) || radius <= 0) return false;
+      const withinBlast = euclDistFN(targetTile, radius, false);
+      if (
+        !context.friendlyStructures.some((unit) =>
+          withinBlast(this.game, unit?.tile?.()),
+        )
+      ) {
+        return false;
+      }
+      return true;
+    }
+
+    resolveStrategicBorderArmyTarget() {
+      let target = null;
+      const strongest =
+        this.structureBehavior?.strongestQuietStrategicBorderOpponent?.();
+      const ownTroops = Number(this.player?.troops?.() ?? 0);
+      const hostileTroops = Number(strongest?.troops);
+      if (
+        strongest !== null &&
+        Number.isFinite(ownTroops) &&
+        ownTroops > 0 &&
+        Number.isFinite(hostileTroops) &&
+        hostileTroops >= ownTroops
+      ) {
+        target = this.game.players().find(
+          (other) => other.smallID?.() === strongest.opponentSid,
+        ) ?? null;
+        if (!this.isValidNukeTarget(target)) target = null;
+      }
+
+      return target;
+    }
+
+    isEnemyNukeLand(owner) {
+      return owner && owner.isPlayer && owner.isPlayer() &&
+        !this.player.isFriendly(owner, true);
+    }
+
+    nukeLaunchRouteViable(tile, nukeType, targetPlayer, salvo) {
+      if (isLegendaryDifficulty(currentDifficulty())) {
+        if (salvo) {
+          if (!this.samSalvoLaunchStillViable(tile, targetPlayer, salvo)) return false;
+        } else {
+          const spawnTile = this.nukeSpawn(nukeType, tile);
+          if (spawnTile === false || this.isTrajectoryInterceptableBySam(spawnTile, tile)) return false;
+        }
+      }
+      return true;
+    }
+
+    emitNukeWithSalvoFlight(buildable, tile, salvo) {
+      const liveFlight = salvo && typeof this.player.units === "function"
+        ? this.getAvailableSiloEntries(this.player.units(UNIT.MissileSilo), tile, new Set())[0]?.flightTicks
+        : undefined;
+      if (!this.emitNukeBuildable(buildable, tile, salvo)) return false;
+      if (Number.isFinite(liveFlight)) salvo.flightTicks = liveFlight;
+      if (salvo) {
+        // Every launched atom of a salvo keeps counting toward its
+        // penetration budget (see getAbortedSalvoIds), however it was sent.
+        const fired = (this._salvoFiredCounts ??= new Map());
+        fired.set(salvo.salvoId, (fired.get(salvo.salvoId) ?? 0) + 1);
+      }
+      return true;
+    }
+
+    deferPendingNukeLaunch(pending, now, remaining, blockedSalvoIds) {
+      if (pending.dueTick > now || (pending.salvo && blockedSalvoIds.has(pending.salvo.salvoId))) {
+        if (pending.dueTick <= now) pending.dueTick = now + 1;
+        remaining.push(pending);
+        if (pending.salvo) blockedSalvoIds.add(pending.salvo.salvoId);
+        return true;
+      }
+      return false;
+    }
+
+    recordPendingNukeFailure(outcome, pending, now, { droppedAbortedEntries, remaining }, blockedSalvoIds) {
+      if (
+        outcome === "drop" && pending.salvo &&
+        this._salvoLaunchAbort === pending.salvo.salvoId
+      ) {
+        droppedAbortedEntries.push(pending);
+        this._salvoLaunchAbort = null;
+      } else if (outcome === "retry") {
+        pending.dueTick = now + 1;
+        remaining.push(pending);
+        if (pending.salvo) blockedSalvoIds.add(pending.salvo.salvoId);
+      }
+    }
+
+    extendPendingSalvoFinisher(sent, pending) {
+      const finisher = state.postSalvoHydrogen;
+      if (sent && pending.salvo && finisher?.salvoId === pending.salvo.salvoId &&
+          Number.isFinite(pending.salvo.flightTicks)) {
+        finisher.dueTick = Math.max(finisher.dueTick,
+          Number(this.game.ticks()) + pending.salvo.flightTicks + 5);
+      }
+    }
+
+    abortedSamCoverage(entry) {
+      const tile = entry ? (entry.tile ?? entry.salvo?.targetTile) : null;
+      const covering = tile === null || tile === undefined ||
+        typeof this.game?.nearbyUnits !== "function"
+        ? []
+        : this.findEnemySamsCoveringTile(tile)
+            .filter((sam) => this.isValidNukeTarget(sam.owner?.()))
+            .sort((a, b) => a.level() - b.level());
+      return covering;
+    }
+
+    recordSalvoFlight(flightTicks, index, flight) {
+      flightTicks[index] = flight;
+    }
+
+    samSalvoLastArrivalTick(salvo, flightTicks) {
+      const lastArrivalTick = this.game.ticks() +
+        Math.max(
+          0,
+          ...salvo.waits.map((wait, index) => {
+            const flight = flightTicks[index] ?? 0;
+            return wait + flight;
+          }),
+        );
+      return lastArrivalTick;
+    }
+
+    extendFinisherForLiveAtoms(pending) {
+      let atomsInFlight = false;
+      for (const atom of this.player.units?.(UNIT.AtomBomb) ?? []) {
+        if (atom.isActive?.() === false || atom.targetTile?.() !== pending.targetTile) continue;
+        atomsInFlight = true;
+        const motion = this.structureBehavior?.legendaryActiveMissileMotion?.(atom, atom.tile?.());
+        if (Number.isFinite(motion?.impactTick) && motion.impactTick >= 0) {
+          pending.dueTick = Math.max(pending.dueTick,
+            Number(this.game.ticks()) + motion.impactTick + 5);
+        }
+      }
+      return atomsInFlight;
+    }
+
+    postSalvoHydrogenHasValue(config, target, pending) {
+      const magnitude = config.nukeMagnitudes?.(UNIT.HydrogenBomb) ?? {
+        inner: 0,
+        outer: 0,
+      };
+      // Enemy MissileSilos count through mirvCapableSiloPriority: finishing a
+      // silo cluster that can already pay for a MIRV is worth trading own
+      // replacement loss for, matching the tile scorer's counterforce logic.
+      const enemyValue = unitsOfTypes(target)
+        .filter((unit) =>
+          this.game.euclideanDistSquared(pending.targetTile, unit.tile()) <
+            magnitude.outer * magnitude.outer)
+        .reduce((sum, unit) =>
+          sum + this.nukeStructureValue(unit) * this.mirvCapableSiloPriority(unit), 0);
+      const friendlyPenalty = this.friendlyFirePenalty(
+        pending.targetTile,
+        magnitude,
+        true,
+      );
+      const netValue = enemyValue - friendlyPenalty;
+      return netValue > 0 || Number.isNaN(netValue);
+    }
+
+    pinDemandSam(orderedSams) {
+      // A live capacity demand pins the strike to the SAM it was priced
+      // against; otherwise the lowest-level SAM can soak the budget while the
+      // requested target keeps covering the value tile.
+      if (state.settings.winFixes === true) {
+        const demandSamId = state.nukeWantSlots?.targetSamId;
+        if (demandSamId !== null && demandSamId !== undefined) {
+          const pinnedIndex = orderedSams.findIndex(
+            (sam) => String(sam.id()) === String(demandSamId),
+          );
+          if (pinnedIndex > 0) {
+            const [pinned] = orderedSams.splice(pinnedIndex, 1);
+            orderedSams.unshift(pinned);
+          }
+        }
+      }
+    }
+
+    siloCanSpawnNuke(silo, projected) {
+      if (silo.isActive && silo.isActive() === false) return false;
+      if (silo.isUnderConstruction()) return false;
+      if (projected) {
+        if ((projected.get(String(silo.id())) ?? 0) <= 0) return false;
+      } else if (typeof silo.ticksLeftInCooldown === "function" && silo.ticksLeftInCooldown() > 0) {
+        return false;
+      }
+      return true;
+    }
+
+    samDemandRequestInvalid(request, targetSamId) {
+      return request == null || request.pendingLaunches === true ||
+        targetSamId === null || targetSamId === undefined;
+    }
+
+    samDemandMatchesTarget(target) {
+      return this.samDemandStrikeTarget()?.smallID?.() === target?.smallID?.();
+    }
+
+    ensureHostileNukeThreatMap() {
+      if (
+        typeof this._hostileNukeThreats?.get !== "function" ||
+        typeof this._hostileNukeThreats?.set !== "function" ||
+        typeof this._hostileNukeThreats?.clear !== "function"
+      ) {
+        this._hostileNukeThreats = new Map();
+      }
+    }
+
+    missileThreatensFriendlyTarget(missile, targetTile, selfId, context) {
+      const targetOwner = this.game.owner?.(targetTile);
+      const targetsFriendlyTile =
+        targetOwner?.smallID?.() === selfId ||
+        playersArePermanentTeammates(this.player, targetOwner);
+      if (!targetsFriendlyTile) {
+        if (!this.missileThreatensFriendlyStructures(missile, targetTile, context)) return false;
+      }
+      return true;
+    }
+
+    finishPendingNukePass(abortedSalvoIds, remaining, droppedAbortedEntries) {
+      const kept =
+        abortedSalvoIds.size > 0
+          ? remaining.filter(
+              (pending) =>
+                !pending.salvo || !abortedSalvoIds.has(pending.salvo.salvoId),
+            )
+          : remaining;
+      this._pendingNukeLaunches = kept;
+      for (const salvoId of abortedSalvoIds) this._salvoFiredCounts?.delete(salvoId);
+      if (
+        kept.length === 0 &&
+        state.nukeWantSlots?.pendingLaunches === true
+      ) {
+        // The whole queue drained through aborts: either the demand still has
+        // live SAM coverage to re-arm against, or it is obsolete and released.
+        this.rearmAbortedSamDemand(droppedAbortedEntries);
+      }
+    }
+
+    nextSamSalvoPlan(plan) {
+      this._nextSalvoId = (this._nextSalvoId || 0) + 1;
+      const salvoPlan = {
+        salvoId: this._nextSalvoId,
+        plannedCoveringLevel: Number(plan.coveringSamLevels ?? 0),
+        targetTile: plan.targetTile,
+        targetSamId: plan.targetSamId ?? null,
+        coveringSamIds: [...(plan.coveringSamIds ?? [])],
+      };
+      return salvoPlan;
+    }
+
+    freezeGiantArmyReady(ourTroops) {
+      const ourMax = Number(this.player.maxTroops?.() ?? 0);
+      return ourMax > 0 &&
+        (ourTroops >= ourMax * 0.85 || Number.isNaN(ourTroops));
+    }
+
+    samDemandPlayers() {
+      return this.game.players?.() ?? [];
     }
 
     // probeCanBuildNuke — the deferred async canBuild gate (DIVERGENCE B1). Probes

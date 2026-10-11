@@ -360,7 +360,26 @@
       <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Win-condition fixes")}</span><div class="ab-cfg-sw ${state.settings.winFixes ? "on" : ""}" data-cfg="winFixes"></div></div>
       <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Smart spawn")}</span><div class="ab-cfg-sw ${state.settings.smartSpawn ? "on" : ""}" data-cfg="smartSpawn"></div></div>
       <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Performance profiling")}</span><div class="ab-cfg-sw ${state.settings.performanceProfiling ? "on" : ""}" data-cfg="performanceProfiling"></div></div>
+      ${hybridCombatConfigMarkup()}
       <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Tick interval (ms)")}</span><input class="ab-cfg-num" type="number" min="${MIN_TICK_INTERVAL_MS}" max="${MAX_TICK_INTERVAL_MS}" step="${TICK_INTERVAL_STEP_MS}" value="${state.settings.tickMs || DEFAULTS.tickMs}" data-cfg-num="tickMs"></div>`;
+  }
+
+  function hybridCombatConfigMarkup() {
+    const diagnostics = window.__OFH_hybridCombat?.diagnostics();
+    if (!diagnostics) return "";
+    const options = [["baseline", "Legendary only"], ["shadow", "Observe and learn"], ["learned", "Learned combat (experimental)"]];
+    return `<div class="ab-cfg-sec">${tr("Hybrid combat")}</div>
+      <div class="ab-cfg-row"><label class="ab-cfg-label" for="ab-hybrid-mode">${tr("Combat policy")}</label>
+      <select id="ab-hybrid-mode" data-hybrid-mode>${options.map(([value, label]) =>
+        `<option value="${value}" ${diagnostics.mode === value ? "selected" : ""}>${tr(label)}</option>`).join("")}</select></div>
+      <div class="ab-cfg-row"><label class="ab-cfg-label" for="ab-hybrid-learning">${tr("Learn from completed actions")}</label>
+      <input id="ab-hybrid-learning" type="checkbox" data-hybrid-learning ${diagnostics.learning ? "checked" : ""}></div>
+      <details><summary>${tr("Combat model")}</summary>
+      <p>${tr("Observation preserves Legendary decisions. Learned combat needs evaluation.")}</p>
+      <textarea data-hybrid-model aria-label="${tr("Combat model")}" rows="3" style="width:100%;box-sizing:border-box"></textarea>
+      <button type="button" data-hybrid-export>${tr("Export model")}</button>
+      <button type="button" data-hybrid-import>${tr("Import model")}</button>
+      <div data-hybrid-status role="status"></div></details>`;
   }
 
   function donateConfigMarkup() {
@@ -569,6 +588,44 @@
   }
 
   function wirePanelConfig(panel) {
+    const hybrid = window.__OFH_hybridCombat;
+    const hybridMode = panel.querySelector("[data-hybrid-mode]");
+    const hybridLearning = panel.querySelector("[data-hybrid-learning]");
+    const hybridModel = panel.querySelector("[data-hybrid-model]");
+    const hybridStatus = panel.querySelector("[data-hybrid-status]");
+    if (hybrid && hybridMode && hybridLearning) {
+      const showHybridStatus = () => {
+        const diagnostics = hybrid.diagnostics();
+        if (hybridStatus) hybridStatus.textContent =
+          diagnostics.error ? `${tr("Model rejected")}: ${diagnostics.error}` :
+          `${tr("Completed observations")}: ${Object.values(diagnostics.samples).join(" / ")}`;
+      };
+      hybridMode.addEventListener("change", () => {
+        hybrid.configure({ mode: hybridMode.value });
+        showHybridStatus();
+      });
+      hybridLearning.addEventListener("change", () => {
+        hybrid.configure({ learning: hybridLearning.checked });
+        showHybridStatus();
+      });
+      panel.querySelector("[data-hybrid-export]")?.addEventListener("click", () => {
+        hybridModel.value = JSON.stringify(hybrid.exportModel());
+        showHybridStatus();
+      });
+      panel.querySelector("[data-hybrid-import]")?.addEventListener("click", () => {
+        // HYBRID_MODEL_IMPORT_BOUNDARY_START
+        // Invalid user input is reported beside the model field.
+        try {
+          hybrid.importModel(JSON.parse(hybridModel.value));
+          showHybridStatus();
+        // eslint-disable-next-line no-restricted-syntax -- explicit user model input; rejection is reported beside the field
+        } catch (error) {
+          if (hybridStatus) hybridStatus.textContent = `${tr("Model rejected")}: ${error.message}`;
+        }
+        // HYBRID_MODEL_IMPORT_BOUNDARY_END
+      });
+      showHybridStatus();
+    }
     // ── Config tab wiring ───────────────────────────────────────────────────
     // All controls mutate state.settings directly (same shared scope), persist
     // via saveSettings(), and retuneEngine() where the change affects the loop.

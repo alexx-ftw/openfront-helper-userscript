@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE = path.join(ROOT, "engine/ingame/spawn-index.js");
-const source = fs.readFileSync(SOURCE, "utf8");
+const SOURCE = repositoryFilePath("engine/ingame/spawn-index.js");
+const source = readRepositoryFile("engine/ingame/spawn-index.js");
 
 function loadApi() {
   const sandbox = {

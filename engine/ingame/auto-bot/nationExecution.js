@@ -48,6 +48,7 @@
 
   class NationBot {
     constructor(game, opts) {
+      if (typeof hybridCombatPolicy !== "undefined") hybridCombatPolicy.beginSession();
       this.mg = game;
       this.player = game.myPlayer();
       this.active = true;
@@ -386,8 +387,7 @@
         // structure placement: a completed Port plus an affordable hull is
         // a time-sensitive coastal-defense obligation, while the other lanes
         // can retry on the next decision tick without losing state.
-        if (this.feat("warship") && state.settings.warshipAutoSpawn !== false &&
-          this.warshipBehavior.shouldPrioritizeInitialWarshipBuild?.() === true) {
+        if (this.shouldBuildInitialDefenseWarship()) {
           await autoBotProfileAsyncPhase(profile, "warship-defense-build", () =>
             this.warshipBehavior.maybeSpawnWarship());
           if (!this.tickIsCurrent(tickGeneration)) return true;
@@ -578,6 +578,7 @@
       if (!(await this.runNavalTickPhases(me, profile, tickGeneration))) return;
       if (me === null || autoBotProfileSyncPhase(profile, "spawn-gate", () =>
         this.handleSpawnTick(ticks, profile))) return;
+      this.observeHybridCombat(me);
       if (this.handleEliminatedPlayer(me)) return;
       if (await this.initializeTick(ticks, profile, tickGeneration)) return;
       if (!(await this.processPendingNukeSalvo(profile, tickGeneration))) return;
@@ -592,8 +593,7 @@
         // with a paid-for first hull cannot remain defenseless for the entire
         // siege.  The warship behavior retains all SAM/affordability and
         // pending-intent guards; this is only a scheduling bridge.
-        if (this.feat("warship") && state.settings.warshipAutoSpawn !== false &&
-          this.warshipBehavior.shouldPrioritizeInitialWarshipBuild?.() === true) {
+        if (this.shouldBuildInitialDefenseWarship()) {
           await autoBotProfileAsyncPhase(profile, "warship-defense-build", () =>
             this.warshipBehavior.maybeSpawnWarship());
           if (!this.tickIsCurrent(tickGeneration)) return;
@@ -608,6 +608,17 @@
         return;
       }
       await this.runDecisionChain(profile, tickGeneration);
+    }
+
+    shouldBuildInitialDefenseWarship() {
+      return this.feat("warship") && state.settings.warshipAutoSpawn !== false &&
+        this.warshipBehavior.shouldPrioritizeInitialWarshipBuild?.() === true;
+    }
+
+    observeHybridCombat(me) {
+      if (typeof hybridCombatPolicy !== "undefined" && this.behaviorsInitialized) {
+        hybridCombatPolicy.observe(this.attackBehavior, !me.isAlive() || Boolean(this.mg.getWinner()));
+      }
     }
 
     enforceSameClanNukeTerrainSafety() {

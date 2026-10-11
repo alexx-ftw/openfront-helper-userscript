@@ -191,4 +191,7 @@ assert.equal(viBundle.hi, "hi", "i18n keeps DEFAULT_TRANSLATIONS");
 const enBundle = await win.OpenFrontHelperI18n.loadBundle("en");
 assert.equal(enBundle.a, "1", "i18n returns English for en");
 
-process.stdout.write("SMOKE OK — standalone shell wires up cleanly\n");
+await import("./engine-hook-index.mjs");
+await import("./hybrid-combat.mjs");
+await import("./hybrid-combat-evaluation.mjs");
+process.stdout.write("SMOKE OK — standalone shell and hybrid combat checks passed\n");

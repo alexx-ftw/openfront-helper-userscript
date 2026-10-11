@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { foreignGitEnvironment } from "../scripts/git-environment.mjs";
 import "./game-constants.mjs";
 import "../scripts/game-runtime-parity.mjs";
 
@@ -13,6 +14,7 @@ function git(arguments_) {
     cwd: repositoryRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "inherit"],
+    env: arguments_[0] === "-C" ? foreignGitEnvironment() : process.env,
   }).trim();
 }
 
@@ -28,10 +30,7 @@ assert.equal(
   git(["-C", engineDirectory, "remote", "get-url", "origin"]),
   "https://github.com/openfrontio/openfrontio",
 );
-assert.equal(
-  git(["-C", engineDirectory, "rev-parse", "HEAD"]),
-  pinnedGitlink,
-);
+assert.equal(git(["-C", engineDirectory, "rev-parse", "HEAD"]), pinnedGitlink);
 assert.equal(git(["-C", engineDirectory, "status", "--porcelain"]), "");
 
 const enginePackage = JSON.parse(readFileSync(resolve(engineDirectory, "package.json"), "utf8"));
@@ -56,4 +55,4 @@ assert.match(
   "the userscript config adapter preserves the legacy trajectory-speed contract after engine migration",
 );
 
-console.warn(`OpenFront engine compatibility passed at ${gitlink.split(" ")[1]}`);
+process.stdout.write(`OpenFront engine compatibility passed at ${gitlink.split(" ")[1]}\n`);

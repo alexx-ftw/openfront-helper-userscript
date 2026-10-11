@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/earlyGame.js");
-const source = fs.readFileSync(sourcePath, "utf8");
+const sourcePath = repositoryFilePath("engine/ingame/auto-bot/earlyGame.js");
+const source = readRepositoryFile("engine/ingame/auto-bot/earlyGame.js");
 
 let callsSinceYield = 0;
 let maxCallsBetweenYields = 0;

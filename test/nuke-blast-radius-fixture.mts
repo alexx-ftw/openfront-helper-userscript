@@ -1,3 +1,4 @@
+import { useProductionNukeMagnitudes } from "./helpers/native-bot-fixture.mts";
 import assert from "node:assert/strict";
 
 import { NukeExecution } from "../openfront-engine/src/core/execution/NukeExecution";
@@ -19,16 +20,7 @@ const attacker = game.player("attacker");
 // The shared test config stubs every magnitude to {1,1} for tick
 // predictability. Restore the production hydrogen magnitudes so the
 // detonation runs the real engine destruction logic at real radii.
-game.config().nukeMagnitudes = (unitType) => {
-  switch (unitType) {
-    case UnitType.MIRVWarhead:
-      return { inner: 12, outer: 18 };
-    case UnitType.AtomBomb:
-      return { inner: 12, outer: 30 };
-    default:
-      return { inner: 80, outer: 100 };
-  }
-};
+useProductionNukeMagnitudes(game);
 
 const outerRadius = game.config().nukeMagnitudes(UnitType.HydrogenBomb).outer;
 assert.equal(

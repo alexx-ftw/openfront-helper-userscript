@@ -1,12 +1,6 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
 
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 let randomCalls = 0;
 const math = Object.create(Math);
 math.random = () => {
@@ -43,7 +37,7 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 sandbox.__difficulty = "Legendary";
 executeClassicScript(
-  `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${read("engine/ingame/auto-bot/structureBehavior.js")}\nglobalThis.__StructureBehavior = StructureBehavior;`,
+  `${readRepositoryFile("engine/ingame/auto-bot/legendaryPlanner.js")}\n${readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js")}\nglobalThis.__StructureBehavior = StructureBehavior;`,
   sandbox,
   { filename: "silo-probe-budget.vm.js" },
 );

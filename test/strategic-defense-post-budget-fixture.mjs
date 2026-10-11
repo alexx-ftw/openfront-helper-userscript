@@ -93,8 +93,9 @@ const budgetCases = [
 ];
 for (const budgetCase of budgetCases) {
   testDifficulty = budgetCase.difficulty;
-  const threat = makeBehavior({ frontTiles: budgetCase.frontTiles })
-    .computeStrategicBorderDefensePostThreat(budgetCase.difficulty);
+  const threat = makeBehavior({
+    frontTiles: budgetCase.frontTiles,
+  }).computeStrategicBorderDefensePostThreat(budgetCase.difficulty);
   assert.equal(
     threat && threat.allowed,
     budgetCase.expected,
@@ -105,16 +106,19 @@ for (const budgetCase of budgetCases) {
 
 testDifficulty = Difficulty.Legendary;
 assert.equal(
-  makeBehavior({ frontTiles: 10000, surplusGold: false })
-    .computeStrategicBorderDefensePostThreat(Difficulty.Legendary),
+  makeBehavior({ frontTiles: 10000, surplusGold: false }).computeStrategicBorderDefensePostThreat(
+    Difficulty.Legendary,
+  ),
   null,
   "quiet-border posts stay gated behind the Legendary surplus gold rule",
 );
 assert.equal(
-  makeBehavior({ frontTiles: 10000, strongestTroops: 500_000 })
-    .computeStrategicBorderDefensePostThreat(Difficulty.Legendary),
+  makeBehavior({
+    frontTiles: 10000,
+    strongestTroops: 500_000,
+  }).computeStrategicBorderDefensePostThreat(Difficulty.Legendary),
   null,
   "a border opponent below 1x own troops must not authorize quiet-border posts",
 );
 
-console.log("strategic-defense-post-budget fixture: OK");
+process.stdout.write("strategic-defense-post-budget fixture: OK\n");

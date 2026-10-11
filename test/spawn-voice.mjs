@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE = path.join(ROOT, "engine/ingame/spawn-voice.js");
+const SOURCE = repositoryFilePath("engine/ingame/spawn-voice.js");
 const listeners = [];
 const prompts = [];
 const sandbox = {
@@ -15,7 +15,9 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
-executeClassicScript(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
+executeClassicScript(readRepositoryFile("engine/ingame/spawn-voice.js"), sandbox, {
+  filename: SOURCE,
+});
 
 assert.equal(typeof sandbox.createSpawnVoicePromptDetector, "function");
 assert.equal(listeners.length, 1, "spawn voice registers one lightweight poller");

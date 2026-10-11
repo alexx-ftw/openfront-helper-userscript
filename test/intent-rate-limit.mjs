@@ -1,20 +1,14 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const RATE_LIMIT_SOURCE = fs.readFileSync(
-  path.join(ROOT, "engine/ingame/intent-rate-limit.js"),
-  "utf8",
-);
-const CONTEXT_SOURCE = fs.readFileSync(
-  path.join(ROOT, "engine/ingame/auto-bot/context.js"),
-  "utf8",
-);
-const WS_HOOK_SOURCE = fs.readFileSync(path.join(ROOT, "engine/ingame/ws-hook.js"), "utf8");
-const BUILD_SOURCE = fs.readFileSync(path.join(ROOT, "build.mjs"), "utf8");
+const RATE_LIMIT_SOURCE = readRepositoryFile("engine/ingame/intent-rate-limit.js");
+const CONTEXT_SOURCE = readRepositoryFile("engine/ingame/auto-bot/context.js");
+const WS_HOOK_SOURCE = readRepositoryFile("engine/ingame/ws-hook.js");
+const BUILD_SOURCE = readRepositoryFile("build.mjs");
 
 function createSandbox() {
   let now = 0;
@@ -39,7 +33,7 @@ function createSandbox() {
   executeClassicScript(
     `${RATE_LIMIT_SOURCE}\n${CONTEXT_SOURCE}\nglobalThis.__intentTest = { emitIntent, tryAcquireIntentRateLimit, discoverCtors, getIntentRateLimitSnapshot, hasIntentRateLimitCapacity, sendAutoBotBuildOrUpgrade, autoBotBuildReservedGold, autoBotBuildPendingNukes };`,
     sandbox,
-    { filename: path.join(ROOT, "engine/ingame/intent-rate-limit.js") },
+    { filename: repositoryFilePath("engine/ingame/intent-rate-limit.js") },
   );
   return {
     api: sandbox.__intentTest,

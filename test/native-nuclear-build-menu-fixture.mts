@@ -1,3 +1,4 @@
+import { setupNativeGame, initializeNativeBot } from "./helpers/native-bot-fixture.mts";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { EventBus } from "../openfront-engine/src/core/EventBus";
@@ -5,9 +6,7 @@ import { GameRunner } from "../openfront-engine/src/core/GameRunner";
 import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
 import { decodeClientMessage } from "../openfront-engine/src/core/ZbinWire";
 import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
-import { setup } from "../openfront-engine/tests/util/Setup";
-import { engineTestsUtil } from "./helpers/two-player-game.mts";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
 
 const dom = new JSDOM("<!doctype html><body></body>", { url: "https://openfront.io" });
 for (const key of [
@@ -31,15 +30,7 @@ try {
   const { BuildUnitIntentEvent, SendUpgradeStructureIntentEvent, Transport } =
     await import("../openfront-engine/src/client/Transport");
   await import("../openfront-engine/src/client/hud/layers/BuildMenu");
-  const game = await setup(
-    "big_plains",
-    { instantBuild: true },
-    [
-      new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
-      new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
-    ],
-    engineTestsUtil,
-  );
+  const game = await setupNativeGame();
   const player = game.player("attacker");
   const source = game.ref(1, 1);
   const target = game.ref(80, 1);
@@ -123,10 +114,7 @@ try {
   const runner = new GameRunner(game, new Executor(game, "menuRace", "attacker"), () => {});
   const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
   try {
-    bot.attach({ runner, clientID: "attacker" });
-    await bot.api.beginTick(bot.pageGame.myPlayer());
-    bot.nationBot.player = bot.api.game.myPlayer();
-    bot.nationBot.initializeBehaviors();
+    await initializeNativeBot(bot, runner);
     bot.harness.internals.state.settings.enabled = true;
     bot.harness.internals.state.settings.winFixes = true;
     bot.harness.current.buildMenu = menu;

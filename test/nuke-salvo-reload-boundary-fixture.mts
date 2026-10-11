@@ -1,74 +1,29 @@
-import assert from "node:assert/strict";
-import { GameRunner } from "../openfront-engine/src/core/GameRunner";
-import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
-import { SAMLauncherExecution } from "../openfront-engine/src/core/execution/SAMLauncherExecution";
-import { TurnSchema } from "../openfront-engine/src/core/Schemas";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
-import { setup } from "../openfront-engine/tests/util/Setup";
-import { engineTestsUtil } from "./helpers/two-player-game.mts";
 import {
-  createBuildMenu,
-  createMaxDifficultyOpponent,
-} from "../scripts/headless/opponent-adapter.js";
+  attachNativeCombatBot,
+  setupNativeSamRange,
+  createNativeLoop,
+  nativeSiloFlightTicks,
+} from "./helpers/native-bot-fixture.mts";
+import assert from "node:assert/strict";
+import { SAMLauncherExecution } from "../openfront-engine/src/core/execution/SAMLauncherExecution";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
+import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
 // Reload before impact alone does not prove that a real SAM can intercept in time.
 for (const reloadOffset of [-3, -2, -1, 0, 1, 2, 3]) {
-  const game = await setup(
-    "big_plains",
-    { instantBuild: true },
-    [
-      new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
-      new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
-    ],
-    engineTestsUtil,
-  );
-  const attacker = game.player("attacker");
-  const defender = game.player("defender");
-  const source = game.ref(1, 80);
-  const target = game.ref(80, 1);
-  attacker.addGold(100_000_000n);
-  attacker.conquer(source);
-  defender.conquer(target);
-  defender.conquer(game.ref(180, 180));
+  const { game, attacker, defender, source, target } = await setupNativeSamRange();
   attacker.buildUnit(UnitType.MissileSilo, source, {});
   const sam = defender.buildUnit(UnitType.SAMLauncher, target, {});
   sam.launch();
   game.addExecution(new SAMLauncherExecution(defender, null, sam));
   const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
-  const runner = new GameRunner(
-    game,
-    new Executor(game, "reload-boundary", "attacker"),
-    (update) => {
-      assert.ok(!("errMsg" in update));
-      bot.applyGameUpdate(update);
-    },
+  const { runner, step } = createNativeLoop(game, "reload-boundary", (update) =>
+    bot.applyGameUpdate(update),
   );
-  const step = (intents = []) => {
-    runner.addTurn(
-      TurnSchema.parse({
-        turnNumber: game.ticks(),
-        intents: intents.map((intent) => ({ ...intent, clientID: "attacker" })),
-      }),
-    );
-    assert.equal(runner.executeNextTick(), true);
-  };
   try {
-    bot.attach({ runner, clientID: "attacker" });
-    await bot.api.beginTick(bot.pageGame.myPlayer());
-    bot.nationBot.player = bot.api.game.myPlayer();
-    bot.nationBot.initializeBehaviors();
-    const menu = createBuildMenu(bot);
-    bot.harness.current.buildMenu = menu;
-    bot.harness.current.eventBus = menu.eventBus;
-    bot.harness.internals.state.settings.enabled = true;
-    bot.harness.internals.state.settings.winFixes = true;
-    const nuke = bot.nationBot.nukeBehavior;
-    const rival = bot.api.game.playerBySmallID(defender.smallID());
-    const flight = nuke.getAvailableSiloEntries(
-      [bot.nationBot.player.units(UnitType.MissileSilo)[0]],
-      target,
-      new Set([sam.id()]),
-    )[0].flightTicks;
+    const { nuke, rival } = await attachNativeCombatBot(bot, runner, defender);
+
+    const flight = nativeSiloFlightTicks(bot, target, sam.id());
     const reloadTick = game.config().SAMCooldown();
     while (game.ticks() < reloadTick - flight + reloadOffset) step();
     await bot.api.beginTick(bot.pageGame.myPlayer());

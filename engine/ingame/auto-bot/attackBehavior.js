@@ -8040,6 +8040,11 @@
         if (await this.attackBots(nearby)) return;
       }
 
+      // DIVERGENCE: the shadow learner never emits orders; a frozen, ready
+      // learned policy may choose a legal strategic land target or wait.
+      if (typeof hybridCombatPolicy !== "undefined" &&
+          await hybridCombatPolicy.decide(this, borderingEnemies)) return;
+
       // Get attack strategies in priority order based on difficulty
       const strategies = this.getAttackStrategies(
         borderingFriends,
@@ -8289,15 +8294,72 @@
       });
       stats.enterCount += 1;
       if (state.settings.winFixes !== true) return false;
-      if (
+      if (!this.canTrackBeachheads()) return false;
+      const tick = this.recordBeachheadObservations(stats);
+      // Survival probe: count hostile warships at decision time. Retake boats
+      // only survive in warship-free windows (hunters retask onto transports),
+      // so the measured distribution decides whether a warship-free launch
+      // criterion has any firing windows at all.
+      const hostileWarships = this.hostileWarshipCount();
+      stats.warshipCountMin = Math.min(stats.warshipCountMin ?? Infinity, hostileWarships);
+      stats.warshipCountMax = Math.max(stats.warshipCountMax ?? 0, hostileWarships);
+      if (hostileWarships === 0) stats.warshipFreeTicks = (stats.warshipFreeTicks ?? 0) + 1;
+      const candidate = nextBeachheadRetakeCandidate(
+        this.beachheadLedger,
+        tick,
+        this.beachheadRetakeAttempts,
+      );
+      if (candidate === null) return false;
+      const holder = this.eligibleBeachheadRetakeHolder(candidate.tile);
+      if (!holder) return false;
+      const troops = this.getForceAttackTroops(
+        holder,
+        BEACHHEAD_RETAKE_TROOP_FRACTION,
+        false,
+      );
+      if (troops < 1) return false;
+      // Garrison proxy: the recorded invasion force is the force that took
+      // the tile. A retake boat smaller than that force cannot flip the tile
+      // and only feeds the holder (each sunk boat amputates the whole retake
+      // fraction of our army; team-temp-basket-05 lost 11 transports and then
+      // the match to exactly that). Tile garrison itself is not on the wire;
+      // the landing force size is the closest observable.
+      if (!this.beachheadRetakeGarrisonAllows(candidate, troops, tick, stats)) return false;
+      // Survival-proof launch: only fire while NO hostile warship exists.
+      // Hunters retask onto transports and launch-time corridor checks cannot
+      // predict that; zero hostile warships is the only client-provable
+      // survival guarantee. The measured free windows (743 ticks on seed
+      // basket-04) are where this lane does its work.
+      if (hostileWarships !== 0) {
+        return false;
+      }
+      // No slack gate here: every producer now defers cleanly on an empty
+      // bucket (build path and emitIntent pre-check capacity), so the lane
+      // spending the budget down does not turn into a rejection elsewhere —
+      // the fat reserve only starved the retake (emits 93 → 52, flip lost).
+      // Retake the TILE itself: a player-targeted land attack lands wherever
+      // the engine picks a frontier tile and may never reach a forward
+      // beachhead (three tiles held 5000+ ticks, zero flips on seed
+      // basket-04). The UI's boat attack is the only client-faithful intent
+      // that targets a tile exactly.
+      // Boat-only: the land fallback re-feeds 20%-force attacks into a holder
+      // that outguns us (team-temp-basket-05 lost at 8181 ticks on exactly
+      // that bleed). If no boat can go this tick, the next cooldown window
+      // will try again.
+      return this.emitBeachheadRetake(candidate, holder, troops, tick, stats);
+    }
+
+    canTrackBeachheads() {
+      return !(
         this.player === null ||
         this.player === undefined ||
         typeof this.game?.ticks !== "function" ||
         typeof this.game?.ownerID !== "function" ||
         typeof this.game?.playerBySmallID !== "function"
-      ) {
-        return false;
-      }
+      );
+    }
+
+    recordBeachheadObservations(stats) {
       if (this.beachheadLedger === undefined) this.beachheadLedger = new Map();
       if (this.beachheadRetakeAttempts === undefined) {
         this.beachheadRetakeAttempts = new Map();
@@ -8325,42 +8387,22 @@
       );
       stats.ledgerSize = this.beachheadLedger.size;
       stats.recorded += Math.max(0, this.beachheadLedger.size - ledgerSizeBefore);
-      // Survival probe: count hostile warships at decision time. Retake boats
-      // only survive in warship-free windows (hunters retask onto transports),
-      // so the measured distribution decides whether a warship-free launch
-      // criterion has any firing windows at all.
-      const hostileWarships = this.hostileWarshipCount();
-      stats.warshipCountMin = Math.min(stats.warshipCountMin ?? Infinity, hostileWarships);
-      stats.warshipCountMax = Math.max(stats.warshipCountMax ?? 0, hostileWarships);
-      if (hostileWarships === 0) stats.warshipFreeTicks = (stats.warshipFreeTicks ?? 0) + 1;
-      const candidate = nextBeachheadRetakeCandidate(
-        this.beachheadLedger,
-        tick,
-        this.beachheadRetakeAttempts,
-      );
-      if (candidate === null) return false;
-      const holder = this.beachheadHolderPlayer(candidate.tile);
+      return tick;
+    }
+
+    eligibleBeachheadRetakeHolder(tile) {
+      const holder = this.beachheadHolderPlayer(tile);
       if (
         !holder ||
         holder === this.player ||
         holder.isPlayer?.() !== true ||
         holder.isAlive?.() === false ||
         this.player.isFriendly?.(holder) === true
-      ) {
-        return false;
-      }
-      const troops = this.getForceAttackTroops(
-        holder,
-        BEACHHEAD_RETAKE_TROOP_FRACTION,
-        false,
-      );
-      if (troops < 1) return false;
-      // Garrison proxy: the recorded invasion force is the force that took
-      // the tile. A retake boat smaller than that force cannot flip the tile
-      // and only feeds the holder (each sunk boat amputates the whole retake
-      // fraction of our army; team-temp-basket-05 lost 11 transports and then
-      // the match to exactly that). Tile garrison itself is not on the wire;
-      // the landing force size is the closest observable.
+      ) return null;
+      return holder;
+    }
+
+    beachheadRetakeGarrisonAllows(candidate, troops, tick, stats) {
       const garrison = Number(candidate.record.invaderTroops);
       if (
         !Number.isFinite(garrison) ||
@@ -8376,27 +8418,10 @@
         };
         return false;
       }
-      // Survival-proof launch: only fire while NO hostile warship exists.
-      // Hunters retask onto transports and launch-time corridor checks cannot
-      // predict that; zero hostile warships is the only client-provable
-      // survival guarantee. The measured free windows (743 ticks on seed
-      // basket-04) are where this lane does its work.
-      if (hostileWarships !== 0) {
-        return false;
-      }
-      // No slack gate here: every producer now defers cleanly on an empty
-      // bucket (build path and emitIntent pre-check capacity), so the lane
-      // spending the budget down does not turn into a rejection elsewhere —
-      // the fat reserve only starved the retake (emits 93 → 52, flip lost).
-      // Retake the TILE itself: a player-targeted land attack lands wherever
-      // the engine picks a frontier tile and may never reach a forward
-      // beachhead (three tiles held 5000+ ticks, zero flips on seed
-      // basket-04). The UI's boat attack is the only client-faithful intent
-      // that targets a tile exactly.
-      // Boat-only: the land fallback re-feeds 20%-force attacks into a holder
-      // that outguns us (team-temp-basket-05 lost at 8181 ticks on exactly
-      // that bleed). If no boat can go this tick, the next cooldown window
-      // will try again.
+      return true;
+    }
+
+    emitBeachheadRetake(candidate, holder, troops, tick, stats) {
       const emitted = this.emitBoat(
         candidate.tile,
         troops,
@@ -8423,9 +8448,7 @@
     // basket-04).
     beachheadTileIsHostileHeld(tile) {
       const meSid = this.player?.smallID?.();
-      const holderSid = this.game.hasOwner
-        ? (this.game.hasOwner(tile) ? this.game.ownerID(tile) : null)
-        : this.game.ownerID(tile);
+      const holderSid = this.beachheadHolderSmallID(tile);
       if (holderSid === null || holderSid === undefined) return false;
       if (holderSid === meSid) return false;
       const holder = this.beachheadHolderPlayer(tile);
@@ -8436,11 +8459,14 @@
     }
 
     beachheadHolderPlayer(tile) {
-      const holderSid = this.game.hasOwner
-        ? (this.game.hasOwner(tile) ? this.game.ownerID(tile) : null)
-        : this.game.ownerID(tile);
+      const holderSid = this.beachheadHolderSmallID(tile);
       if (holderSid === null || holderSid === undefined) return null;
       return this.game.playerBySmallID(holderSid) ?? null;
+    }
+
+    beachheadHolderSmallID(tile) {
+      if (this.game.hasOwner && !this.game.hasOwner(tile)) return null;
+      return this.game.ownerID(tile);
     }
 
     // findIncomingAttackPlayer — AiAttackBehavior.
@@ -9903,6 +9929,7 @@
       if (!this.canAttackPlayerNow(target)) return false;
       if (!force && !this.shouldAttack(target)) return false;
       if (!this.sendAttackTargetIsAuthorized(options, force)) return false;
+      if (!force && !this.hybridAllowsAttack(target)) return false;
       options.isParallelTribeAttack =
         options.parallelTribeAttack === true &&
         target?.isPlayer?.() === true &&
@@ -9918,9 +9945,25 @@
       ) {
         return false;
       }
-      return target.isPlayer()
-        ? this.sendAttackAgainstPlayer(options)
-        : this.sendAttackAgainstTerraNullius(options);
+      return this.sendAttackWithHybridObservation(options);
+    }
+
+    hybridAllowsAttack(target) {
+      return typeof hybridCombatPolicy === "undefined" || hybridCombatPolicy.allowsAttack(this, target);
+    }
+
+    async sendAttackWithHybridObservation(options) {
+      const { target, force } = options;
+      const hybridGeneration = typeof hybridCombatPolicy !== "undefined" ? hybridCombatPolicy.generation : null;
+      const hybridObservation = !force && typeof hybridCombatPolicy !== "undefined"
+        ? hybridCombatPolicy.actionObservation(this, target) : null;
+      const sent = target.isPlayer()
+        ? await this.sendAttackAgainstPlayer(options)
+        : await this.sendAttackAgainstTerraNullius(options);
+      if (sent && !force && typeof hybridCombatPolicy !== "undefined") {
+        hybridCombatPolicy.recordAcceptedAction(this, target, hybridObservation, hybridGeneration);
+      }
+      return sent;
     }
 
     // hasLandBorderWithTerraNullius — AiAttackBehavior (private).

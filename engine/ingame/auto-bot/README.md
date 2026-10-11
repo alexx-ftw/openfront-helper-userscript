@@ -6,6 +6,67 @@ warships, alliances) by reading the client-side `GameView`/`PlayerView` and
 emitting the same intents the UI emits. Strategy mirrors the in-game "Nation"
 bot (see `src/core/execution/NationExecution.ts` and friends in the game repo).
 
+## Hybrid combat learning
+
+The config panel now exposes three combat policies: **Legendary only**,
+**Observe and learn** (default), and **Learned combat (experimental)**. The hybrid
+is a separately implemented contextual ridge learner, not an imported PPO network
+or AggroBot checkpoint. It separates waiting/acting from stable-ID target ranking.
+The faithful `winFixes=false` path bypasses it entirely.
+
+Observation leaves Legendary in control. Only confirmed ordinary strategic land
+attacks train the action/target predictors: an own live outbound attack must be
+observed before its commitment ends. Unknown or rejected intents are counted in
+diagnostics and do not receive a successful-action label. The label is the change
+in own land fraction over that commitment interval; it is a tactical proxy, not
+a causal estimate, a terminal win reward, or proof of improved play. Wait examples
+require a legal strategic candidate. Other activity during the interval can still
+affect that proxy, so promote only on independent completed-game evaluation.
+
+The feature contract uses troop-capacity ratios, own/target land fractions,
+incoming pressure, relative armies, capture budget and existing commitments. It
+has no fixed opponent slots or wait sentinel inside a truncated list. A unit ridge
+prior regularizes bounded features. The sample floor is the feature dimension
+(4 for each gate arm, 9 for target ranking); `ready` means enough observations to
+try inference, not a performance certification. Cold models fall back to Legendary.
+
+Experimental control retains the existing legality, affordability, reserve,
+friendship, reinforcement, timeout and dispatch checks. Strategic commitments,
+including accepted pending intents, prevent opening another ordinary war; forced
+defense and tribe/free-land expansion bypass that coordination restriction.
+Construction, ships, diplomacy and nuclear selection retain their current policy.
+
+Models and mode are saved under `openfront-helper-hybrid-combat-v1`. Export/import
+controls show JSON and reject incompatible schemas, nonfinite weights and invalid
+covariance before replacing an existing model. Storage/input failures appear in
+diagnostics/UI. The browser API is `window.__OFH_hybridCombat`, with `configure`,
+`diagnostics`, `exportModel` and `importModel`. A new match discards unfinished
+observations while retaining learned parameters. Disable learning for a frozen run.
+
+Paired evaluation uses the **same built userscript, game settings and seeds**:
+
+```bash
+OFH_GAME_MAP=Labyrinth OFH_GAME_MODE=ffa OFH_NATIONS=2 OFH_BOTS=60 OFH_NO_MODIFIERS=1 \
+  node scripts/headless/evaluate-hybrid-combat.mjs --collect \
+  --seeds hybrid-train-01,hybrid-train-02 --timeout-ms 60000 --out /tmp/ofh-hybrid-train
+
+OFH_GAME_MAP=Labyrinth OFH_GAME_MODE=ffa OFH_NATIONS=2 OFH_BOTS=60 OFH_NO_MODIFIERS=1 \
+  node scripts/headless/evaluate-hybrid-combat.mjs \
+  --model /tmp/ofh-hybrid-train/trained-model.json \
+  --seeds hybrid-holdout-01,hybrid-holdout-02 --timeout-ms 60000 --out /tmp/ofh-hybrid-holdout
+```
+
+The timeout above is an operational example, not a quality threshold. Increase it
+for complete games on the chosen machine/configuration. Collection may produce a
+cold model; it does not authorize a strength claim. The evaluator rejects cold
+holdouts and overlapping training seeds. Failed or capped games remain visible and
+are not counted as losses/wins. Completed paired wins are distinct from survival,
+territory, runtime and whether the combat lane actually executed. No automatic
+promotion or external model download occurs.
+
+The source audit and extraction decisions are in
+[`docs/hybrid-bot-project-audit.md`](../../../docs/hybrid-bot-project-audit.md).
+
 ## Early Game policy
 
 The Early Game snapshot starts after spawn selection while there is still free

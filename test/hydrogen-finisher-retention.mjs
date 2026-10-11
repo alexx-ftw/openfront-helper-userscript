@@ -14,7 +14,12 @@ const sharedUtilsSource = fs.readFileSync(
   "utf8",
 );
 
-const UNIT = { AtomBomb: "Atom Bomb", HydrogenBomb: "Hydrogen Bomb" };
+const UNIT = {
+  AtomBomb: "Atom Bomb",
+  HydrogenBomb: "Hydrogen Bomb",
+  City: "City",
+  MissileSilo: "Missile Silo",
+};
 const sandbox = {
   UNIT,
   Difficulty: {
@@ -35,24 +40,41 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 executeClassicScript(sharedUtilsSource, sandbox, { filename: "shared-utils.vm.js" });
-executeClassicScript(
-  `${source}\nglobalThis.__NukeBehavior = NukeBehavior;`,
-  sandbox,
-  { filename: "hydrogen-finisher-retention.vm.js" },
-);
+executeClassicScript(`${source}\nglobalThis.__NukeBehavior = NukeBehavior;`, sandbox, {
+  filename: "hydrogen-finisher-retention.vm.js",
+});
 
-const target = { smallID: () => 11, isAlive: () => true };
+const target = {
+  smallID: () => 11,
+  isAlive: () => true,
+  units: (type) =>
+    type === UNIT.City ? [{ type: () => UNIT.City, tile: () => 555, level: () => 1 }] : [],
+};
 function makeFinisher({ gold, target: resolvedTarget = target }) {
   const behavior = Object.create(sandbox.__NukeBehavior.prototype);
   behavior.game = {
     ticks: () => 200,
-    config: () => ({ isUnitDisabled: () => false }),
+    config: () => ({
+      isUnitDisabled: () => false,
+      nukeMagnitudes: () => ({ inner: 80, outer: 100 }),
+    }),
+    euclideanDistSquared: (left, right) => (left - right) ** 2,
     players: () => [resolvedTarget ?? target].filter(Boolean),
   };
   behavior.player = { smallID: () => 1, gold: () => BigInt(gold) };
   behavior.attackBehavior = { shouldAttack: () => true };
   behavior.getPerceivedNukeCost = async () => 5_000_000n;
-  behavior.player.units = () => [{ isUnderConstruction: () => false }];
+  behavior.player.units = (type) =>
+    type === UNIT.MissileSilo
+      ? [
+          {
+            type: () => UNIT.MissileSilo,
+            tile: () => 0,
+            level: () => 1,
+            isUnderConstruction: () => false,
+          },
+        ]
+      : [];
   behavior.findEnemySamsCoveringTile = () => [];
   behavior._pendingNukeLaunches = [];
   const sent = [];
@@ -111,4 +133,4 @@ function makeFinisher({ gold, target: resolvedTarget = target }) {
   assert.ok(pending(), "a failed dispatch keeps the finisher schedulable");
 }
 
-console.log("hydrogen-finisher-retention tests passed");
+process.stdout.write("hydrogen-finisher-retention tests passed\n");

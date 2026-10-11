@@ -172,11 +172,38 @@ export function createBundledOpponentHarness(options = {}) {
   // eslint-disable-next-line sonarjs/code-eval
   bundledHarnessScript ??= new vm.Script(bundledHarnessSource, { filename: BUNDLE_PATH });
   bundledHarnessScript.runInContext(context);
+  configureHybridCombat(window, process.env.OFH_HYBRID_COMBAT_MODE);
   const internals = window.__OFH_realOpponentHarness;
   if (!internals) {
     throw new Error("Bundled opponent internals were not exposed");
   }
   return { window, current, internals };
+}
+
+function configureHybridCombat(window, mode) {
+  if (!mode) return;
+  if (!["baseline", "shadow", "learned"].includes(mode)) {
+    throw new Error(`Unsupported hybrid combat mode ${mode}`);
+  }
+  const api = window.__OFH_hybridCombat;
+  if (
+    !["configure", "importModel", "exportModel", "diagnostics"].every(
+      (method) => typeof api?.[method] === "function",
+    )
+  ) {
+    throw new Error("Hybrid combat API unavailable in page realm");
+  }
+  const modelPath = process.env.OFH_HYBRID_COMBAT_MODEL;
+  if (modelPath && api.importModel(JSON.parse(fs.readFileSync(modelPath, "utf8"))) === false) {
+    throw new Error("Unsupported hybrid combat model snapshot");
+  }
+  const learningFlag = process.env.OFH_HYBRID_COMBAT_LEARNING;
+  if (learningFlag !== undefined && learningFlag !== "0" && learningFlag !== "1") {
+    throw new Error("OFH_HYBRID_COMBAT_LEARNING must be 0 or 1");
+  }
+  const learning = mode === "shadow" && learningFlag !== "0";
+  api.configure({ mode, learning });
+  window.__OFH_hybridCombatRun = { mode, learning, modelImported: Boolean(modelPath) };
 }
 
 function createBundledHarnessSource() {
@@ -777,28 +804,17 @@ export class BundledOpponentBot {
         this.structureTrace.push({
           kind: "nuke-aim",
           tick: this.game.ticks(),
-          sourceID: behavior.player?.smallID?.() ?? null,
-          sourceName: behavior.player?.name?.() ?? null,
-          sourceTroops: Number(behavior.player?.troops?.() ?? 0),
-          sourceTiles: Number(behavior.player?.numTilesOwned?.() ?? 0),
-          incomingID: incoming?.smallID?.() ?? null,
-          incomingName: incoming?.name?.() ?? null,
+          ...nukeTracePlayerSnapshot(behavior.player, "source"),
+          ...nukeTracePlayerIdentity(incoming, "incoming"),
           tile,
           type,
           waitTicks,
           salvoID: salvo?.salvoId ?? null,
           fired,
-          targetID: target?.smallID?.() ?? null,
-          targetName: target?.name?.() ?? null,
-          targetTroops: Number(target?.troops?.() ?? 0),
-          targetTiles: Number(target?.numTilesOwned?.() ?? 0),
-          tileOwnerID: owner?.smallID?.() ?? null,
-          tileOwnerName: owner?.name?.() ?? null,
+          ...nukeTracePlayerSnapshot(target, "target"),
+          ...nukeTracePlayerIdentity(owner, "tileOwner"),
           tileOwnerTiles: Number(owner?.numTilesOwned?.() ?? 0),
-          targetSamLevels: (target?.units?.("SAM Launcher") ?? []).reduce(
-            (sum, sam) => sum + Number(sam?.level?.() ?? 0),
-            0,
-          ),
+          targetSamLevels: nukeTraceSamLevels(target),
           targetStructuresInBlast,
           candidates: decisionTrace.lastCandidates
             .slice(0, 3)
@@ -1813,7 +1829,7 @@ export class BundledOpponentBot {
         try {
           result = await originalRespondToIncomingAttack.call(attackBehavior);
         } finally {
-          attackBehavior.__ofhInRespondToIncomingAttack = false;
+          Object.assign(attackBehavior, { __ofhInRespondToIncomingAttack: false });
         }
         if (before.length > 0 || result !== null) {
           this.structureTrace.push({
@@ -1908,6 +1924,17 @@ export class BundledOpponentBot {
 
   getPerformanceProfile() {
     return this.harness.internals.getAutoBotProfileSnapshot();
+  }
+
+  getHybridCombatSnapshot() {
+    const api = this.harness.window.__OFH_hybridCombat;
+    return api
+      ? {
+          ...this.harness.window.__OFH_hybridCombatRun,
+          diagnostics: api.diagnostics(),
+          model: api.exportModel(),
+        }
+      : null;
   }
 
   // The bundle's shared client intent budget (10/s, 150/min). `rejected`
@@ -2515,6 +2542,28 @@ function bindMethods(value) {
   });
   boundMethodProxyCache.set(value, proxy);
   return proxy;
+}
+
+function nukeTracePlayerIdentity(player, prefix) {
+  return {
+    [`${prefix}ID`]: player?.smallID?.() ?? null,
+    [`${prefix}Name`]: player?.name?.() ?? null,
+  };
+}
+
+function nukeTracePlayerSnapshot(player, prefix) {
+  return {
+    ...nukeTracePlayerIdentity(player, prefix),
+    [`${prefix}Troops`]: Number(player?.troops?.() ?? 0),
+    [`${prefix}Tiles`]: Number(player?.numTilesOwned?.() ?? 0),
+  };
+}
+
+function nukeTraceSamLevels(target) {
+  return (target?.units?.("SAM Launcher") ?? []).reduce(
+    (sum, sam) => sum + Number(sam?.level?.() ?? 0),
+    0,
+  );
 }
 
 export default BundledOpponentBot;

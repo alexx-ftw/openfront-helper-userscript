@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE = path.join(ROOT, "engine/ingame/runtime-diagnostics.js");
-const PERFORMANCE_SOURCE = path.join(ROOT, "engine/ingame/auto-bot/performance.js");
+const SOURCE = repositoryFilePath("engine/ingame/runtime-diagnostics.js");
+const PERFORMANCE_SOURCE = repositoryFilePath("engine/ingame/auto-bot/performance.js");
 let longTaskObserver = null;
 const sandbox = {
   window: { __OFH_ASSETS: { version: "test" }, location: { href: "https://openfront.io/game" } },
@@ -48,7 +48,9 @@ const sandbox = {
   globalThis: null,
 };
 sandbox.globalThis = sandbox;
-executeClassicScript(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
+executeClassicScript(readRepositoryFile("engine/ingame/runtime-diagnostics.js"), sandbox, {
+  filename: SOURCE,
+});
 
 longTaskObserver.callback({
   getEntries: () => [{ startTime: 300, duration: 3250.25 }],
@@ -86,7 +88,7 @@ const profileSandbox = {
   globalThis: null,
 };
 profileSandbox.globalThis = profileSandbox;
-executeClassicScript(fs.readFileSync(PERFORMANCE_SOURCE, "utf8"), profileSandbox, {
+executeClassicScript(readRepositoryFile("engine/ingame/auto-bot/performance.js"), profileSandbox, {
   filename: PERFORMANCE_SOURCE,
 });
 const profile = profileSandbox.beginAutoBotProfileTick();

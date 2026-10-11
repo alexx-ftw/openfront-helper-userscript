@@ -1,14 +1,16 @@
+import {
+  setupNativeGame,
+  createNativeStep,
+  setupNativeDuel,
+  initializeNativeBot,
+  installNativeBuildMenu,
+} from "./helpers/native-bot-fixture.mts";
 import assert from "node:assert/strict";
 import { GameRunner } from "../openfront-engine/src/core/GameRunner";
 import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
 import { TurnSchema } from "../openfront-engine/src/core/Schemas";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
-import { setup } from "../openfront-engine/tests/util/Setup";
-import {
-  createBuildMenu,
-  createMaxDifficultyOpponent,
-} from "../scripts/headless/opponent-adapter.js";
-import { engineTestsUtil } from "./helpers/two-player-game.mts";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
+import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
 for (const action of ["launch", "silo-upgrade"]) {
   for (const capture of [
@@ -21,17 +23,7 @@ for (const action of ["launch", "silo-upgrade"]) {
     console.error("CASE", action, capture);
     const samRace = capture.endsWith("sam-during-probe");
     const shouldSend = capture === "none" || capture === "salvo-sam-during-probe";
-    const game = await setup(
-      "big_plains",
-      { instantBuild: true },
-      [
-        new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
-        new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
-      ],
-      engineTestsUtil,
-    );
-    const attacker = game.player("attacker");
-    const defender = game.player("defender");
+    const { game, attacker, defender } = await setupNativeDuel();
     const source = game.ref(1, 1);
     const target = game.ref(80, 1);
     attacker.conquer(source);
@@ -75,14 +67,9 @@ for (const action of ["launch", "silo-upgrade"]) {
       assert.equal(runner.executeNextTick(), false, "an empty queue cannot advance the engine");
     };
     const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
-    bot.attach({ runner, clientID: "attacker" });
-    await bot.api.beginTick(bot.pageGame.myPlayer());
-    bot.nationBot.player = bot.api.game.myPlayer();
-    bot.nationBot.initializeBehaviors();
+    await initializeNativeBot(bot, runner);
     assert.equal(bot.nationBot.player.smallID(), attacker.smallID());
-    const menu = createBuildMenu(bot);
-    bot.harness.current.buildMenu = menu;
-    bot.harness.current.eventBus = menu.eventBus;
+    const menu = installNativeBuildMenu(bot);
     bot.harness.internals.state.settings.enabled = true;
     bot.harness.internals.state.settings.winFixes = true;
     const nuke = bot.nationBot.nukeBehavior;
@@ -164,12 +151,12 @@ for (const action of ["launch", "silo-upgrade"]) {
                 tile: target,
                 nukeType: UnitType.AtomBomb,
                 targetPlayer,
-                  // Planned-budget salvo shape: the launch gate re-validates
-                  // against the live layout and exempts exactly the covering
-                  // SAM the salvo was sized to overwhelm. The budget fields
-                  // are filled in by the probe wrapper the moment the native
-                  // SAM exists, because this object literal evaluates first.
-                  salvo: plannedSalvo,
+                // Planned-budget salvo shape: the launch gate re-validates
+                // against the live layout and exempts exactly the covering
+                // SAM the salvo was sized to overwhelm. The budget fields
+                // are filled in by the probe wrapper the moment the native
+                // SAM exists, because this object literal evaluates first.
+                salvo: plannedSalvo,
               },
               0,
             )) === "fired"
@@ -252,15 +239,7 @@ for (const action of ["launch", "silo-upgrade"]) {
   }
 }
 for (const addCloser of [false, true]) {
-  const game = await setup(
-    "big_plains",
-    { instantBuild: true },
-    [
-      new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
-      new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
-    ],
-    engineTestsUtil,
-  );
+  const game = await setupNativeGame();
   const attacker = game.player("attacker");
   const target = game.ref(80, 1);
   const near = game.ref(1, 1);
@@ -278,23 +257,10 @@ for (const addCloser of [false, true]) {
     new Executor(game, "nuke-slot-reservation", "attacker"),
     () => {},
   );
-  const step = (intents = []) => {
-    runner.addTurn(
-      TurnSchema.parse({
-        turnNumber: game.ticks(),
-        intents: intents.map((intent) => ({ ...intent, clientID: "attacker" })),
-      }),
-    );
-    assert.equal(runner.executeNextTick(), true);
-  };
+  const step = createNativeStep(game, runner);
   const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
-  bot.attach({ runner, clientID: "attacker" });
-  await bot.api.beginTick(bot.pageGame.myPlayer());
-  bot.nationBot.player = bot.api.game.myPlayer();
-  bot.nationBot.initializeBehaviors();
-  const menu = createBuildMenu(bot);
-  bot.harness.current.buildMenu = menu;
-  bot.harness.current.eventBus = menu.eventBus;
+  await initializeNativeBot(bot, runner);
+  const menu = installNativeBuildMenu(bot);
   const nuke = bot.nationBot.nukeBehavior;
   const rival = bot.api.game.playerBySmallID(game.player("defender").smallID());
   const predicted = [];

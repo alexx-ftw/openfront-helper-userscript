@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { createStructureUpgradeFixture } from "./helpers/structure-upgrade-fixture.mjs";
 
 // Surplus silo leveling (PD28): outside the two reactive lanes a built
 // Missile Silo never leveled (n=60 1.12.195 baseline: 6 builds, 0 upgrades).
@@ -21,8 +21,6 @@ const Difficulty = {
   Legendary: "Legendary",
 };
 
-const script = readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js");
-
 function makeWorld({
   gold = 5_000_000n,
   level = 1,
@@ -32,7 +30,6 @@ function makeWorld({
   winFixes = true,
   nukesDisabled = false,
 } = {}) {
-  const emitted = [];
   let rngDraws = 0;
   let availableGold = gold;
   const state = { settings: { winFixes }, stats: { builds: 0 }, lastAction: null };
@@ -51,28 +48,15 @@ function makeWorld({
         (type === UNIT.AtomBomb || type === UNIT.HydrogenBomb || type === UNIT.MIRV),
     }),
   };
-  const sandbox = {
+  const { behavior, emitted } = createStructureUpgradeFixture({
     UNIT,
     Difficulty,
     state,
-    console,
-    tr: (key) => key,
-    setLastAction: (text, cat) => {
-      state.lastAction = { text, cat };
+    bindings: {
+      isLegendaryDifficulty: () => true,
+      playersArePermanentTeammates: () => false,
     },
-    getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
-    sendAutoBotBuildOrUpgrade: (menu, bu) => {
-      emitted.push(bu);
-      return true;
-    },
-    isLegendaryDifficulty: () => true,
-    playersArePermanentTeammates: () => false,
-    autoBotBuildAllowed: () => true,
-  };
-  const behavior = executeClassicScript(
-    script + "\nObject.create(StructureBehavior.prototype);",
-    sandbox,
-  );
+  });
   behavior.game = game;
   behavior.player = { units: (type) => (type === UNIT.MissileSilo ? silos : []) };
   // Deterministic probe surface: no hostile missile impact, an upgradable

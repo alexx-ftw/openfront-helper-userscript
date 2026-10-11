@@ -4,22 +4,16 @@
 // exemption and the ordinary-attack filter wiring.
 
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourcePath = path.join(repoRoot, "engine/ingame/auto-bot/allianceBehavior.js");
-const source = fs.readFileSync(sourcePath, "utf8");
-const attackSource = fs.readFileSync(
-  path.join(repoRoot, "engine/ingame/auto-bot/attackBehavior.js"),
-  "utf8",
-);
-const nationSource = fs.readFileSync(
-  path.join(repoRoot, "engine/ingame/auto-bot/nationExecution.js"),
-  "utf8",
-);
+const sourcePath = repositoryFilePath("engine/ingame/auto-bot/allianceBehavior.js");
+const source = readRepositoryFile("engine/ingame/auto-bot/allianceBehavior.js");
+const attackSource = readRepositoryFile("engine/ingame/auto-bot/attackBehavior.js");
+const nationSource = readRepositoryFile("engine/ingame/auto-bot/nationExecution.js");
 
 const Difficulty = {
   Easy: "Easy",

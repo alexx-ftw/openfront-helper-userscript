@@ -1,29 +1,16 @@
-import assert from "node:assert/strict";
-import { GameRunner } from "../openfront-engine/src/core/GameRunner";
-import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
-import { TurnSchema } from "../openfront-engine/src/core/Schemas";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
-import { setup } from "../openfront-engine/tests/util/Setup";
-import { engineTestsUtil } from "./helpers/two-player-game.mts";
 import {
-  createBuildMenu,
-  createMaxDifficultyOpponent,
-} from "../scripts/headless/opponent-adapter.js";
+  attachNativeBot,
+  setupNativeDuel,
+  createNativeLoop,
+} from "./helpers/native-bot-fixture.mts";
+import assert from "node:assert/strict";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
+import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
 // End-to-end SAM-demand scenario: a real hostile level-2 SAM and City target
 // need three launch slots, but the level-2 Silo exposes two. The planner must
 // discover the missing capacity and upgrade through the real build menu.
-const game = await setup(
-  "big_plains",
-  { instantBuild: true },
-  [
-    new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
-    new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
-  ],
-  engineTestsUtil,
-);
-const attacker = game.player("attacker");
-const defender = game.player("defender");
+const { game, attacker, defender } = await setupNativeDuel();
 const source = game.ref(1, 1);
 const target = game.ref(80, 1);
 const reserveBuildSite = game.ref(40, 1);
@@ -40,35 +27,12 @@ silo.reloadMissile();
 const targetSam = defender.buildUnit(UnitType.SAMLauncher, target, {});
 targetSam.increaseLevel();
 const valuableCity = defender.buildUnit(UnitType.City, target, {});
-const runner = new GameRunner(
-  game,
-  new Executor(game, "silo-slot-pressure-scenario", "attacker"),
-  (update) => {
-    assert.ok(!("errMsg" in update));
-    bot.applyGameUpdate(update);
-  },
+const { runner, step } = createNativeLoop(game, "silo-slot-pressure-scenario", (update) =>
+  bot.applyGameUpdate(update),
 );
-const step = (intents = []) => {
-  runner.addTurn(
-    TurnSchema.parse({
-      turnNumber: game.ticks(),
-      intents: intents.map((intent) => ({ ...intent, clientID: "attacker" })),
-    }),
-  );
-  assert.equal(runner.executeNextTick(), true);
-};
 const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
 try {
-  bot.attach({ runner, clientID: "attacker" });
-  await bot.api.beginTick(bot.pageGame.myPlayer());
-  bot.nationBot.player = bot.api.game.myPlayer();
-  bot.nationBot.initializeBehaviors();
-  const menu = createBuildMenu(bot);
-  bot.harness.current.buildMenu = menu;
-  bot.harness.current.eventBus = menu.eventBus;
-  bot.harness.internals.state.settings.enabled = true;
-  bot.harness.internals.state.settings.winFixes = true;
-  const nuke = bot.nationBot.nukeBehavior;
+  const { menu, nuke } = await attachNativeBot(bot, runner);
   const structures = bot.nationBot.structureBehavior;
   const rival = bot.api.game.playerBySmallID(defender.smallID());
   // Negative control: no SAM capacity request means no upgrade.
@@ -153,7 +117,11 @@ try {
   );
   step(bot.intentBuffer);
   bot.intentBuffer.length = 0;
-  assert.equal(state.nukeWantSlots?.need, 7, "emitting the build does not spend capacity before acceptance");
+  assert.equal(
+    state.nukeWantSlots?.need,
+    7,
+    "emitting the build does not spend capacity before acceptance",
+  );
   step();
   const builtSilos = attacker.units(UnitType.MissileSilo);
   assert.equal(builtSilos.length, 2, "the engine accepts the capacity Silo build");

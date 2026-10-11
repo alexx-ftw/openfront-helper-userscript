@@ -1,75 +1,32 @@
-import assert from "node:assert/strict";
-import { GameRunner } from "../openfront-engine/src/core/GameRunner";
-import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
-import { SAMLauncherExecution } from "../openfront-engine/src/core/execution/SAMLauncherExecution";
-import { TurnSchema } from "../openfront-engine/src/core/Schemas";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
-import { setup } from "../openfront-engine/tests/util/Setup";
-import { engineTestsUtil } from "./helpers/two-player-game.mts";
 import {
-  createBuildMenu,
-  createMaxDifficultyOpponent,
-} from "../scripts/headless/opponent-adapter.js";
+  loadUnitToLevel,
+  attachNativeCombatBot,
+  setupNativeSamRange,
+  createNativeLoop,
+  nativeMissileImpactTicks,
+} from "./helpers/native-bot-fixture.mts";
+import assert from "node:assert/strict";
+import { SAMLauncherExecution } from "../openfront-engine/src/core/execution/SAMLauncherExecution";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
+import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
 // Forecast a pending three-Atom batch with the route planner, then let the
 // native engine decide interception. The SAM reload must land inside the
 // predicted arrival window for one case and outside it for the other.
 for (const beforeReload of [true, false]) {
-  const game = await setup(
-    "big_plains",
-    { instantBuild: true },
-    [
-      new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
-      new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
-    ],
-    engineTestsUtil,
-  );
-  const attacker = game.player("attacker");
-  const defender = game.player("defender");
-  const source = game.ref(1, 80);
-  const target = game.ref(80, 1);
-  attacker.addGold(100_000_000n);
-  attacker.conquer(source);
-  defender.conquer(target);
-  defender.conquer(game.ref(180, 180));
+  const { game, attacker, defender, source, target } = await setupNativeSamRange();
   const silo = attacker.buildUnit(UnitType.MissileSilo, source, {});
-  for (let slot = 1; slot < 3; slot++) {
-    silo.increaseLevel();
-    silo.reloadMissile();
-  }
+  loadUnitToLevel(silo, 3);
   const sam = defender.buildUnit(UnitType.SAMLauncher, target, {});
   sam.launch();
   game.addExecution(new SAMLauncherExecution(defender, null, sam));
   const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
-  const runner = new GameRunner(
-    game,
-    new Executor(game, "pending-forecast", "attacker"),
-    (update) => {
-      assert.ok(!("errMsg" in update));
-      bot.applyGameUpdate(update);
-    },
+  const { runner, step } = createNativeLoop(game, "pending-forecast", (update) =>
+    bot.applyGameUpdate(update),
   );
-  const step = (intents = []) => {
-    runner.addTurn(
-      TurnSchema.parse({
-        turnNumber: game.ticks(),
-        intents: intents.map((intent) => ({ ...intent, clientID: "attacker" })),
-      }),
-    );
-    assert.equal(runner.executeNextTick(), true);
-  };
   try {
-    bot.attach({ runner, clientID: "attacker" });
-    await bot.api.beginTick(bot.pageGame.myPlayer());
-    bot.nationBot.player = bot.api.game.myPlayer();
-    bot.nationBot.initializeBehaviors();
-    const menu = createBuildMenu(bot);
-    bot.harness.current.buildMenu = menu;
-    bot.harness.current.eventBus = menu.eventBus;
-    bot.harness.internals.state.settings.enabled = true;
-    bot.harness.internals.state.settings.winFixes = true;
-    const nuke = bot.nationBot.nukeBehavior;
-    const rival = bot.api.game.playerBySmallID(defender.smallID());
+    const { nuke, rival } = await attachNativeCombatBot(bot, runner, defender);
+
     const siloUnit = bot.nationBot.player.units(UnitType.MissileSilo)[0];
     const flight = nuke.getAvailableSiloEntries([siloUnit], target, new Set([sam.id()]))[0]
       .flightTicks;
@@ -128,11 +85,7 @@ for (const beforeReload of [true, false]) {
     const missiles = attacker.units(UnitType.AtomBomb);
     const packed = game.drainPackedMotionPlans();
     bot.applyGameUpdate({ packedMotionPlans: packed });
-    const impacts = missiles.map((missile) => {
-      const plan = bot.api.game.motionPlans().get(missile.id());
-      assert.ok(plan);
-      return plan.startTick + plan.path.length;
-    });
+    const impacts = nativeMissileImpactTicks(bot, missiles);
     const intercepted = [];
     while (missiles.some((missile) => missile.isActive())) {
       step();

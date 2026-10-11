@@ -1,18 +1,8 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const source = fs.readFileSync(
-  path.join(repoRoot, "engine/ingame/auto-bot/nukeBehavior.js"),
-  "utf8",
-);
-const sharedUtilsSource = fs.readFileSync(
-  path.join(repoRoot, "engine/ingame/shared-utils.js"),
-  "utf8",
-);
+const source = readRepositoryFile("engine/ingame/auto-bot/nukeBehavior.js");
+const sharedUtilsSource = readRepositoryFile("engine/ingame/shared-utils.js");
 
 const UNIT = { AtomBomb: "Atom Bomb", HydrogenBomb: "Hydrogen Bomb" };
 const sandbox = {

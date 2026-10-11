@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE = path.join(ROOT, "engine/ingame/spawn-objective.js");
+const SOURCE = repositoryFilePath("engine/ingame/spawn-objective.js");
 
 function loadApi() {
   const sandbox = { Array, Math, Number, Uint8Array, Uint16Array };
   sandbox.globalThis = sandbox;
-  executeClassicScript(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
+  executeClassicScript(readRepositoryFile("engine/ingame/spawn-objective.js"), sandbox, {
+    filename: SOURCE,
+  });
   assert.ok(sandbox.__OFHSpawnObjective, "spawn objective API must be exposed");
   return sandbox.__OFHSpawnObjective;
 }

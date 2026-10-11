@@ -12,7 +12,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 const API = "https://api.openfront.io";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms) =>
+  new Promise((r) => {
+    setTimeout(r, ms);
+  });
 const PACING_MS = 3_000;
 // The API/CDN rate-limits bursts with 403 (measured: ~6 rapid requests from
 // one IP triggered a multi-minute block). Pace every call and back off hard.
@@ -63,7 +66,7 @@ fs.mkdirSync(opts.out, { recursive: true });
 
 const lb = await j(`${API}/leaderboard/ranked?page=1`);
 const players = [...(lb["1v1"] ?? []), ...(lb["2v2"] ?? [])].slice(0, opts.players);
-console.log(`[history] ${players.length} leaderboard players scanned`);
+process.stdout.write(`[history] ${players.length} leaderboard players scanned\n`);
 
 let downloaded = 0;
 const seen = new Set();
@@ -88,7 +91,7 @@ for (const p of players) {
     seen.add(gid);
     const file = path.join(opts.out, `${gid}.json`);
     if (fs.existsSync(file)) {
-      console.log(`[history] skip ${gid} (already on disk)`);
+      process.stdout.write(`[history] skip ${gid} (already on disk)\n`);
       if (byId.has(gid)) summary.push(byId.get(gid));
       continue;
     }
@@ -106,8 +109,8 @@ for (const p of players) {
       players: record.info?.players?.length ?? record.info?.config?.nations ?? "?",
       file,
     });
-    console.log(
-      `[history] saved ${gid} (${summary.at(-1).map}, ${summary.at(-1).mode}, ${record.turns.length} turns)`,
+    process.stdout.write(
+      `[history] saved ${gid} (${summary.at(-1).map}, ${summary.at(-1).mode}, ${record.turns.length} turns)\n`,
     );
   }
 }
@@ -121,5 +124,5 @@ fs.writeFileSync(
   path.join(opts.out, "index.json"),
   JSON.stringify({ fetchedAt: new Date().toISOString(), records: summary }, null, 2),
 );
-console.log(`[history] ${downloaded} record(s) -> ${opts.out}`);
+process.stdout.write(`[history] ${downloaded} record(s) -> ${opts.out}\n`);
 if (downloaded === 0) process.exit(1);

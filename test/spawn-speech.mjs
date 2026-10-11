@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 import { transform } from "esbuild";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourcePath = path.join(root, "src/shell/audio.ts");
-const source = fs.readFileSync(sourcePath, "utf8");
+const sourcePath = repositoryFilePath("src/shell/audio.ts");
+const source = readRepositoryFile("src/shell/audio.ts");
 const transformed = await transform(source, { format: "cjs", loader: "ts", target: "es2022" });
 const listeners = new Map();
 const decodedByteLengths = [];

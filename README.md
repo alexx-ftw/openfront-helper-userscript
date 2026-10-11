@@ -244,8 +244,15 @@ npm run build       # → openfront-helper.user.js  (minified, the committed art
 npm run build:raw   # unminified + console.log debugging
 npm run dev:userscript # watcher + loopback server for Tampermonkey hot reload
 npm run check       # TypeScript type-check (src/ only)
-npm test            # Node smoke test
+npm test            # engine fixtures and the Node test suite
 ```
+
+The pre-commit hook checks that the engine is clean and matches the revision staged
+in the parent repository, then runs lint-staged and the global/logic quality gates.
+It does not fetch or update the engine. Run `npm run engine:update` explicitly when
+upgrading the engine; rebuild and validate the resulting revision before committing.
+Git variables exported by hooks remain active for the parent index and are cleared
+only when querying the separate engine repository.
 
 ### Local build with Brave + official Tampermonkey
 

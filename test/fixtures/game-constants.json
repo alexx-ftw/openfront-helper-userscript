@@ -1620,6 +1620,36 @@
     "initializerPreview": "2500"
   },
   {
+    "id": "engine/ingame/auto-bot/hybridCombat.js:HYBRID_COMBAT_SCHEMA#1",
+    "file": "engine/ingame/auto-bot/hybridCombat.js",
+    "name": "HYBRID_COMBAT_SCHEMA",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "1c5aab6f31afaa6f01be3351206a22afe4ed9d3649e8148542d39fbf31e72e5b",
+    "initializerLength": 21,
+    "initializerPreview": "\"ofh-combat-ridge-v1\""
+  },
+  {
+    "id": "engine/ingame/auto-bot/hybridCombat.js:HYBRID_COMBAT_STORAGE#1",
+    "file": "engine/ingame/auto-bot/hybridCombat.js",
+    "name": "HYBRID_COMBAT_STORAGE",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "9490b4449eb071531169a8f287d466dfc110957e279d7c219d8ade5df1e75da5",
+    "initializerLength": 35,
+    "initializerPreview": "\"openfront-helper-hybrid-combat-v1\""
+  },
+  {
+    "id": "engine/ingame/auto-bot/hybridCombat.js:HYBRID_COMBAT_FEATURES#1",
+    "file": "engine/ingame/auto-bot/hybridCombat.js",
+    "name": "HYBRID_COMBAT_FEATURES",
+    "declarationKind": "const",
+    "initializerKind": "ObjectLiteralExpression",
+    "initializerHash": "1ea21d8b3a0372fcdda22fc268eec843ebc8df3c4ef01467608674d28de7d96d",
+    "initializerLength": 258,
+    "initializerPreview": "{\n    gate: [\"bias\", \"ownTroopRatio\", \"ownLandShare\", \"incomingTroopRatio\"],\n    target: [\"bias\", \"ownTroopRatio\", \"ownLandShare\", \"incomingTroopRatio\",\n        \"targetLandShare\", \"targetTroopRatio\", \"relativeArmy\", \"captureBudgetRatio\",..."
+  },
+  {
     "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_PRIORITY_FIELDS#1",
     "file": "engine/ingame/auto-bot/legendaryPlanner.js",
     "name": "LEGENDARY_PRIORITY_FIELDS",
@@ -6275,9 +6305,9 @@
     "name": "DEFAULT_TRANSLATIONS",
     "declarationKind": "const",
     "initializerKind": "ObjectLiteralExpression",
-    "initializerHash": "24275f61f69148296a8b7f70ac6976893479634b1b05c08e235daa0ba895d0b2",
-    "initializerLength": 20587,
-    "initializerPreview": "{\n    languageCode: \"en\",\n    languageName: \"English\",\n    settings: \"Settings\",\n    openSettings: \"Open settings\",\n    github: \"GitHub\",\n    openGitHubRepository: \"Open GitHub repository\",\n    openFrontReloadTitle: \"Reload OpenFront?\",\n..."
+    "initializerHash": "81167458674c5ef642f3d069a1fe54be2e96845af9cd633adab68a5b239c3a4d",
+    "initializerLength": 21253,
+    "initializerPreview": "{\n    \"Hybrid combat\": \"Hybrid combat\",\n    \"Combat policy\": \"Combat policy\",\n    \"Legendary only\": \"Legendary only\",\n    \"Observe and learn\": \"Observe and learn\",\n    \"Learned combat (experimental)\": \"Learned combat (experimental)\",\n   ..."
   },
   {
     "id": "engine/shared/i18n.js:LANGUAGE_NAME_OVERRIDES#1",

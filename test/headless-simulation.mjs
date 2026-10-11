@@ -849,7 +849,7 @@ assert.match(runner, /intent\.type === "attack" && intent\.targetID === null/);
 // Alliance telemetry (1835f8cd) inserted the allies block between outgoing
 // and units in the progress snapshot; keep pinning the field order.
 assert.match(runner, /incoming,\s*outgoing,\s*allies:/);
-assert.match(runner, /\n\s*units,/);
+assert.match(runner, /\n[^\S\n]*units,/);
 assert.match(runner, /unitDetails,/);
 assert.match(runner, /externalSiloNetworks,/);
 assert.match(runner, /siloCapacity/);
@@ -1065,6 +1065,21 @@ function productionJavaScriptFiles(directory) {
   return files;
 }
 
+function stripHybridModelBoundaries(source) {
+  const startPattern = /\/\/ HYBRID_MODEL_(LOAD|SAVE|IMPORT)_BOUNDARY_START/g;
+  let result = "";
+  let cursor = 0;
+  for (const match of source.matchAll(startPattern)) {
+    if (match.index < cursor) continue;
+    const endMarker = `// HYBRID_MODEL_${match[1]}_BOUNDARY_END`;
+    const end = source.indexOf(endMarker, match.index + match[0].length);
+    if (end === -1) continue;
+    result += source.slice(cursor, match.index);
+    cursor = end + endMarker.length;
+  }
+  return result + source.slice(cursor);
+}
+
 const productionSources = [
   path.join(root, "build.mjs"),
   ...productionJavaScriptFiles(path.join(root, "engine")),
@@ -1072,10 +1087,19 @@ const productionSources = [
 ];
 for (const sourcePath of productionSources) {
   const source = fs.readFileSync(sourcePath, "utf8");
-  const checkedSource =
+  let checkedSource =
     sourcePath === path.join(root, "scripts/headless/opponent-adapter.js")
       ? source.slice(0, classifierStart) + source.slice(classifierEnd)
       : source;
+  // Only model storage and explicit user-import boundaries may handle errors:
+  // hybrid-combat.mjs verifies corrupt data cannot replace a working policy.
+  if (
+    ["engine/ingame/auto-bot/hybridCombat.js", "engine/ingame/auto-bot/panel.js"].includes(
+      path.relative(root, sourcePath),
+    )
+  ) {
+    checkedSource = stripHybridModelBoundaries(checkedSource);
+  }
   assert.equal(
     catchTokens(checkedSource).length,
     0,

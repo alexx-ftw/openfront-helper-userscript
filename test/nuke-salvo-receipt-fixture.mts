@@ -1,16 +1,16 @@
+import {
+  loadUnitToLevel,
+  attachNativeCombatBot,
+  setupNativeDuel,
+  createNativeLoop,
+  nativeSiloFlightTicks,
+  nativeMissileImpactTicks,
+} from "./helpers/native-bot-fixture.mts";
 import assert from "node:assert/strict";
-import { GameRunner } from "../openfront-engine/src/core/GameRunner";
-import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager";
 import { SAMLauncherExecution } from "../openfront-engine/src/core/execution/SAMLauncherExecution";
 import { MissileSiloExecution } from "../openfront-engine/src/core/execution/MissileSiloExecution";
-import { TurnSchema } from "../openfront-engine/src/core/Schemas";
-import { PlayerInfo, PlayerType, UnitType } from "../openfront-engine/src/core/game/Game";
-import { setup } from "../openfront-engine/tests/util/Setup";
-import { engineTestsUtil } from "./helpers/two-player-game.mts";
-import {
-  createBuildMenu,
-  createMaxDifficultyOpponent,
-} from "../scripts/headless/opponent-adapter.js";
+import { UnitType } from "../openfront-engine/src/core/game/Game";
+import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
 // Prior-pass prefixes need receipts; a freshly validated due batch can emit together.
 for (const [prefixCount, physicalDefense] of [
@@ -18,17 +18,7 @@ for (const [prefixCount, physicalDefense] of [
   [2, false],
   [0, true],
 ] as const) {
-  const game = await setup(
-    "big_plains",
-    { instantBuild: true },
-    [
-      new PlayerInfo("attacker", PlayerType.Human, "attacker", "attacker"),
-      new PlayerInfo("defender", PlayerType.Human, "defender", "defender"),
-    ],
-    engineTestsUtil,
-  );
-  const attacker = game.player("attacker");
-  const defender = game.player("defender");
+  const { game, attacker, defender } = await setupNativeDuel();
   const source = game.ref(1, physicalDefense ? 80 : 1);
   const target = game.ref(80, 1);
   // A priced defender structure on its own tile: the finisher's pending
@@ -41,56 +31,25 @@ for (const [prefixCount, physicalDefense] of [
   defender.conquer(finisherTarget);
   if (physicalDefense) defender.conquer(game.ref(180, 180));
   const silo = attacker.buildUnit(UnitType.MissileSilo, source, {});
-  for (let slot = 1; slot < 3; slot++) {
-    silo.increaseLevel();
-    silo.reloadMissile();
-  }
+  loadUnitToLevel(silo, 3);
   const sam = defender.buildUnit(UnitType.SAMLauncher, target, {});
-  sam.increaseLevel();
-  sam.reloadMissile();
+  loadUnitToLevel(sam, 2);
   defender.buildUnit(UnitType.City, finisherTarget, {});
   if (physicalDefense) {
     game.addExecution(new SAMLauncherExecution(defender, null, sam));
     game.addExecution(new MissileSiloExecution(silo));
   }
-  const runner = new GameRunner(
-    game,
-    new Executor(game, "salvo-receipt-gap", "attacker"),
-    (update) => {
-      assert.ok(!("errMsg" in update));
-      bot.applyGameUpdate(update);
-    },
+  const { runner, step } = createNativeLoop(game, "salvo-receipt-gap", (update) =>
+    bot.applyGameUpdate(update),
   );
-  const step = (intents = []) => {
-    runner.addTurn(
-      TurnSchema.parse({
-        turnNumber: game.ticks(),
-        intents: intents.map((intent) => ({ ...intent, clientID: "attacker" })),
-      }),
-    );
-    assert.equal(runner.executeNextTick(), true);
-  };
   const bot = createMaxDifficultyOpponent({ clientID: "attacker" });
   try {
-    bot.attach({ runner, clientID: "attacker" });
-    await bot.api.beginTick(bot.pageGame.myPlayer());
-    bot.nationBot.player = bot.api.game.myPlayer();
-    bot.nationBot.initializeBehaviors();
-    const menu = createBuildMenu(bot);
-    bot.harness.current.buildMenu = menu;
-    bot.harness.current.eventBus = menu.eventBus;
-    bot.harness.internals.state.settings.enabled = true;
-    bot.harness.internals.state.settings.winFixes = true;
-    const nuke = bot.nationBot.nukeBehavior;
+    const { menu, nuke, rival } = await attachNativeCombatBot(bot, runner, defender);
     // The salvo flattens the target's only structure, so the finisher's
     // enemy-value gate would hold it; this fixture tests receipt/reload
     // resume mechanics, not gate economics (nuke-finisher-friendly-gate-fixture).
-    const rival = bot.api.game.playerBySmallID(defender.smallID());
-    const flight = nuke.getAvailableSiloEntries(
-      [bot.nationBot.player.units(UnitType.MissileSilo)[0]],
-      target,
-      new Set([sam.id()]),
-    )[0].flightTicks;
+
+    const flight = nativeSiloFlightTicks(bot, target, sam.id());
     const salvo = {
       salvoId: 99,
       targetTile: target,
@@ -153,11 +112,7 @@ for (const [prefixCount, physicalDefense] of [
     assert.equal(attacker.units(UnitType.AtomBomb).length, 3);
     assert.equal(nuke.hasPendingNukeLaunches(), false);
     if (prefixCount === 0) {
-      const arrivals = attacker.units(UnitType.AtomBomb).map((missile) => {
-        const plan = bot.api.game.motionPlans().get(missile.id());
-        assert.ok(plan);
-        return plan.startTick + plan.path.length;
-      });
+      const arrivals = nativeMissileImpactTicks(bot, attacker.units(UnitType.AtomBomb));
       assert.deepEqual(
         arrivals,
         [2, 3, 4].map((offset) => emittedTick + flight + offset),
@@ -173,13 +128,7 @@ for (const [prefixCount, physicalDefense] of [
         targetSmallID: defender.smallID(),
       };
       bot.harness.internals.state.postSalvoHydrogen = finisher;
-      const lastImpact = Math.max(
-        ...missiles.map((missile) => {
-          const plan = bot.api.game.motionPlans().get(missile.id());
-          assert.ok(plan);
-          return plan.startTick + plan.path.length;
-        }),
-      );
+      const lastImpact = Math.max(...nativeMissileImpactTicks(bot, missiles));
       while (game.ticks() <= lastImpact && missiles.some((missile) => missile.isActive())) {
         await bot.api.beginTick(bot.pageGame.myPlayer());
         assert.equal(

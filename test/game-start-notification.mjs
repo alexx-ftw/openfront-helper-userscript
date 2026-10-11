@@ -1,15 +1,11 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
-import { fileURLToPath } from "node:url";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCE = path.join(ROOT, "engine/ingame/runtime.js");
-const SHELL_SOURCE = path.join(ROOT, "src/shell/index.ts");
-const AUDIO_SOURCE = path.join(ROOT, "src/shell/audio.ts");
-const LOBBY_SOURCE = path.join(ROOT, "engine/lobby/auto-join.js");
-const LOBBY_CORE_SOURCE = path.join(ROOT, "engine/lobby/core.js");
+const SOURCE = repositoryFilePath("engine/ingame/runtime.js");
 
 const sandbox = {
   console,
@@ -28,7 +24,7 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
-executeClassicScript(fs.readFileSync(SOURCE, "utf8"), sandbox, { filename: SOURCE });
+executeClassicScript(readRepositoryFile("engine/ingame/runtime.js"), sandbox, { filename: SOURCE });
 
 assert.equal(
   typeof sandbox.createGameStartNotificationDetector,
@@ -72,7 +68,7 @@ test("resets between game instances", () => {
 });
 
 test("rings the chime when the game-start notification reaches the shell", () => {
-  const source = fs.readFileSync(SHELL_SOURCE, "utf8");
+  const source = readRepositoryFile("src/shell/index.ts");
   const handler = source.match(
     /else if \(msg\?\.type === "SHOW_GAME_START_NOTIFICATION"\) \{([\s\S]*?)\n {4}\}/,
   );
@@ -83,7 +79,7 @@ test("rings the chime when the game-start notification reaches the shell", () =>
 });
 
 test("primes audio on a gesture and waits for resume before ringing", () => {
-  const source = fs.readFileSync(AUDIO_SOURCE, "utf8");
+  const source = readRepositoryFile("src/shell/audio.ts");
 
   assert.match(
     source,
@@ -98,7 +94,7 @@ test("primes audio on a gesture and waits for resume before ringing", () => {
 });
 
 test("accepts a lobby-to-spawn transition without an auto-join pending record", () => {
-  const source = fs.readFileSync(LOBBY_SOURCE, "utf8");
+  const source = readRepositoryFile("engine/lobby/auto-join.js");
 
   assert.match(
     source,
@@ -113,7 +109,7 @@ test("accepts a lobby-to-spawn transition without an auto-join pending record", 
 });
 
 test("syncs Anti-AFK through the initialized lobby settings state", () => {
-  const source = fs.readFileSync(LOBBY_CORE_SOURCE, "utf8");
+  const source = readRepositoryFile("engine/lobby/core.js");
   const helper = source.match(/function syncAntiAfkHelper\(\) \{([\s\S]*?)\n\}/);
 
   assert.ok(helper, "lobby core exposes the Anti-AFK bridge helper");

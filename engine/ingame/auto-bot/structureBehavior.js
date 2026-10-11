@@ -2084,14 +2084,12 @@
     }
 
     shouldDeferInitialSiloForNavalOpening() {
-      const config = this.game?.config?.();
-      if (!config || !this.maritimeDefenseConstructionEnabled(config)) return false;
+      if (!this.initialSiloNavalConstructionEnabled()) return false;
       if (this.hasObservedHostileMissileLaunch() || this.hasBuiltHostileSiloThreat()) {
         return false;
       }
       if (!this.hasOceanPortTiles()) return false;
-      const ports = this.player?.units?.(UNIT.Port) || [];
-      if (!ports.some((port) => port?.isUnderConstruction?.() === false)) return true;
+      if (!this.navalOpeningHasCompletedPort()) return true;
       const warships = this.player?.units?.(UNIT.Warship) || [];
       return warships.length === 0;
     }
@@ -2413,14 +2411,9 @@
       hasCoastalTiles,
       hasOceanPortTiles,
     }) {
-      if (
-        citiesDisabled ||
-        cityCount < 1 ||
-        config?.isUnitDisabled?.(UNIT.Port) === true ||
-        !this.legendaryPortCapable(hasOceanPortTiles, hasCoastalTiles)
-      ) {
-        return false;
-      }
+      if (!this.legendaryNavalEconomyEligible({
+        config, citiesDisabled, cityCount, hasCoastalTiles, hasOceanPortTiles,
+      })) return false;
       const ports = this.player?.units?.(UNIT.Port) || [];
       const completedPort = ports.some(
         (port) => port.isUnderConstruction?.() !== true,
@@ -2548,7 +2541,7 @@
         (!hasOceanPortTiles && !landlockedBackstop) ||
         !missileSilosEnabled ||
         !nukesEnabled ||
-        config?.isUnitDisabled?.(UNIT.MissileSilo) === true
+        this.structureConfigDisablesType(config, UNIT.MissileSilo)
       ) {
         return false;
       }
@@ -3547,20 +3540,7 @@
       // DIVERGENCE (winFixes): match each hostile's treasury to its own
       // launcher count so unrelated FFA players cannot form a fictitious
       // imminent nuclear threat.
-      const mySid = this.player.smallID();
-      const players = [];
-      for (const other of this.game.players()) {
-        if (!other?.isPlayer?.() || other.smallID() === mySid) continue;
-        if (!other.isAlive?.()) continue;
-        if (this.player.isFriendly?.(other) === true) continue;
-        const id = this.readPlayerSmallId(other);
-        if (id === null || id === undefined) continue;
-        players.push({
-          id,
-          gold: Number(other.gold?.() || 0),
-          siloCount: this.playerUnitCapacitySummary(other, UNIT.MissileSilo)?.count ?? 0,
-        });
-      }
+      const players = this.hostileNuclearThreatPlayers();
       samples.push({
         tick,
         players,
@@ -9869,7 +9849,7 @@
         UNIT.MissileSilo,
       );
       return {
-        cityCount: Math.max(0, Number(cityCount || cities.length)),
+        cityCount: this.legendaryConstructionCityCount(cityCount, cities),
         connectedCities: rail.connectedCities,
         cityRailConnection: rail.cityRailConnection,
         railNeed: rail.railNeed,
@@ -9889,9 +9869,8 @@
           Math.max(0.25, 1 + (enemyWarships - this.player.units(UNIT.Warship).length) / 5),
         ),
         targetPressure: this.legendaryEnemyTargetPressure(),
-        defenseGap: Math.max(
-          this.legendaryDefenseGap(protectableStructures, enemySilos),
-          missileThreat.critical ? 1.5 : 0.25,
+        defenseGap: this.legendaryConstructionDefenseGap(
+          protectableStructures, enemySilos, missileThreat,
         ),
         missileThreat,
         portSurvivability: this.legendaryPortSurvivability(ports, enemyWarships),
@@ -10167,24 +10146,14 @@
     }
 
     addLegendaryConstructionCandidate(context, type, values = {}) {
-      if (context.config.isUnitDisabled(type) || !autoBotBuildAllowed(type)) return;
-      if (this.legendarySamChestBlocksType(type)) return;
-      if (this.samCandidateLaunchGate(type)) return;
+      if (this.legendaryConstructionCandidateBlocked(context, type)) return;
       // Huge-start burst window (25MM): the planner's parity-driven silo
       // candidate outranked the port burst at tick ~758 on measured rows (a
       // third silo path around the arsenal deferral) — drop silo candidates
       // until the burst lands (see legendaryBigStartSiloDeferred). 5MM keeps
       // its silo timing: the suppression cost 5MM its nuclear deterrence and
       // naval economy (trades 73->41) while only 25MM benefited.
-      if (
-        type === UNIT.MissileSilo &&
-        state.bigStartGold?.decided === true &&
-        state.bigStartGold?.value === true &&
-        state.bigStartGold?.openingGold >= 10_000_000n &&
-        this.legendaryBigStartSiloDeferred(true)
-      ) {
-        return;
-      }
+      if (this.legendaryBigStartSiloCandidateBlocked(type)) return;
       if (
         type === UNIT.Port &&
         !this.legendaryPortCapable(context.hasOceanPortTiles, context.hasCoastalTiles)
@@ -10579,7 +10548,7 @@
       // Therefore it must never be converted into an upgrade. The planner may
       // upgrade an economic structure only when a future exhaustive placement
       // result explicitly supplies economicSpaceExhausted=true.
-      if (economicType && this.hasStructureUnderConstruction(structures)) {
+      if (this.economicStructureSpawnPending(economicType, structures)) {
         return false;
       }
 
@@ -10901,22 +10870,12 @@
     async maybeUpgradeSiloForNuclearSlotPressure() {
       if (!state.settings.winFixes) return false;
       const config = this.game.config();
-      if (
-        config.isUnitDisabled(UNIT.MissileSilo) ||
-        (config.isUnitDisabled(UNIT.AtomBomb) &&
-          config.isUnitDisabled(UNIT.HydrogenBomb) &&
-          config.isUnitDisabled(UNIT.MIRV))
-      ) {
-        return false;
-      }
+      if (this.nuclearSlotPressureUnitsDisabled(config)) return false;
       // This generic lane handles queued launches only. An outstanding
       // nukeWantSlots request belongs to maybeUpgradeSiloForNukeDemand, which
       // rechecks the target, usable route and economic/defensive reserves;
       // falling through here would bypass those target-specific gates.
-      const pending = this.nukeBehavior?._pendingNukeLaunches;
-      const queued = Array.isArray(pending) && pending.length > 0;
-      const wantedSlots = state.nukeWantSlots?.need > 0;
-      if (!queued || wantedSlots) return false;
+      if (!this.nuclearSlotPressureQueueEligible()) return false;
       const silos = (this.player?.units?.(UNIT.MissileSilo) || []).filter(
         (silo) => silo.isUnderConstruction?.() !== true,
       );
@@ -10932,28 +10891,12 @@
         // list above cannot see a silo already under construction, and
         // stacking duplicate builds would drain the treasury without
         // adding ready slots any sooner.
-        const allSilos = this.player?.units?.(UNIT.MissileSilo) || [];
-        if (allSilos.some((silo) => silo.isUnderConstruction?.() === true)) {
-          return false;
-        }
-        return this.maybeSpawnNuclearSlotPressureSilo();
+        return this.maybeSpawnUnqueuedNuclearSlotPressureSilo();
       }
       if (!this.genericStructureUpgradeAllowed(result, UNIT.MissileSilo)) {
         return false;
       }
-      const buildMenu = getBuildMenu();
-      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
-        return false;
-      }
-      if (!sendAutoBotBuildOrUpgrade(buildMenu, result.bu, undefined, this.game, this.player)) {
-        return false;
-      }
-      state.stats.builds++;
-      setLastAction(
-        tr("⬆️ Upgrade {type}", { type: result.structure.type() }),
-        "build",
-      );
-      return true;
+      return this.emitNuclearSlotPressureUpgrade(result);
     }
 
     maybeSpawnNuclearSlotPressureSilo() {
@@ -11391,43 +11334,9 @@
           timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
         },
       );
-      if (state.nukeWantSlots !== pendingRequest || this.validNukeSiloUpgradeRequest() === null) return false;
-      const currentPlanStillMissing = this.samOverwhelmPlanStillMissing(request);
-      if (currentPlanStillMissing === false) {
-        state.nukeWantSlots = null;
-        return false;
-      }
-      const currentGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
-      if (!this.nukeSiloUpgradeBudgetAvailable(currentGold, minimumCost)) return false;
-      const currentRoutes = this.routeEligibleSilosForDemand(request);
-      if (
-        currentRoutes !== undefined && currentRoutes !== null &&
-        !this.nukeBehavior.hasUsefulSiloUpgradeCapacity(
-          this.nukeDemandScopedSilos(request, currentRoutes),
-          { totalBombs: request.requiredCapacity },
-          currentPlanStillMissing === true,
-        )
-      ) return this.maybeSpawnNukeDemandSilo(pendingRequest);
-      const ranked = this.rankNukeDemandSiloUpgrades({
-        candidates,
-        buildables,
-        availableGold: currentGold,
-        minimumCost,
-        preferredSiloIds: request.unblockedSiloIds,
-      }).filter((candidate) => currentRoutes === undefined || currentRoutes === null ||
-        currentRoutes.some((silo) => silo.id() === candidate.silo.id()));
-      if (ranked.length === 0) {
-        // Demand-driven leveling must outrank another level-one silo when a
-        // route-eligible upgrade exists but outprices this tick's gold.
-        const upgradeStillPossible = candidates.some((silo, index) =>
-          buildables[index] &&
-          buildables[index].canUpgrade !== false &&
-          (currentRoutes === undefined || currentRoutes === null ||
-            currentRoutes.some((route) => route.id() === silo.id())));
-        if (upgradeStillPossible) return false;
-        return this.maybeSpawnNukeDemandSilo(pendingRequest);
-      }
-      return this.executeStructureUpgradeCandidate(ranked[0], UNIT.MissileSilo);
+      return this.finishNukeDemandSiloUpgrade({
+        pendingRequest, request, candidates, buildables, minimumCost,
+      });
     }
 
     maybeSpawnNukeDemandSilo(pendingRequest) {
@@ -11514,14 +11423,7 @@
       if (request?.pendingLaunches === true) return null;
       const requiredCapacity = Number(request?.need);
       if (!Number.isFinite(requiredCapacity) || requiredCapacity <= 0) return null;
-      const targetSam = this.game.units(UNIT.SAMLauncher)
-        .find((sam) => sam.id() === request.targetSamId);
-      const owner = targetSam?.owner?.();
-      if (!targetSam || targetSam.isActive?.() === false || !owner ||
-          owner.smallID() === this.player.smallID() ||
-          this.player.isFriendly?.(owner) === true || this.player.isOnSameTeam?.(owner) === true ||
-          (this.nukeBehavior && (!this.nukeBehavior.isValidNukeTarget(owner) ||
-            !this.nukeBehavior.isValidNukeDestination(request.targetTile)))) {
+      if (this.nukeSiloRequestTargetInvalid(request)) {
         state.nukeWantSlots = null;
         return null;
       }
@@ -12025,22 +11927,7 @@
       if (economicType) this.consumeEconomicPlacementBudget(tiles.length);
       if (tiles.length === 0) return null;
       if (type === UNIT.MissileSilo && options.nukeDemandRequest) {
-        const request = options.nukeDemandRequest;
-        const coveringSams = this.nukeBehavior?.findEnemySamsCoveringTile?.(
-          request.targetTile,
-        );
-        if (
-          !Array.isArray(coveringSams) ||
-          !coveringSams.some(
-            (sam) => String(sam.id()) === String(request.targetSamId),
-          )
-        ) {
-          return null;
-        }
-        const coveringSamIds = new Set(coveringSams.map((sam) => sam.id()));
-        tiles = tiles.filter((tile) =>
-          this.nukeDemandSiloRouteClear(tile, request, coveringSamIds),
-        );
+        tiles = this.nukeDemandSiloSpawnTiles(tiles, options.nukeDemandRequest);
         if (tiles.length === 0) return null;
       }
       const valueFunction = this.structureTileValueFunction(type, options);
@@ -15611,4 +15498,190 @@
       this._spacingConstantsCache = spacing;
       return spacing;
     }
+
+    initialSiloNavalConstructionEnabled() {
+      const config = this.game?.config?.();
+      return Boolean(config && this.maritimeDefenseConstructionEnabled(config));
+    }
+
+    legendaryNavalEconomyEligible({ config, citiesDisabled, cityCount, hasCoastalTiles, hasOceanPortTiles }) {
+      return !(
+        citiesDisabled ||
+        cityCount < 1 ||
+        config?.isUnitDisabled?.(UNIT.Port) === true ||
+        !this.legendaryPortCapable(hasOceanPortTiles, hasCoastalTiles)
+      );
+    }
+
+    structureConfigDisablesType(config, type) {
+      return config?.isUnitDisabled?.(type) === true;
+    }
+
+    hostileNuclearThreatPlayers() {
+      const mySid = this.player.smallID();
+      const players = [];
+      for (const other of this.game.players()) {
+        if (!this.hostileNuclearThreatPlayerEligible(other, mySid)) continue;
+        const id = this.readPlayerSmallId(other);
+        if (id === null || id === undefined) continue;
+        players.push({
+          id,
+          gold: Number(other.gold?.() || 0),
+          siloCount: this.playerUnitCapacitySummary(other, UNIT.MissileSilo)?.count ?? 0,
+        });
+      }
+      return players;
+    }
+
+    hostileNuclearThreatPlayerEligible(other, mySid) {
+      if (!other?.isPlayer?.() || other.smallID() === mySid) return false;
+      if (!other.isAlive?.()) return false;
+      return this.player.isFriendly?.(other) !== true;
+    }
+
+    legendaryConstructionCandidateBlocked(context, type) {
+      return context.config.isUnitDisabled(type) || !autoBotBuildAllowed(type) ||
+        this.legendarySamChestBlocksType(type) || this.samCandidateLaunchGate(type);
+    }
+
+    legendaryBigStartSiloCandidateBlocked(type) {
+      return type === UNIT.MissileSilo &&
+        state.bigStartGold?.decided === true &&
+        state.bigStartGold?.value === true &&
+        state.bigStartGold?.openingGold >= 10_000_000n &&
+        this.legendaryBigStartSiloDeferred(true);
+    }
+
+    nuclearSlotPressureUnitsDisabled(config) {
+      return config.isUnitDisabled(UNIT.MissileSilo) ||
+        (config.isUnitDisabled(UNIT.AtomBomb) &&
+          config.isUnitDisabled(UNIT.HydrogenBomb) &&
+          config.isUnitDisabled(UNIT.MIRV));
+    }
+
+    maybeSpawnUnqueuedNuclearSlotPressureSilo() {
+      const allSilos = this.player?.units?.(UNIT.MissileSilo) || [];
+      if (allSilos.some((silo) => silo.isUnderConstruction?.() === true)) {
+        return false;
+      }
+      return this.maybeSpawnNuclearSlotPressureSilo();
+    }
+
+    emitNuclearSlotPressureUpgrade(result) {
+      const buildMenu = getBuildMenu();
+      if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") {
+        return false;
+      }
+      if (!sendAutoBotBuildOrUpgrade(buildMenu, result.bu, undefined, this.game, this.player)) {
+        return false;
+      }
+      state.stats.builds++;
+      setLastAction(
+        tr("⬆️ Upgrade {type}", { type: result.structure.type() }),
+        "build",
+      );
+      return true;
+    }
+
+    finishNukeDemandSiloUpgrade({ pendingRequest, request, candidates, buildables, minimumCost }) {
+      if (state.nukeWantSlots !== pendingRequest || this.validNukeSiloUpgradeRequest() === null) return false;
+      const currentPlanStillMissing = this.samOverwhelmPlanStillMissing(request);
+      if (currentPlanStillMissing === false) {
+        state.nukeWantSlots = null;
+        return false;
+      }
+      const currentGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
+      if (!this.nukeSiloUpgradeBudgetAvailable(currentGold, minimumCost)) return false;
+      const currentRoutes = this.routeEligibleSilosForDemand(request);
+      if (
+        currentRoutes !== undefined && currentRoutes !== null &&
+        !this.nukeBehavior.hasUsefulSiloUpgradeCapacity(
+          this.nukeDemandScopedSilos(request, currentRoutes),
+          { totalBombs: request.requiredCapacity },
+          currentPlanStillMissing === true,
+        )
+      ) return this.maybeSpawnNukeDemandSilo(pendingRequest);
+      const ranked = this.rankNukeDemandSiloUpgrades({
+        candidates,
+        buildables,
+        availableGold: currentGold,
+        minimumCost,
+        preferredSiloIds: request.unblockedSiloIds,
+      }).filter((candidate) => currentRoutes === undefined || currentRoutes === null ||
+        currentRoutes.some((silo) => silo.id() === candidate.silo.id()));
+      if (ranked.length === 0) {
+        // Demand-driven leveling must outrank another level-one silo when a
+        // route-eligible upgrade exists but outprices this tick's gold.
+        const upgradeStillPossible = candidates.some((silo, index) =>
+          buildables[index] &&
+          buildables[index].canUpgrade !== false &&
+          (currentRoutes === undefined || currentRoutes === null ||
+            currentRoutes.some((route) => route.id() === silo.id())));
+        if (upgradeStillPossible) return false;
+        return this.maybeSpawnNukeDemandSilo(pendingRequest);
+      }
+      return this.executeStructureUpgradeCandidate(ranked[0], UNIT.MissileSilo);
+    }
+
+    nukeSiloRequestTargetInvalid(request) {
+      const targetSam = this.game.units(UNIT.SAMLauncher)
+        .find((sam) => sam.id() === request.targetSamId);
+      const owner = targetSam?.owner?.();
+      return !targetSam || targetSam.isActive?.() === false || !owner ||
+        this.nukeSiloRequestOwnerInvalid(owner, request);
+    }
+
+    nukeSiloRequestOwnerInvalid(owner, request) {
+      return owner.smallID() === this.player.smallID() ||
+        this.player.isFriendly?.(owner) === true || this.player.isOnSameTeam?.(owner) === true ||
+        (this.nukeBehavior && (!this.nukeBehavior.isValidNukeTarget(owner) ||
+          !this.nukeBehavior.isValidNukeDestination(request.targetTile)));
+    }
+
+    nukeDemandSiloSpawnTiles(tiles, request) {
+      const coveringSams = this.nukeBehavior?.findEnemySamsCoveringTile?.(
+        request.targetTile,
+      );
+      if (
+        !Array.isArray(coveringSams) ||
+        !coveringSams.some(
+          (sam) => String(sam.id()) === String(request.targetSamId),
+        )
+      ) {
+        return [];
+      }
+      const coveringSamIds = new Set(coveringSams.map((sam) => sam.id()));
+      tiles = tiles.filter((tile) =>
+        this.nukeDemandSiloRouteClear(tile, request, coveringSamIds),
+      );
+      return tiles;
+    }
+
+    legendaryConstructionCityCount(cityCount, cities) {
+      return Math.max(0, Number(cityCount || cities.length));
+    }
+
+    legendaryConstructionDefenseGap(protectableStructures, enemySilos, missileThreat) {
+      return Math.max(
+        this.legendaryDefenseGap(protectableStructures, enemySilos),
+        missileThreat.critical ? 1.5 : 0.25,
+      );
+    }
+
+    economicStructureSpawnPending(economicType, structures) {
+      return economicType && this.hasStructureUnderConstruction(structures);
+    }
+
+    navalOpeningHasCompletedPort() {
+      const ports = this.player?.units?.(UNIT.Port) || [];
+      return ports.some((port) => port?.isUnderConstruction?.() === false);
+    }
+
+    nuclearSlotPressureQueueEligible() {
+      const pending = this.nukeBehavior?._pendingNukeLaunches;
+      const queued = Array.isArray(pending) && pending.length > 0;
+      const wantedSlots = state.nukeWantSlots?.need > 0;
+      return queued && !wantedSlots;
+    }
+
   }

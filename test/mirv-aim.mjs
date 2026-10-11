@@ -4,13 +4,8 @@
 // to the original bounding-box behaviour when nothing is observable.
 
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
 const UNIT = {
   City: "City",
   Factory: "Factory",
@@ -50,7 +45,7 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 executeClassicScript(
-  `${read("engine/ingame/auto-bot/mirvBehavior.js")}\nglobalThis.__MirvBehavior = MirvBehavior;`,
+  `${readRepositoryFile("engine/ingame/auto-bot/mirvBehavior.js")}\nglobalThis.__MirvBehavior = MirvBehavior;`,
   sandbox,
   { filename: "mirv-aim.vm.js" },
 );
@@ -141,11 +136,7 @@ assert.equal(
   "pending nukes exhausting every projected tube block the MIRV lane",
 );
 behavior.player.__projection = new Map([["1", 2]]);
-assert.equal(
-  behavior.hasReadyMIRVSlot(),
-  true,
-  "a free projected tube admits the MIRV lane",
-);
+assert.equal(behavior.hasReadyMIRVSlot(), true, "a free projected tube admits the MIRV lane");
 behavior.player.__projection = null;
 delete sandbox.autoBotBuildNukeSlots;
 

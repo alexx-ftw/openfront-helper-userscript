@@ -173,12 +173,9 @@
     };
   }
 
-  function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, game, player, trackNuke = false) {
-    if (game === null || typeof game !== "object") return false;
-    const dispatch = autoBotBuildDispatch(buildMenu, buildable, tile);
-    if (!dispatch) return false;
+  function autoBotPrepareBuildReservation(game, player, buildable, trackNuke) {
     const cost = autoBotBuildCost(buildable);
-    if (cost === null) return false;
+    if (cost === null) return null;
     const tick = autoBotBuildTick(game);
     const playerId = autoBotBuildPlayerId(player);
     const reservations = (autoBotBuildReservations.get(game) ?? []).filter(
@@ -187,12 +184,23 @@
     autoBotBuildReservations.set(game, reservations);
     const reserved = autoBotBuildReservedGold(game, player);
     const gold = player?.gold?.();
-    if (typeof gold !== "bigint" || gold - reserved < cost) return false;
+    if (typeof gold !== "bigint" || gold - reserved < cost) return null;
     const nuclear = trackNuke && typeof player?.units === "function";
     if (nuclear) {
       const slots = autoBotBuildNukeSlots(game, player);
-      if (slots && ![...slots.values()].some((count) => count > 0)) return false;
+      if (slots && ![...slots.values()].some((count) => count > 0)) return null;
     }
+    return { cost, tick, playerId, reservations, nuclear };
+  }
+
+  function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, ...context) {
+    const [game, player, trackNuke = false] = context;
+    if (game === null || typeof game !== "object") return false;
+    const dispatch = autoBotBuildDispatch(buildMenu, buildable, tile);
+    if (!dispatch) return false;
+    const reservation = autoBotPrepareBuildReservation(game, player, buildable, trackNuke);
+    if (!reservation) return false;
+    const { cost, tick, playerId, reservations, nuclear } = reservation;
     // The build menu emits straight onto the EventBus, bypassing emitIntent's
     // consuming gate — but the server's ClientMsgRateLimiter still counts
     // these. Acquire the shared client token here so construction bursts (a

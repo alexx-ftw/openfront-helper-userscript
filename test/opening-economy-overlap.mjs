@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
+import {
+  executeClassicScript,
+  readRepositoryFile,
+  repositoryFilePath,
+} from "./helpers/repository-fixture.mjs";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sourcePath = path.join(root, "engine/ingame/auto-bot/nationExecution.js");
-const source = fs.readFileSync(sourcePath, "utf8");
+const sourcePath = repositoryFilePath("engine/ingame/auto-bot/nationExecution.js");
+const source = readRepositoryFile("engine/ingame/auto-bot/nationExecution.js");
 const sandbox = {
   UNIT: { City: "City" },
   state: { settings: { winFixes: true } },

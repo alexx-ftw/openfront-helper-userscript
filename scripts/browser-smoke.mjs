@@ -8,8 +8,7 @@
 import { chromium } from "playwright-core";
 
 const EXECUTABLE =
-  process.env.OFH_CHROMIUM ??
-  "/home/eros/.cache/ms-playwright/chromium-1247/chrome-linux64/chrome";
+  process.env.OFH_CHROMIUM ?? "/home/eros/.cache/ms-playwright/chromium-1247/chrome-linux64/chrome";
 
 const browser = await chromium.launch({
   executablePath: EXECUTABLE,
@@ -49,7 +48,7 @@ const pass =
   result.launcher &&
   result.buildMenu &&
   errors.length === 0;
-console.log(
-  JSON.stringify({ pass, pageErrors: errors.length, ...result }, null, 2),
+process.stdout.write(
+  `${JSON.stringify({ pass, pageErrors: errors.length, ...result }, null, 2)}\n`,
 );
 process.exit(pass ? 0 : 1);
