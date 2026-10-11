@@ -6,9 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { EventEmitter } from "node:events";
 import { foreignGitEnvironment } from "../scripts/git-environment.mjs";
 import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
 import {
+  runMatch,
+  validateSeedIdentities,
   parseArgs,
   readRecords,
   scorePairedRuns,
@@ -37,6 +40,65 @@ assert.throws(
   /policy/,
 );
 
+assert.equal(
+  parseArgs([
+    "--collect",
+    "--policy",
+    "compact-neural",
+    "--feature-profile",
+    "frontier-v1",
+    "--seeds",
+    "profile",
+    "--timeout-ms",
+    "100",
+  ])["feature-profile"],
+  "frontier-v1",
+);
+assert.throws(
+  () =>
+    parseArgs([
+      "--collect",
+      "--policy",
+      "compact-neural",
+      "--feature-profile",
+      "unknown",
+      "--seeds",
+      "profile",
+      "--timeout-ms",
+      "100",
+    ]),
+  /Unsupported feature profile/,
+);
+assert.throws(
+  () =>
+    parseArgs([
+      "--collect",
+      "--feature-profile",
+      "frontier-v1",
+      "--seeds",
+      "profile",
+      "--timeout-ms",
+      "100",
+    ]),
+  /requires compact-neural/,
+);
+assert.throws(() => validateSeedIdentities(["Aa", "BB"], []), /effective engine PRNG/);
+// Distinct printable hashes 0/1 enter the same actual house PRNG stream.
+const zeroSeed = "ASD[IWW";
+const oneSeed = "ASD[IWX";
+const seedStreams = executeClassicScript(
+  readRepositoryFile("engine/ingame/auto-bot/portutil.js") +
+    "\nseeds.map(seed => { const random = new PseudoRandom(simpleHash(seed)); return { hash: simpleHash(seed), draws: Array.from({ length: 8 }, () => random.next()) }; });",
+  { seeds: [zeroSeed, oneSeed] },
+);
+assert.deepEqual(
+  Array.from(seedStreams, (item) => item.hash),
+  [0, 1],
+);
+assert.deepEqual(Array.from(seedStreams[0].draws), Array.from(seedStreams[1].draws));
+assert.throws(() => validateSeedIdentities([zeroSeed, oneSeed], []), /effective engine PRNG/);
+assert.throws(() => validateSeedIdentities([oneSeed], [zeroSeed]), /effective engine PRNG/);
+assert.throws(() => validateSeedIdentities([], [zeroSeed, oneSeed]), /effective engine PRNG/);
 // This fixture tests evaluator plumbing, never combat quality or engine execution.
 const source = `window.__OFH_hybridCombat = {
   configure() {},
@@ -260,6 +322,269 @@ assert.deepEqual(
 );
 assert.throws(() => readRecords('{"phase":"result"}\n{"phase":"result"}'), /Duplicate/);
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "ofh-hybrid-api-test-"));
+// Native launch lifecycle fixture: no engine process or game is started.
+function nativeLedgerFixture(runID) {
+  const rows = Array.from({ length: 300 }, (_, tick) => ({
+    kind: "hybrid-combat-decision",
+    runIdentity: runID,
+    tick,
+    episodeId: 1,
+    generation: 1,
+    step: tick,
+    eligible: null,
+    controlledAction: null,
+    modelIdentity: `original-${tick}`,
+  }));
+  rows.push(
+    ...Array.from({ length: 300 }, (_, tick) => ({
+      kind: "hybrid-latency",
+      runIdentity: runID,
+      durationMs: tick + 1,
+    })),
+  );
+  const transitions = [];
+  for (let step = 0; step < 300; step++) {
+    const terminal = step === 299;
+    const event = {
+      kind: "hybrid-combat-outcome",
+      runIdentity: runID,
+      episodeId: 1,
+      generation: 1,
+      step,
+      actionTick: step,
+      outcomeTick: step + 1,
+      reward: 2,
+      gate: [0, 0, 0.2],
+      nextGate: [0, 0, 0.3],
+      terminal,
+      confirmed: true,
+      modelIdentity: `original-outcome-model-${step}`,
+    };
+    const transition = {
+      runIdentity: runID,
+      episodeId: 1,
+      generation: 1,
+      step,
+      tick: step,
+      nextTick: step + 1,
+      first: step === 0,
+      terminated: terminal,
+      truncated: false,
+      envError: false,
+      reason: null,
+      potentialID: "observed-own-land-share-v1",
+      potentialSource: "policy-gate-ownLandShare",
+      potential: 0.2,
+      nextPotential: 0.3,
+      baseReward: 2,
+      confirmed: true,
+    };
+    transitions.push(transition);
+    rows.push(event, { ...transition, kind: "hybrid-transition" });
+  }
+  const safetyRows = [
+    {
+      kind: "hybrid-safety",
+      runIdentity: runID,
+      reservePassed: true,
+      legalityPassed: true,
+      emitted: true,
+    },
+    {
+      kind: "hybrid-safety",
+      runIdentity: runID,
+      reservePassed: null,
+      legalityPassed: null,
+      emitted: true,
+    },
+  ];
+  rows.push(...safetyRows);
+  const closure = {
+    kind: "hybrid-episode-close",
+    runIdentity: runID,
+    episodeId: 1,
+    generation: 1,
+    tick: 300,
+    reason: "winner",
+    terminated: true,
+    truncated: false,
+    envError: false,
+  };
+  rows.push(closure);
+  const entries = rows.filter((row) => row.kind !== "hybrid-transition");
+  const result = {
+    phase: "result",
+    seed: "../seed",
+    stopReason: "winner",
+    winner: 1,
+    won: true,
+    hybridEvaluation: {
+      entries: entries.slice(-256),
+      retainedDecisionRows: rows.slice(44, 300),
+      retainedLatencyMs: Array.from({ length: 256 }, (_, index) => index + 45),
+      transitionRows: transitions.slice(-256),
+      safetyRows,
+      dropped: {
+        entries: entries.length - 256,
+        decisionRows: 44,
+        latencyMs: 44,
+        transitions: 44,
+        safetyRows: 0,
+      },
+      latestClosure: closure,
+      safety: { reserveChecks: 1, reserveViolations: 0, legalityChecks: 1, illegalEmissions: 0 },
+      coverage: { knownAttempts: 1, unknownAttempts: 1, emissionsWithoutChecks: 1 },
+    },
+  };
+  return { rows, result, entries };
+}
+
+async function nativeLedgerLaunch(
+  change = () => {},
+  code = 0,
+  timeout = false,
+  runID = "bound-native-run",
+) {
+  const outDir = fs.mkdtempSync(path.join(temporary, "native-ledger-"));
+  const { rows, result, entries } = nativeLedgerFixture(runID);
+  const launch = await runMatch({
+    seed: "../seed",
+    mode: "shadow",
+    learning: false,
+    outDir,
+    timeoutMs: timeout ? 1 : 1000,
+    environment: {},
+    runID,
+    spawnProcess(_command, _args, options) {
+      assert.equal(options.env.OFH_HYBRID_RUN_ID, runID);
+      const file = options.env.OFH_HYBRID_EVENT_LOG;
+      assert.equal(path.dirname(file), fs.realpathSync(outDir));
+      result.hybridEvaluation.eventFile = file;
+      result.hybridEvaluation.ledger = {
+        entries: entries.slice(-256),
+        dropped: entries.length - 256,
+        fullDataset: false,
+        incrementalFile: { path: file, fullDataset: true, policyEvents: entries.length },
+      };
+      const onRead = change(rows, result, file);
+      if (!fs.existsSync(file))
+        fs.writeFileSync(file, rows.map(JSON.stringify).join("\n") + "\n", { flag: "wx" });
+      fs.writeSync(options.stdio[1], JSON.stringify(result) + "\n");
+      const child = new EventEmitter();
+      child.kill = () => child.emit("close", null, "SIGKILL");
+      if (!timeout)
+        setImmediate(() => {
+          const readSync = fs.readSync;
+          let changed = false;
+          if (typeof onRead === "function")
+            fs.readSync = (...args) => {
+              const count = readSync(...args);
+              if (!changed && Buffer.isBuffer(args[1]) && args[1].length === 64 * 1024) {
+                changed = true;
+                onRead();
+              }
+              return count;
+            };
+          try {
+            child.emit("close", code, null);
+          } finally {
+            fs.readSync = readSync;
+          }
+        });
+      return child;
+    },
+  });
+  return launch;
+}
+const nativeLedger = await nativeLedgerLaunch();
+assert.equal(nativeLedger.result.hybridEvaluation.decisionRows.length, 300);
+assert.equal(nativeLedger.result.hybridEvaluation.decisionRows[0].modelIdentity, "original-0");
+assert.equal(nativeLedger.result.hybridEvaluation.ledger.fullDataset, true);
+assert.equal(nativeLedger.eventPath, nativeLedger.result.hybridEvaluation.eventFile);
+assert.equal(nativeLedger.result.hybridEvaluation.latencyMs.length, 300);
+assert.equal(nativeLedger.result.hybridEvaluation.latencyMs[0], 1);
+assert.equal(nativeLedger.result.hybridEvaluation.transitions.length, 300);
+assert.equal(nativeLedger.result.hybridEvaluation.transitions[0].baseReward, 2);
+assert.equal(nativeLedger.result.hybridEvaluation.replay.records.length, 300);
+assert.equal(
+  nativeLedger.result.hybridEvaluation.replay.records[0].modelIdentity,
+  "original-outcome-model-0",
+);
+assert.equal(nativeLedger.result.hybridEvaluation.coverage.unknownAttempts, 1);
+assert.equal(nativeLedger.result.hybridEvaluation.safety.reserveChecks, 1);
+const repeatedLaunch = await nativeLedgerLaunch();
+const traversalIdentity = await nativeLedgerLaunch(() => {}, 2, false, "../../bound-run");
+assert.equal(traversalIdentity.result.hybridEvaluation.ledger.fullDataset, true);
+assert.equal(
+  path.dirname(traversalIdentity.result.hybridEvaluation.eventFile),
+  path.dirname(traversalIdentity.logPath),
+);
+assert.ok(!path.basename(traversalIdentity.logPath).includes("bound-run"));
+assert.notEqual(repeatedLaunch.logPath, nativeLedger.logPath);
+assert.notEqual(
+  repeatedLaunch.result.hybridEvaluation.eventFile,
+  nativeLedger.result.hybridEvaluation.eventFile,
+);
+for (const mutate of [
+  (rows) => {
+    rows[0].runIdentity = "wrong-run";
+  },
+  (_rows, result) => {
+    result.hybridEvaluation.ledger.incrementalFile.policyEvents++;
+  },
+  (rows) => {
+    rows.pop();
+  },
+  (rows) => {
+    rows[1] = { ...rows[0] };
+  },
+  (_rows, result) => {
+    delete result.hybridEvaluation.safety;
+  },
+  (_rows, result) => {
+    result.hybridEvaluation.eventFile = path.join(temporary, "foreign-ledger");
+  },
+  (rows) => {
+    rows.find((row) => row.kind === "hybrid-transition").baseReward++;
+  },
+  (_rows, result) => {
+    result.hybridEvaluation.retainedLatencyMs[0]++;
+  },
+  (_rows, result) => {
+    delete result.hybridEvaluation.dropped;
+  },
+  (_rows, result) => {
+    result.hybridEvaluation.ledger.incrementalFile.fullDataset = false;
+  },
+  (rows, _result, file) => {
+    fs.writeFileSync(file, rows.map(JSON.stringify).join("\n"), { flag: "wx" });
+  },
+  (_rows, _result, file) => {
+    const fd = fs.openSync(file, "wx");
+    fs.ftruncateSync(fd, 64 * 1024 * 1024 + 1);
+    fs.closeSync(fd);
+  },
+  (_rows, _result, file) => () => fs.appendFileSync(file, " "),
+  (rows, _result, file) => {
+    const target = path.join(temporary, "symlink-target.jsonl");
+    fs.writeFileSync(target, rows.map(JSON.stringify).join("\n") + "\n");
+    fs.symlinkSync(target, file);
+  },
+]) {
+  const invalid = await nativeLedgerLaunch(mutate);
+  assert.equal(invalid.result.hybridEvaluation.ledger.fullDataset, false);
+  assert.equal(invalid.result.hybridEvaluation.decisionRows, undefined);
+  assert.equal(invalid.result.hybridEvaluation.ledger.incrementalFile.fullDataset, false);
+  assert.ok(invalid.nativeEventError);
+}
+for (const failed of [
+  await nativeLedgerLaunch(() => {}, 1),
+  await nativeLedgerLaunch(() => {}, 0, true),
+]) {
+  assert.notEqual(failed.result.hybridEvaluation.ledger.fullDataset, true);
+  assert.equal(failed.result.hybridEvaluation.decisionRows, undefined);
+  assert.equal(failed.result.hybridEvaluation.ledger.incrementalFile.fullDataset, false);
+}
 const modelPath = path.join(temporary, "model.json");
 fs.writeFileSync(modelPath, JSON.stringify(nativeModel));
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -426,6 +751,9 @@ assert.deepEqual(
 assert.deepEqual(nativeHashes.slice(0, 4), [2112, 2112, 685785664, 685785664]);
 const savedCollection = JSON.parse(fs.readFileSync(exportedPath, "utf8"));
 const collisionCases = [
+  { collect: true, seeds: [zeroSeed, oneSeed] },
+  { collect: false, seeds: [oneSeed], trainingSeeds: [zeroSeed] },
+  { collect: true, seeds: [zeroSeed], trainingSeeds: [oneSeed] },
   { collect: true, seeds: ["Aa", "BB"] },
   { collect: true, seeds: ["zzzzzz", "BLCNFN]"] },
   { collect: false, seeds: ["Aa", "BB"], trainingSeeds: ["train-a"] },
@@ -572,6 +900,116 @@ const nativeWorkflowRunner = async ({ seed, mode, learning, modelPath }) => {
     },
   };
 };
+const frontierCollection = await evaluate(
+  {
+    collect: true,
+    policy: "compact-neural",
+    "feature-profile": "frontier-v1",
+    seeds: ["frontier-train"],
+    timeoutMs: 100,
+    out: path.join(temporary, "frontier-collect"),
+  },
+  fixtureEnvironment,
+  async (input) => {
+    const snapshot = JSON.parse(fs.readFileSync(input.modelPath, "utf8"));
+    assert.equal(snapshot.schema, "ofh-combat-compact-tanh-v3");
+    assert.equal(snapshot.featureProfile, "frontier-v1");
+    const match = run(input.seed, input.mode, false);
+    return {
+      ...match,
+      start: { ...match.start, engineFingerprint: fingerprint },
+      result: {
+        ...match.result,
+        hybridCombat: {
+          mode: input.mode,
+          learning: input.learning,
+          diagnostics: { mode: input.mode, learning: input.learning },
+          model: snapshot,
+        },
+      },
+    };
+  },
+);
+const frontierFile = path.join(frontierCollection.outDir, "trained-model.json");
+await evaluate(
+  {
+    collect: true,
+    policy: "compact-neural",
+    "feature-profile": "frontier-v1",
+    model: frontierFile,
+    seeds: ["frontier-resume"],
+    timeoutMs: 100,
+    out: path.join(temporary, "frontier-resume"),
+  },
+  fixtureEnvironment,
+  async (input) => {
+    const snapshot = JSON.parse(fs.readFileSync(input.modelPath, "utf8"));
+    assert.equal(snapshot.schema, "ofh-combat-compact-tanh-v3");
+    const match = run(input.seed, input.mode, false);
+    return {
+      ...match,
+      start: { ...match.start, engineFingerprint: fingerprint },
+      result: {
+        ...match.result,
+        hybridCombat: {
+          mode: input.mode,
+          learning: input.learning,
+          diagnostics: { mode: input.mode, learning: input.learning },
+          model: snapshot,
+        },
+      },
+    };
+  },
+);
+const nativeExport = await evaluate(
+  {
+    collect: true,
+    policy: "compact-neural",
+    seeds: ["native-ledger-export"],
+    timeoutMs: 100,
+    out: path.join(temporary, "native-ledger-export"),
+  },
+  fixtureEnvironment,
+  async (input) => {
+    const match = await nativeWorkflowRunner(input);
+    const native = await nativeLedgerLaunch(() => {}, 0, false, input.runID);
+    match.result.hybridEvaluation = native.result.hybridEvaluation;
+    return match;
+  },
+);
+const nativeExportRows = fs
+  .readFileSync(nativeExport.report.ledgerDataset.path, "utf8")
+  .trim()
+  .split("\n")
+  .map(JSON.parse);
+assert.equal(nativeExportRows[0].metadata.recordCount, 600);
+assert.equal(nativeExportRows[0].metadata.eventScope, "policy-events-only");
+assert.equal(
+  nativeExportRows.filter((row) => row.event?.kind === "hybrid-combat-decision").length,
+  300,
+);
+assert.equal(nativeExportRows[0].metadata.coverage[0].fullDataset, true);
+assert.equal(nativeExportRows[0].metadata.coverage[0].dropped, 0);
+assert.equal(nativeExportRows[1].event.modelIdentity, "original-0");
+assert.equal(
+  nativeExportRows.find((row) => row.event?.kind === "hybrid-combat-outcome").event.modelIdentity,
+  "original-outcome-model-0",
+);
+assert.equal(nativeExportRows.at(-1).event.modelIdentity, "original-outcome-model-299");
+assert.equal(nativeExportRows[1].event.runIdentity, nativeExportRows[1].manifest.runID);
+const savedNativeRun = JSON.parse(
+  fs.readFileSync(
+    path.join(
+      nativeExport.outDir,
+      `shadow-${createHash("sha256").update("native-ledger-export").digest("hex").slice(0, 16)}.json`,
+    ),
+    "utf8",
+  ),
+);
+assert.equal(savedNativeRun.frozenVerified, true);
+assert.deepEqual(savedNativeRun.launch, nativeExportRows[1].manifest);
+assert.deepEqual(savedNativeRun.result, nativeExport.report.runs[0].result);
+
 const neuralCollection = await evaluate(
   {
     collect: true,
@@ -584,6 +1022,22 @@ const neuralCollection = await evaluate(
   nativeWorkflowRunner,
 );
 const neuralFile = path.join(neuralCollection.outDir, "trained-model.json");
+await assert.rejects(
+  evaluate(
+    {
+      collect: true,
+      policy: "compact-neural",
+      "feature-profile": "frontier-v1",
+      model: neuralFile,
+      seeds: ["profile-mismatch"],
+      timeoutMs: 100,
+      out: path.join(temporary, "profile-mismatch"),
+    },
+    fixtureEnvironment,
+    () => assert.fail("profile mismatch must fail before launch"),
+  ),
+  /feature profile mismatch/,
+);
 const neuralSaved = JSON.parse(fs.readFileSync(neuralFile, "utf8"));
 assert.equal(neuralSaved.model.schema, "ofh-combat-compact-tanh-v2");
 assert.ok(
@@ -609,8 +1063,10 @@ const datasetLines = fs
   .trim()
   .split("\n")
   .map(JSON.parse);
-assert.equal(datasetLines[0].metadata.recordCount, 40);
-const originalRow = datasetLines[1];
+assert.equal(datasetLines[0].metadata.recordCount, datasetLines.length - 1);
+assert.equal(datasetLines.filter((row) => row.event?.kind === "hybrid-combat-outcome").length, 40);
+assert.ok(datasetLines.some((row) => row.event?.kind === "hybrid-combat-decision"));
+const originalRow = datasetLines.find((row) => row.event?.kind === "hybrid-combat-outcome");
 assert.equal(originalRow.event.modelIdentity, JSON.stringify(neuralSaved.model));
 const selectionFile = path.join(temporary, "selection.json");
 fs.writeFileSync(
@@ -686,7 +1142,7 @@ assert.equal(
 );
 const neuralHoldout = await evaluate(
   {
-    collect: false,
+    // Programmatic callers may omit collect; frozen learning must still be false.
     policy: "compact-neural",
     model: path.join(anchored.outDir, "trained-model.json"),
     seeds: ["neural-holdout"],
@@ -694,9 +1150,90 @@ const neuralHoldout = await evaluate(
     out: path.join(temporary, "neural-holdout"),
   },
   fixtureEnvironment,
-  nativeWorkflowRunner,
+  (input) => {
+    assert.equal(input.learning, false, "omitted collect must launch frozen learning as a boolean");
+    return nativeWorkflowRunner(input);
+  },
 );
+// Round-trip the producer's actual saved launches and ledger header, rather
+// than filling in learning on consumer fixtures or restamping native evidence.
+for (const [evaluation, expectedLearning] of [
+  [neuralCollection, true],
+  [neuralFrozen, false],
+  [neuralHoldout, false],
+]) {
+  const header = JSON.parse(
+    fs.readFileSync(evaluation.report.ledgerDataset.path, "utf8").split("\n")[0],
+  ).metadata;
+  const savedReport = JSON.parse(
+    fs.readFileSync(path.join(evaluation.outDir, "evaluation.json"), "utf8"),
+  );
+  for (const run of evaluation.report.runs) {
+    const saved = JSON.parse(
+      fs.readFileSync(
+        path.join(
+          evaluation.outDir,
+          `${run.launch.mode}-${createHash("sha256").update(run.launch.seed).digest("hex").slice(0, 16)}.json`,
+        ),
+        "utf8",
+      ),
+    );
+    assert.equal(saved.launch.learning, expectedLearning);
+    assert.equal(saved.result.hybridCombat.learning, expectedLearning);
+    assert.equal(saved.result.hybridCombat.diagnostics.learning, expectedLearning);
+    assert.deepEqual(saved.launch, run.launch);
+    assert.deepEqual(
+      header.manifests.find((manifest) => manifest.runID === run.launch.runID),
+      saved.launch,
+    );
+    assert.deepEqual(
+      savedReport.runs.find((item) => item.launch.runID === run.launch.runID).launch,
+      saved.launch,
+    );
+  }
+}
+// Simulate changed evaluator bytes on read only; never mutate shared sources.
+const frozenSourceRead = fs.readFileSync;
+let sourceReadDrift = false;
+const sourceDriftOut = path.join(temporary, "learning-source-drift");
+fs.readFileSync = function (file, ...args) {
+  const bytes = frozenSourceRead.call(this, file, ...args);
+  if (sourceReadDrift && file === path.join(root, "scripts/headless/evaluate-hybrid-combat.mjs")) {
+    return typeof bytes === "string" ? bytes + "\n" : Buffer.concat([bytes, Buffer.from("\n")]);
+  }
+  return bytes;
+};
+try {
+  await assert.rejects(
+    evaluate(
+      {
+        policy: "compact-neural",
+        model: neuralFile,
+        seeds: ["learning-source-drift"],
+        timeoutMs: 100,
+        out: sourceDriftOut,
+      },
+      fixtureEnvironment,
+      async (input) => {
+        assert.equal(input.learning, false);
+        const result = await nativeWorkflowRunner(input);
+        sourceReadDrift = true;
+        return result;
+      },
+    ),
+    /Frozen harnessHash drift/,
+  );
+} finally {
+  fs.readFileSync = frozenSourceRead;
+}
+assert.equal(fs.existsSync(path.join(sourceDriftOut, "evaluation.json")), false);
 assert.equal(neuralHoldout.report.completedPairs, 1);
+assert.equal(neuralHoldout.report.runs.length, 3);
+assert.equal(neuralHoldout.report.runs[0].result.phase, "result");
+assert.deepEqual(
+  neuralHoldout.report.runs[0].result.hybridCombat.model,
+  JSON.parse(fs.readFileSync(path.join(anchored.outDir, "trained-model.json"), "utf8")).model,
+);
 await assert.rejects(
   evaluate(
     { collect: true, policy: "ridge", model: neuralFile, seeds: ["kind-mismatch"], timeoutMs: 100 },

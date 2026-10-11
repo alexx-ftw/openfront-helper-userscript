@@ -1032,6 +1032,8 @@
     // current. Read the actual actor/target snapshots and reject tick drift.
     async prepareHybridCombatGeometry(targets) {
       const tick = this.currentAttackDecisionTick();
+      const frontierEnabled = typeof hybridCombatPolicy !== "undefined" && hybridCombatPolicy.compactContract?.featureProfile === "frontier-v1";
+      const generation = frontierEnabled ? hybridCombatPolicy.generation : null;
       this.hybridGeometrySnapshot = null;
       const actors = [this.player, ...targets];
       const borders = await Promise.all(actors.map((actor) => {
@@ -1041,13 +1043,122 @@
           : null;
       }));
       if (tick !== this.currentAttackDecisionTick()) return;
+      if (!this.hybridGeometryGenerationIsCurrent(generation)) return;
       const width = Number(this.game.width());
       const height = Number(this.game.height());
       if (![width, height].every(Number.isSafeInteger) || width < 1 || height < 1) return;
       const centers = borders.map((border) => this.hybridBorderCentroid(border, width, height));
       if (!centers[0]) return;
+      const frontier = frontierEnabled ? this.hybridFrontierSnapshot(borders[0], targets, tick, generation) : null;
+      if (frontierEnabled && (tick !== this.currentAttackDecisionTick() || !this.hybridGeometryGenerationIsCurrent(generation))) return;
       this.hybridGeometrySnapshot = { tick, width, height, own: centers[0],
-        targets: new Map(targets.map((target, i) => [target.smallID(), centers[i + 1]])) };
+        targets: new Map(targets.map((target, i) => [target.smallID(), centers[i + 1]])),
+        ...(frontierEnabled ? { generation, frontier } : {}) };
+    }
+
+    hybridGeometryGenerationIsCurrent(generation) {
+      return generation === null || generation === hybridCombatPolicy.generation;
+    }
+
+    hybridHostileTargetIDs(player, targets) {
+      const hostile = new Set();
+      for (const target of targets) {
+        const friendly = player.isFriendly(target.__src ?? target);
+        if (typeof friendly !== "boolean") return null;
+        if (!friendly) hostile.add(target.smallID());
+      }
+      return hostile;
+    }
+
+    hybridAdjacentHostileOwners(game, tile, hostile) {
+      const neighbors = game.neighbors(tile);
+      if (!neighbors || typeof neighbors[Symbol.iterator] !== "function") return null;
+      const owners = new Set();
+      for (const neighbor of neighbors) {
+        const sid = game.ownerID(neighbor);
+        if (!Number.isSafeInteger(sid) || sid < 0) return null;
+        if (hostile.has(sid)) owners.add(sid);
+      }
+      return owners;
+    }
+
+    hybridSharedFrontiers(response, targets) {
+      const game = this.game.__src ?? this.game;
+      const player = this.player.__src ?? this.player;
+      if (typeof game.neighbors !== "function" || typeof game.ownerID !== "function" ||
+          typeof player.isFriendly !== "function") return null;
+      const border = response?.borderTiles ?? response;
+      if (!border || typeof border[Symbol.iterator] !== "function") return false;
+      const unique = new Set(border);
+      if (!unique.size) return false;
+      const hostile = this.hybridHostileTargetIDs(player, targets);
+      if (!hostile) return false;
+      const counts = new Map(targets.map((target) => [target.smallID(), 0]));
+      for (const tile of unique) {
+        const owners = this.hybridAdjacentHostileOwners(game, tile, hostile);
+        if (!owners) return false;
+        for (const sid of owners) counts.set(sid, counts.get(sid) + 1);
+      }
+      return { ownBorderCount: unique.size, counts };
+    }
+
+    hybridIncomingAttackFacts(attack, player) {
+      const attacker = this.hybridIncomingEndpoint(attack, "attacker");
+      const target = this.hybridIncomingEndpoint(attack, "target");
+      const sid = attacker?.smallID?.(), targetSid = target?.smallID?.();
+      const amount = this.hybridIncomingValue(attack, "troops");
+      const retreating = this.hybridIncomingValue(attack, "retreating");
+      if (!Number.isSafeInteger(sid) || sid < 0 || targetSid !== player.smallID() ||
+          !Number.isFinite(amount) || amount < 0 || typeof retreating !== "boolean") return null;
+      const friendly = player.isFriendly(attacker);
+      if (typeof friendly !== "boolean") return null;
+      return { sid, amount, active: !retreating && !friendly };
+    }
+
+    hybridIncomingValue(attack, name) {
+      return typeof attack?.[name] === "function" ? attack[name]() : attack?.[name];
+    }
+
+    hybridIncomingEndpoint(attack, name) {
+      if (typeof attack?.[name] === "function") return attack[name]();
+      const sid = attack?.[`${name}ID`];
+      const game = this.game.__src ?? this.game;
+      if (!Number.isSafeInteger(sid) || sid < 0 || typeof game.playerBySmallID !== "function") return null;
+      const endpoint = game.playerBySmallID(sid);
+      return endpoint?.smallID?.() === sid ? endpoint : null;
+    }
+
+    hybridIncomingByTarget() {
+      const player = this.player.__src ?? this.player;
+      const game = this.game.__src ?? this.game;
+      if (!["incomingAttacks", "isFriendly"].every((name) => typeof player[name] === "function") ||
+          typeof game.config !== "function") return null;
+      const config = game.config();
+      if (typeof config?.maxTroops !== "function") return null;
+      const ownMaxTroops = config.maxTroops(player);
+      if (!Number.isFinite(ownMaxTroops) || ownMaxTroops <= 0) return false;
+      const attacks = player.incomingAttacks();
+      if (!Array.isArray(attacks)) return false;
+      const troops = new Map();
+      for (const attack of attacks) {
+        const facts = this.hybridIncomingAttackFacts(attack, player);
+        if (!facts) return false;
+        if (!facts.active) continue;
+        const total = (troops.get(facts.sid) || 0) + facts.amount;
+        if (!Number.isFinite(total)) return false;
+        troops.set(facts.sid, total);
+      }
+      return { ownMaxTroops, troops };
+    }
+
+    hybridFrontierSnapshot(border, targets, tick, generation) {
+      const shared = this.hybridSharedFrontiers(border, targets);
+      const incoming = this.hybridIncomingByTarget();
+      return new Map(targets.map((target) => [target.smallID(), shared === false || incoming === false ? null : {
+        source: "native-target-frontier-v1", actorSmallID: this.player.smallID(), targetSmallID: target.smallID(), tick, generation,
+        ownBorderCount: shared?.ownBorderCount ?? null, sharedFrontierCount: shared?.counts.get(target.smallID()) ?? null,
+        ownMaxTroops: incoming?.ownMaxTroops ?? null, incomingFromTargetTroops: incoming ? incoming.troops.get(target.smallID()) ?? 0 : null,
+      }]));
     }
 
     hybridBorderCentroid(response, width, height) {
@@ -1066,19 +1177,26 @@
       const snapshot = this.hybridGeometrySnapshot;
       const center = snapshot?.targets.get(target.smallID());
       if (!center || snapshot.tick !== this.currentAttackDecisionTick()) return null;
+      if (snapshot.frontier && snapshot.generation !== hybridCombatPolicy.generation) return null;
       return { targetSmallID: target.smallID(), tick: snapshot.tick, source: "native-border-centroid-v1",
-        own: snapshot.own, target: center, width: snapshot.width, height: snapshot.height };
+        own: snapshot.own, target: center, width: snapshot.width, height: snapshot.height,
+        ...(snapshot.frontier ? { frontier: snapshot.frontier.get(target.smallID()) } : {}) };
     }
 
     async decideHybridCombat(enemies) {
       if (typeof hybridCombatPolicy === "undefined") return false;
       const generation = hybridCombatPolicy.generation;
       const tick = this.currentAttackDecisionTick();
+      const identity = hybridCombatPolicy.enabled() ? hybridCombatPolicy.decisionIdentity(this) : null;
       const startedAt = typeof window.__OFH_profileNow === "function" ? window.__OFH_profileNow() : performance.now();
       try {
         if (hybridCombatPolicy.backend === "compact-tanh-v1") await this.prepareHybridCombatGeometry(enemies);
-        if (generation !== hybridCombatPolicy.generation || tick !== this.currentAttackDecisionTick()) return false;
-        return await hybridCombatPolicy.decide(this, enemies);
+        if (generation !== hybridCombatPolicy.generation || tick !== this.currentAttackDecisionTick()) {
+          if (identity) hybridCombatPolicy.recordGeometryCancellation(identity, enemies.length,
+            generation !== hybridCombatPolicy.generation ? "cancelled-generation" : "stale-geometry-tick");
+          return false;
+        }
+        return await hybridCombatPolicy.decide(this, enemies, identity);
       }
       finally {
         window.__OFH_hybridDecisionTiming?.({ generation, tick,
@@ -3276,11 +3394,16 @@
       return filtered.length > 0 ? filtered : borderingEnemies;
     }
 
+    observeHybridStrategyDuo() {
+      if (state.settings.winFixes) globalThis.window?.__OFH_hybridStrategy?.observeDuo?.({ game: this.game.__src ?? this.game, player: this.player });
+    }
+
     // maybeAttack — AiAttackBehavior.maybeAttack.
     async maybeAttack(profile = null) {
       if (this.player === null || this.allianceBehavior === undefined) {
         throw new Error("not initialized");
       }
+      this.observeHybridStrategyDuo();
       this.enforceSameClanNukeTerrainSafety();
       profileAttackSync(profile, "attack-intent-reconcile", () =>
         this.reconcileOutboundAttackIntentCommitments());
@@ -9997,6 +10120,10 @@
       try {
         const emitted = await this.sendAuthorizedAttack(options);
         if (attempt) attempt.emitted = emitted;
+        if (!emitted && attempt?.reason && typeof hybridCombatPolicy !== "undefined") {
+          const dispatch = hybridCombatPolicy.dispatch;
+          if (dispatch?.id === attempt.attemptId && dispatch.generation === attempt.generation) dispatch.reason = attempt.reason;
+        }
         return emitted;
       } finally {
         if (attempt) window.__OFH_hybridSafety?.({ ...attempt });
@@ -10019,10 +10146,10 @@
 
     async sendAuthorizedAttack(options) {
       const { target, force } = options;
-      if (!this.canAttackPlayerNow(target)) return false;
-      if (!force && !this.shouldAttack(target)) return false;
-      if (!this.sendAttackTargetIsAuthorized(options, force)) return false;
-      if (!force && !this.hybridAllowsAttack(target)) return false;
+      if (!this.canAttackPlayerNow(target)) return this.rejectHybridAttack("native-legality-rejected");
+      if (!force && !this.shouldAttack(target)) return this.rejectHybridAttack("should-attack-rejected");
+      if (!this.sendAttackTargetIsAuthorized(options, force)) return this.rejectHybridAttack("target-authorization-rejected");
+      if (!force && !this.hybridAllowsAttack(target)) return this.rejectHybridAttack("commitment-veto");
       options.isParallelTribeAttack =
         options.parallelTribeAttack === true &&
         target?.isPlayer?.() === true &&
@@ -10036,9 +10163,14 @@
           options.reinforcementPlan,
         )
       ) {
-        return false;
+        return this.rejectHybridAttack("pending-duplicate");
       }
       return this.sendAttackWithHybridObservation(options);
+    }
+
+    rejectHybridAttack(reason) {
+      if (this.hybridSafetyAttempt) this.hybridSafetyAttempt.reason = reason;
+      return false;
     }
 
     async tryHybridJointAttack() {
@@ -10062,13 +10194,14 @@
     async sendAttackWithHybridObservation(options) {
       const { target, force } = options;
       const hybridGeneration = typeof hybridCombatPolicy !== "undefined" ? hybridCombatPolicy.generation : null;
-      const hybridObservation = !force && typeof hybridCombatPolicy !== "undefined"
-        ? hybridCombatPolicy.actionObservation(this, target) : null;
+      const hybridObservation = typeof hybridCombatPolicy !== "undefined"
+        ? hybridCombatPolicy.actionObservation(this, target, { force }) : null;
       const sent = target.isPlayer()
         ? await this.sendAttackAgainstPlayer(options)
         : await this.sendAttackAgainstTerraNullius(options);
-      if (sent && !force && typeof hybridCombatPolicy !== "undefined") {
-        hybridCombatPolicy.recordAcceptedAction(this, target, hybridObservation, hybridGeneration);
+      if (sent && typeof hybridCombatPolicy !== "undefined") {
+        if (force) hybridCombatPolicy.recordUnobservedAcceptedAction(hybridGeneration);
+        else hybridCombatPolicy.recordAcceptedAction(this, target, hybridObservation, hybridGeneration);
       }
       return sent;
     }

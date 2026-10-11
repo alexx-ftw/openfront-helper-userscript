@@ -1089,6 +1089,59 @@ function stripHybridModelBoundaries(source, allowUpdate = false) {
   return result + source.slice(cursor);
 }
 
+function stripAuditedFunctionBoundary(source, startMarker, endMarker, pattern, message) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start);
+  assert.ok(start >= 0 && end > start, message);
+  assert.equal(
+    source.indexOf(startMarker, start + startMarker.length),
+    -1,
+    "audited function must be unique",
+  );
+  const boundary = source.slice(start, end);
+  assert.equal(
+    catchTokens(boundary).length,
+    1,
+    "audited function must contain exactly one handler",
+  );
+  assert.equal([...boundary.matchAll(pattern)].length, 1, message);
+  return source.slice(0, start) + boundary.replace(pattern, "") + source.slice(end);
+}
+
+function stripNativeEvaluationFailureBoundaries(source) {
+  const boundaries = [
+    [
+      "function restoreNativeEvidence(",
+      "export function runMatch(",
+      /try\s*\{\s*Object\.assign\(evidence, validateNativeEvidence\(run, file, outDir, runID\)\);\s*\/\/ Untrusted native files remain reportable failures, never complete evidence\.\s*\/\/ eslint-disable-next-line no-restricted-syntax\s*\} catch \(error\) \{\s*run\.nativeEventError = error\.message;\s*invalidateNativeEvidence\(evidence\);\s*\}/g,
+      "native evidence validation must be recorded and invalidated",
+    ],
+    [
+      "export function runMatch(",
+      "function evaluationInputs(",
+      /try\s*\{\s*records = readRecords\(fs\.readFileSync\(logPath, "utf8"\)\);\s*\/\/ Preserve malformed child output as a failed run in the report\.\s*\/\/ eslint-disable-next-line no-restricted-syntax\s*\} catch \(failure\) \{\s*error = failure\.message;\s*\}/g,
+      "malformed child output must remain a failed run",
+    ],
+  ];
+  let checkedSource = source;
+  for (const [start, end, pattern, message] of boundaries) {
+    checkedSource = stripAuditedFunctionBoundary(checkedSource, start, end, pattern, message);
+  }
+  return checkedSource;
+}
+
+function stripHybridTrainingColdStartBoundary(source) {
+  const pattern =
+    /try\s*\{\s*validateModel\(saved\.model, source, true\);\s*\/\/ eslint-disable-next-line no-restricted-syntax -- cold is a valid training state; every other validation failure propagates\s*\}\s*catch \(error\) \{\s*if\s*\(\s*!\(error instanceof assert\.AssertionError\)\s*\|\|\s*error\.message !==\s*"Cold or unsupported snapshot: native diagnostics must report ready\/modelReady=true"\s*\)\s*throw error;\s*ready = false;\s*\}/g;
+  return stripAuditedFunctionBoundary(
+    source,
+    "export function inspectCheckpoint(",
+    "function writeResult(",
+    pattern,
+    "only the native cold-readiness assertion may be treated as a training state",
+  );
+}
+
 const productionSources = [
   path.join(root, "build.mjs"),
   ...productionJavaScriptFiles(path.join(root, "engine")),
@@ -1111,6 +1164,12 @@ for (const sourcePath of productionSources) {
       checkedSource,
       sourcePath === path.join(root, "engine/ingame/auto-bot/hybridCombat.js"),
     );
+  }
+  if (sourcePath === path.join(root, "scripts/headless/evaluate-hybrid-combat.mjs")) {
+    checkedSource = stripNativeEvaluationFailureBoundaries(checkedSource);
+  }
+  if (sourcePath === path.join(root, "scripts/headless/train-hybrid-combat.mjs")) {
+    checkedSource = stripHybridTrainingColdStartBoundary(checkedSource);
   }
   assert.equal(
     catchTokens(checkedSource).length,

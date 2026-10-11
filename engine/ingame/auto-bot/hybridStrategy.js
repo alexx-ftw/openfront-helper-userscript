@@ -10,6 +10,7 @@
   let sequence = 0;
   let enabled = false;
   let scope = null;
+  let scopeGame = null;
   let latestTick = -1;
   let requestBarrierTick = -1;
   const attacks = new Map();
@@ -17,6 +18,7 @@
   const naval = new Map();
   const issuedProposals = new Map();
   const structures = new WeakMap();
+  const windowHistory = new Map();
   const counts = { proposals: 0, economicChecked: 0, economicBlocked: 0, inheritedCalls: 0 };
 
   function read(object, key) {
@@ -26,7 +28,8 @@
   }
 
   function tickOf(context) {
-    return Number(read(context.game, "ticks"));
+    const tick = read(context.game, "ticks");
+    return typeof tick === "number" ? tick : NaN;
   }
 
   function identity(context) {
@@ -42,28 +45,34 @@
 
   function reset(sessionId = null) {
     scope = sessionId;
+    scopeGame = null;
     latestTick = -1;
     requestBarrierTick = -1;
     attacks.clear();
     exchanges.clear();
     naval.clear();
     issuedProposals.clear();
+    windowHistory.clear();
   }
 
   function observe(context) {
     const id = identity(context);
     const key = `${id.sessionId}:${id.generation}:${id.actorSid}`;
-    if (scope !== key) reset(key);
+    const game = context.game?.__src ?? context.game;
+    if (scope !== key || scopeGame !== game) { reset(key); scopeGame = game; }
     const tick = tickOf(context);
     return { ...id, tick, enabled: observeTick(tick) && active() };
   }
 
   function observeTick(tick) {
+    if (!Number.isSafeInteger(tick) || tick < 0) windowHistory.clear();
     if (tick < latestTick) {
       requestBarrierTick = latestTick;
       for (const exchange of exchanges.values()) exchange.status = "expired";
       issuedProposals.clear();
       naval.clear();
+      attacks.clear();
+      windowHistory.clear();
     }
     const forward = Number.isSafeInteger(tick) && tick >= latestTick;
     if (forward) latestTick = tick;
@@ -366,8 +375,11 @@
 
   function observeDuo(context) {
     const current = observe(context);
+    const players = nativeWindowPlayers(context);
+    observeWindowHistory(context, current, players);
     if (!current.enabled || !read(context.player, "isAlive") || String(read(context.player, "type")).toUpperCase() !== "HUMAN") return [];
-    const peers = (read(context.game, "players") ?? []).filter(p => eligiblePeer(context, p));
+    if (!players) return [];
+    const peers = players.filter(p => eligiblePeer(context, p));
     observeAttacks(context, peers);
     for (const peer of peers) { observeRequest(context, peer); refreshExchange(context, peer); }
     const alive = new Set(peers.map(p => read(p, "smallID")));
@@ -436,14 +448,119 @@
   }
 
   function describeStrikeWindow(context, targetSid) {
+    const current = observe(context);
     const commitments = Array.from(attacks.values()).filter(a => a.targetSid === targetSid);
+    const record = windowHistory.get(targetSid);
+    const players = nativeWindowPlayers(context);
+    const target = players?.find(p => read(p, "smallID") === targetSid);
+    const usable = windowContextCurrent(context, current, players)
+      && windowTarget(context, target) && record?.sourceTick === current.tick;
+    if (!windowTarget(context, target)) windowHistory.delete(targetSid);
     return { version: VERSION, sourceTick: tickOf(context), targetSid,
       status: commitments.length ? "observed" : "unknown", commitments,
+      observations: usable && tickOf(context) === current.tick && windowContextCurrent(context, current, players)
+        ? copySemanticValue(record) : { status: "unknown", reason: "no-current-observation" },
       boundary: "Visible commitments only; no Human PRNG or synchronized first-strike prediction." };
+  }
+
+  function nativeWindowPlayers(context) {
+    const players = read(context.game?.__src ?? context.game, "players");
+    if (!Array.isArray(players)) return null;
+    const ids = players.map(p => read(p, "smallID"));
+    return ids.every(validWindowSid) && new Set(ids).size === ids.length
+      && ids.includes(read(context.player, "smallID")) ? players : null;
+  }
+
+  function validWindowSid(sid) {
+    return Number.isSafeInteger(sid) && sid >= 0;
+  }
+
+  function windowTarget(context, target) {
+    const actor = context.player?.__src ?? context.player;
+    return Boolean(target && read(actor, "isAlive") === true && read(target, "isAlive") === true
+      && read(target, "smallID") !== read(actor, "smallID")
+      && typeof actor?.isFriendly === "function" && actor.isFriendly(target) === false);
+  }
+
+  function observeWindowHistory(context, current, players) {
+    if (!windowContextCurrent(context, current, players)) { windowHistory.clear(); return; }
+    const live = new Set();
+    for (const target of players) {
+      if (!windowTarget(context, target)) continue;
+      const sid = read(target, "smallID");
+      live.add(sid);
+      const native = target.__src ?? target;
+      const troops = read(native, "troops");
+      const commitments = windowCommitments(context, native, players);
+      if (!validWindowTroops(troops) || !commitments) { windowHistory.delete(sid); continue; }
+      const prior = windowHistory.get(sid);
+      const previous = prior?.sourceTick === current.tick ? prior.previous : prior;
+      windowHistory.set(sid, windowObservation(current.tick, troops, commitments, previous));
+    }
+    for (const sid of windowHistory.keys()) if (!live.has(sid)) windowHistory.delete(sid);
+    if (tickOf(context) !== current.tick) windowHistory.clear();
+  }
+
+  function windowContextCurrent(context, current, players) {
+    return current.enabled && current.tick >= 0 && players
+      && read(context.game?.__src ?? context.game, "ticks") === current.tick;
+  }
+
+  function validWindowTroops(troops) {
+    return typeof troops === "number" && Number.isFinite(troops) && troops >= 0;
+  }
+
+  function windowCommitments(context, target, players) {
+    const outgoing = read(target, "outgoingAttacks");
+    if (!Array.isArray(outgoing)) return null;
+    const endpoints = new Map(players.map(p => [read(p, "smallID"), p]));
+    const ids = new Set();
+    const result = { visibleCommittedTroops: 0, incomingFromTarget: 0,
+      activeCommitmentIDs: [], retreatingCommitmentIDs: [] };
+    for (const attack of outgoing) {
+      const facts = windowAttackFacts(attack, read(target, "smallID"), ids);
+      if (!facts) return null;
+      ids.add(facts.attackId);
+      const endpoint = endpoints.get(facts.targetSid);
+      if (read(endpoint, "isAlive") !== true) return null;
+      if (facts.retreating) result.retreatingCommitmentIDs.push(facts.attackId);
+      else {
+        result.activeCommitmentIDs.push(facts.attackId);
+        result.visibleCommittedTroops += facts.troops;
+        if (facts.targetSid === read(context.player, "smallID")) result.incomingFromTarget += facts.troops;
+      }
+    }
+    return validWindowTroops(result.visibleCommittedTroops) && validWindowTroops(result.incomingFromTarget) ? result : null;
+  }
+
+  function windowAttackFacts(attack, ownerSid, ids) {
+    const native = attack?.__src ?? attack;
+    const facts = attackFields(native);
+    const troops = read(native, "troops");
+    const idValid = (typeof facts.attackId === "string" && facts.attackId.trim().length > 0)
+      || (Number.isSafeInteger(facts.attackId) && facts.attackId >= 0);
+    return idValid && !ids.has(facts.attackId) && validWindowTroops(troops)
+      && facts.ownerSid === ownerSid && validWindowSid(facts.targetSid)
+      && typeof facts.retreating === "boolean" ? { ...facts, troops } : null;
+  }
+
+  function windowObservation(tick, troops, commitments, previous) {
+    const comparable = previous && previous.sourceTick < tick;
+    return { sourceTick: tick, currentTroops: troops,
+      status: comparable ? "observed" : "unknown", reason: comparable ? "two-native-observations" : "first-native-observation",
+      previous: comparable ? { sourceTick: previous.sourceTick, currentTroops: previous.currentTroops,
+        activeCommitmentIDs: [...previous.activeCommitmentIDs] } : null,
+      troopDropObserved: comparable ? troops < previous.currentTroops : null,
+      troopDrop: comparable ? Math.max(0, previous.currentTroops - troops) : null,
+      ...commitments, cancellationObserved: commitments.retreatingCommitmentIDs.length > 0,
+      disappearedCommitmentIDs: comparable ? previous.activeCommitmentIDs.filter(id =>
+        !commitments.activeCommitmentIDs.includes(id) && !commitments.retreatingCommitmentIDs.includes(id)) : [],
+      boundary: "Observed troops and native commitments only; no guaranteed no-answer window." };
   }
 
   root.__OFH_hybridStrategy = { version: VERSION, configure: options => { enabled = options.enabled === true; },
     createStructureBehavior, observe, propose, validate, rebase, admitEconomicPurchase, economicUpgradeTile,
     observeNaval, transportCommitment, observeDuo, getJointPlan, consumeJointPlan, describeStrikeWindow, reset,
-    diagnostics: () => ({ version: VERSION, enabled: active(), ...counts, exchanges: exchanges.size, transports: naval.size }) };
+    diagnostics: () => ({ version: VERSION, enabled: active(), ...counts, exchanges: exchanges.size, transports: naval.size,
+      windowTargets: windowHistory.size }) };
 }

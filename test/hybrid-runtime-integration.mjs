@@ -182,6 +182,26 @@ sandbox.window.__OFH_hybridDecisionTiming = () => {
   timingRows++;
 };
 sandbox.hybridCombatPolicy.backend = "compact-tanh-v1";
+const callerIdentity = {
+  generation: sandbox.hybridCombatPolicy.generation,
+  episodeId: sandbox.hybridCombatPolicy.episodeId,
+  step: 3,
+  tick,
+  ingressSequence: 0,
+  actorSmallID: own.smallID(),
+  modelIdentity: "fixture-original-model",
+  decisionSequence: null,
+  decisionReferenceKind: null,
+};
+const geometryCancellations = [];
+sandbox.hybridCombatPolicy.enabled = () => true;
+sandbox.hybridCombatPolicy.decisionIdentity = (behavior) => {
+  assert.equal(behavior, attack);
+  return callerIdentity;
+};
+sandbox.hybridCombatPolicy.recordGeometryCancellation = (identity, suppliedTargets, reason) => {
+  geometryCancellations.push({ identity, suppliedTargets, reason });
+};
 sandbox.hybridCombatPolicy.decide = async () => {
   inferenceCalls++;
   return true;
@@ -196,6 +216,23 @@ assert.equal(
 );
 assert.equal(inferenceCalls, 0);
 assert.equal(timingRows, 1, "actual abstained geometry work still has measured latency");
+assert.deepEqual(
+  geometryCancellations,
+  [{ identity: callerIdentity, suppliedTargets: 1, reason: "cancelled-generation" }],
+  "enabled caller retains the original identity across geometry cancellation",
+);
+sandbox.hybridCombatPolicy.enabled = () => false;
+sandbox.hybridCombatPolicy.decisionIdentity = () => {
+  assert.fail("disabled policy has no decision identity");
+};
+assert.equal(await attack.decideHybridCombat([target]), false);
+assert.equal(
+  geometryCancellations.length,
+  1,
+  "disabled caller creates no policy cancellation observation",
+);
+assert.equal(inferenceCalls, 0);
+assert.equal(timingRows, 2);
 
 let factoryCalls = 0;
 let adaptive = true;

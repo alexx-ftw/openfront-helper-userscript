@@ -460,10 +460,12 @@ function installHybridRuntimeEvidence(window, internals, options) {
       const pending = this.pending;
       const previous = this.generation;
       const episodeId = this.episodeId;
+      const sequence = this.sequence;
       const observation = evidence.observation?.();
       const result = original.apply(this, args);
       if (previous !== this.generation && observation) {
-        if (pending) evidence.record(cancelledHybridOutcome(pending, "reset", observation));
+        if (pending)
+          evidence.record(cancelledHybridOutcome(pending, "reset", observation, sequence));
         evidence.closeEpisode({
           episodeId,
           generation: previous,
@@ -483,10 +485,11 @@ function installHybridRuntimeEvidence(window, internals, options) {
   return evidence;
 }
 
-function cancelledHybridOutcome(pending, reason, observation) {
+function cancelledHybridOutcome(pending, reason, observation, sequence) {
   return {
     ...cancelledHybridFeatures(pending),
     kind: "hybrid-combat-outcome",
+    sequence,
     episodeId: pending.episodeId,
     generation: pending.generation,
     action: pending.target ? "attack" : "wait",
@@ -510,7 +513,19 @@ function cancelledHybridOutcome(pending, reason, observation) {
 
 function cancelledHybridFeatures(pending) {
   const original = pending.modelIdentity ? JSON.parse(pending.modelIdentity) : null;
-  return { featureVersion: original?.schema ?? null, normalizer: original?.normalizer ?? null };
+  return {
+    featureVersion: original?.schema ?? null,
+    normalizer: original?.normalizer ?? null,
+    actorSmallID: pending.actorSmallID ?? null,
+    decisionStep: pending.decisionStep ?? null,
+    decisionSequence: pending.decisionSequence ?? null,
+    acceptedSequence: pending.acceptedSequence ?? null,
+    controlledAction: pending.controlledAction ?? null,
+    learned: pending.learned === true,
+    behaviorPolicy: pending.behaviorPolicy ?? "legendary-unknown",
+    behaviorProbability: pending.behaviorProbability ?? null,
+    logProbability: pending.logProbability ?? null,
+  };
 }
 
 function configureHybridCombat(window, mode, config = {}) {
@@ -2288,7 +2303,12 @@ export class BundledOpponentBot {
     const policy = this.harness.internals.hybridCombatPolicy;
     if (policy?.pending && this.harness.evidence) {
       this.harness.evidence.record(
-        cancelledHybridOutcome(policy.pending, stopReason, this.hybridObservation()),
+        cancelledHybridOutcome(
+          policy.pending,
+          stopReason,
+          this.hybridObservation(),
+          policy.sequence++,
+        ),
       );
       policy.pending = null;
     }

@@ -5,6 +5,15 @@
 
 const HYBRID_COMBAT_SCHEMA = "ofh-combat-ridge-v1";
 const HYBRID_COMBAT_STORAGE = "openfront-helper-hybrid-combat-v1";
+const HYBRID_COMBAT_REASONS = Object.freeze([
+  "gate-features-unavailable", "no-native-eligible-target", "target-features-unavailable",
+  "geometry-unavailable", "geometry-stale", "frontier-invalid", "numerical-failure", "model-not-ready", "shadow-only",
+  "commitment-veto", "send-rejected-unknown", "native-legality-rejected", "should-attack-rejected",
+  "target-authorization-rejected", "pending-duplicate", "cancelled-generation", "stale-geometry-tick",
+  "forced-action", "tribe-target", "non-strategic-target", "ambiguous-commitment",
+  "observation-identity-invalid", "observation-pending", "observation-stale",
+  "controlled-wait", "controlled-attack", "action-accepted", "native-receipt",
+]);
 const HYBRID_COMBAT_FEATURES = {
   gate: ["bias", "ownTroopRatio", "ownLandShare", "incomingTroopRatio"],
   target: ["bias", "ownTroopRatio", "ownLandShare", "incomingTroopRatio",
@@ -74,6 +83,8 @@ class HybridCombatPolicy {
     this.ledger = [];
     this.dropped = 0;
     this.control = this.emptyControl();
+    this.funnel = this.emptyFunnel();
+    this.observations = { calls: 0, captured: 0, omitted: 0, reasons: {}, acceptanceOmissions: {} };
     this.step = 0;
     this.dispatch = null;
     this.pending = null;
@@ -104,7 +115,7 @@ class HybridCombatPolicy {
         (config.learning !== undefined && typeof config.learning !== "boolean")) {
       throw new Error("Invalid hybrid combat configuration");
     }
-    if (config.learning === true && this.compactContract?.reward === "potential-shaped-land-delta-ticks-v2") {
+    if (config.learning === true && this.offlineReward()) {
       throw new Error("Offline reward model cannot learn live land-delta labels");
     }
     if (config.mode !== undefined) this.mode = config.mode;
@@ -129,7 +140,7 @@ class HybridCombatPolicy {
   }
 
   importModel(snapshot) {
-    if (snapshot?.schema === "ofh-combat-compact-tanh-v2") {
+    if (["ofh-combat-compact-tanh-v2", "ofh-combat-compact-tanh-v3"].includes(snapshot?.schema)) {
       if (typeof HybridCombatContract === "undefined") throw new Error("Compact neural helper is not loaded");
       HybridCombatContract.validate(snapshot);
       const candidate = JSON.parse(JSON.stringify(snapshot));
@@ -138,7 +149,7 @@ class HybridCombatPolicy {
       this.models = candidate.models;
       delete candidate.models;
       this.compactContract = Object.freeze(candidate);
-      if (candidate.reward === "potential-shaped-land-delta-ticks-v2") this.learning = false;
+      if (this.offlineReward(candidate.reward)) this.learning = false;
       this.numericalError = null;
       this.pending = null;
       this.proposal = null;
@@ -202,7 +213,7 @@ class HybridCombatPolicy {
     const prediction = this.predict(name, features);
     if (!Number.isFinite(reward) || Math.abs(reward) > 1) throw new Error("Invalid hybrid combat reward");
     if (!this.learning || this.mode === "baseline" || this.numericalError || prediction === null) return;
-    if (this.compactContract?.reward === "potential-shaped-land-delta-ticks-v2") throw new Error("Offline reward model cannot learn live land-delta labels");
+    if (this.offlineReward()) throw new Error("Offline reward model cannot learn live land-delta labels");
     const candidate = this.updateCandidate(name, features, reward, prediction);
     if (!candidate) return;
     this.models[name] = candidate;
@@ -241,7 +252,7 @@ class HybridCombatPolicy {
   learnOutcome(pending, reward) {
     if (!this.learning || this.mode === "baseline" || this.numericalError) return;
     if (!Number.isFinite(reward) || Math.abs(reward) > 1) throw new Error("Invalid hybrid combat reward");
-    if (this.compactContract?.reward === "potential-shaped-land-delta-ticks-v2") throw new Error("Offline reward model cannot learn live land-delta labels");
+    if (this.offlineReward()) throw new Error("Offline reward model cannot learn live land-delta labels");
     const examples = pending.target ? [["act", pending.gate], ["target", pending.features]] : [["wait", pending.gate]];
     const candidates = examples.map(([name, features]) => [name, this.updateCandidate(name, features, reward)]);
     if (this.numericalError || candidates.some(([, candidate]) => !candidate)) return;
@@ -275,7 +286,7 @@ class HybridCombatPolicy {
 
   ready() {
     const coverage = Object.entries(this.models).every(([name, model]) => model.samples >=
-      (this.backend === "ridge-v1" ? model.weights.length : HybridCombatContract.dimensions[name]));
+      (this.backend === "ridge-v1" ? model.weights.length : HybridCombatContract.dimensionsFor(this.compactContract)[name]));
     if (this.backend === "ridge-v1") return coverage;
     return coverage && this.hasLearnedSignal("target") && (this.hasLearnedSignal("wait") || this.hasLearnedSignal("act"));
   }
@@ -294,6 +305,23 @@ class HybridCombatPolicy {
     return { candidateDecisions: 0, controlledWaits: 0, acceptedLearnedAttacks: 0, confirmedLearnedAttacks: 0, fallbacks: 0 };
   }
 
+  offlineReward(reward = this.compactContract?.reward) {
+    return ["potential-shaped-land-delta-ticks-v2", "discounted-terminal-win-return-v1"].includes(reward);
+  }
+
+  emptyFunnel() {
+    return { suppliedTargets: 0, nativeEligibleTargets: 0, featureValidTargets: 0, scoredTargets: 0,
+      dispatchAttempts: 0, acceptedDispatches: 0, confirmedDispatches: 0, callerCancellations: 0, featureFailures: {} };
+  }
+
+  readiness() {
+    return Object.fromEntries(Object.entries(this.models).map(([name, model]) => {
+      const requiredSamples = this.backend === "ridge-v1" ? model.weights.length : HybridCombatContract.dimensionsFor(this.compactContract)[name];
+      return [name, { samples: model.samples, requiredSamples,
+        sampleDeficit: Math.max(0, requiredSamples - model.samples), signalPresent: this.hasLearnedSignal(name) }];
+    }));
+  }
+
   resetEpisode() {
     this.pending = null;
     this.proposal = null;
@@ -304,6 +332,8 @@ class HybridCombatPolicy {
     this.lastOutcome = null;
     this.dispatch = null;
     this.control = this.emptyControl();
+    this.funnel = this.emptyFunnel();
+    this.observations = { calls: 0, captured: 0, omitted: 0, reasons: {}, acceptanceOmissions: {} };
     this.ledger = [];
     this.dropped = 0;
     this.sequence = 0;
@@ -317,11 +347,13 @@ class HybridCombatPolicy {
   }
 
   recordLedger(kind, values) {
+    if (values.reason != null && !HYBRID_COMBAT_REASONS.includes(values.reason)) throw new Error("Invalid hybrid funnel reason");
     const entry = JSON.parse(JSON.stringify({ kind, episodeId: this.episodeId, generation: this.generation,
       sequence: this.sequence++, ...values }));
     if (this.ledger.length === this.ledgerCapacity) { this.ledger.shift(); this.dropped++; }
     this.ledger.push(entry);
     if (typeof roundLogRecord === "function") roundLogRecord("bot_decision", { ...entry, kind: `hybrid-combat-${kind}` });
+    return entry;
   }
 
   exportLedger() {
@@ -346,15 +378,15 @@ class HybridCombatPolicy {
     return this.enabled() && this.mode === "learned" && this.ready() && !this.numericalError;
   }
 
-  fallback() {
+  fallback(reason) {
     if (this.mode === "learned" && this.enabled()) this.control.fallbacks++;
-    if (this.proposal) this.recordDecision(null, true);
+    if (this.proposal) this.recordDecision(null, true, reason);
     return false;
   }
 
-  recordDecision(controlledAction, fallback = false) {
+  recordDecision(controlledAction, fallback = false, reason = null) {
     if (controlledAction !== null) this.control.candidateDecisions++;
-    this.proposal = { ...this.proposal, controlledAction, fallback };
+    this.proposal = { ...this.proposal, controlledAction, fallback, reason };
     this.recordLedger("decision", this.proposal);
   }
 
@@ -382,7 +414,7 @@ class HybridCombatPolicy {
     return features.map((value) => Math.max(0, Math.min(1, value)));
   }
 
-  targetFeatures(behavior, target, gate, capturedGeometry = undefined) {
+  targetFeatures(behavior, target, gate, capturedGeometry = undefined, { onUnavailable = () => {}, evidence = null } = {}) {
     const troops = Number(target.troops());
     const own = Number(behavior.player.troops());
     // Read the existing ledger without reconciling or pruning it in shadow mode.
@@ -396,14 +428,28 @@ class HybridCombatPolicy {
     const features = [...gate, Number(target.numTilesOwned()) / Math.max(1, Number(behavior.game.numLandTiles())),
       troops / Math.max(1, maximum), troops / Math.max(1, troops + own),
       floor / Math.max(1, budget), committed / Math.max(1, own)];
-    if (!features.every(Number.isFinite)) return null;
+    if (!features.every(Number.isFinite)) { onUnavailable("target-features-unavailable"); return null; }
     const bounded = features.map((value) => Math.max(0, Math.min(1, value)));
     if (this.backend === "ridge-v1") return bounded;
-    if (![troops, own, floor, maximum, committed].every(Number.isFinite) || troops < 0 || maximum <= 0 ||
-        !HybridCombatContract.exactID(target.smallID()) || typeof behavior.hybridCombatGeometry !== "function") return null;
-    const geometry = HybridCombatContract.geometry(capturedGeometry === undefined ? behavior.hybridCombatGeometry(target) : capturedGeometry,
-      target.smallID(), behavior.currentAttackDecisionTick());
-    return geometry ? [...bounded, ...geometry.features] : null;
+    return this.compactTargetFeatures(behavior, target, bounded, {
+      values: [troops, own, floor, maximum, committed], capturedGeometry, onUnavailable, evidence });
+  }
+
+  compactTargetFeatures(behavior, target, bounded, { values, capturedGeometry, onUnavailable, evidence }) {
+    const [troops, , , maximum] = values;
+    if (!values.every(Number.isFinite) || troops < 0 || maximum <= 0 ||
+        !HybridCombatContract.exactID(target.smallID())) { onUnavailable("target-features-unavailable"); return null; }
+    if (typeof behavior.hybridCombatGeometry !== "function") { onUnavailable("geometry-unavailable"); return null; }
+    const raw = capturedGeometry === undefined ? behavior.hybridCombatGeometry(target) : capturedGeometry;
+    const tick = behavior.currentAttackDecisionTick();
+    const geometry = HybridCombatContract.geometry(raw, target.smallID(), tick);
+    if (!geometry) { onUnavailable(raw && raw.tick !== tick ? "geometry-stale" : "geometry-unavailable"); return null; }
+    if (evidence) evidence.geometry = geometry.raw;
+    if (this.compactContract.featureProfile !== "frontier-v1") return [...bounded, ...geometry.features];
+    const frontier = HybridCombatContract.frontierFeatures(raw.frontier, {
+      actorSmallID: behavior.player.smallID?.(), targetSmallID: target.smallID(), tick, generation: this.generation });
+    if (!frontier) { onUnavailable("frontier-invalid"); return null; }
+    return [...bounded, ...geometry.features, ...frontier.features];
   }
 
   observe(behavior, terminal = false) {
@@ -413,10 +459,7 @@ class HybridCombatPolicy {
     const receipt = pending.target && this.landAttacks(behavior, pending.target).find((attack) =>
       attack.id != null && !pending.attackIds.includes(String(attack.id)));
     if (receipt && !pending.confirmed) {
-      pending.confirmed = true;
-      pending.receiptID = String(receipt.id);
-      if (pending.learned === true) this.control.confirmedLearnedAttacks++;
-      this.recordLedger("receipt", { targetSmallID: pending.targetSmallID, tick, receiptID: pending.receiptID, learned: pending.learned === true });
+      this.confirmReceipt(pending, receipt, tick);
     }
     if (!terminal && this.observationStillPending(behavior, pending, tick)) return;
     const gate = this.gateFeatures(behavior);
@@ -433,14 +476,31 @@ class HybridCombatPolicy {
     this.pending = null;
   }
 
+  confirmReceipt(pending, receipt, tick) {
+    pending.confirmed = true;
+    pending.receiptID = String(receipt.id);
+    if (pending.learned === true) { this.control.confirmedLearnedAttacks++; this.funnel.confirmedDispatches++; }
+    this.recordLedger("receipt", { targetSmallID: pending.targetSmallID, ...this.actionReferences(pending),
+      tick, receiptID: pending.receiptID,
+      modelIdentity: pending.modelIdentity ?? null, learned: pending.learned === true, reason: "native-receipt" });
+  }
+
   recordOutcome(pending, tick, reward, nextGate = null, terminal = false) {
     this.lastOutcome = { action: pending.target ? "attack" : "wait", target: pending.target?.smallID() ?? null,
       actionTick: pending.tick, outcomeTick: tick, confirmed: pending.target ? pending.confirmed === true : true,
-      targetSmallID: pending.targetSmallID ?? null, episodeId: pending.episodeId ?? this.episodeId,
+      targetSmallID: pending.targetSmallID ?? null, ...this.actionReferences(pending),
+      episodeId: pending.episodeId ?? this.episodeId,
       generation: pending.generation ?? this.generation, receiptID: pending.receiptID ?? null,
       reward, gate: pending.gate, nextGate, ...this.outcomeFeatures(pending), terminal, truncated: false,
       learned: pending.learned === true };
     this.recordLedger("outcome", this.lastOutcome);
+  }
+
+  actionReferences(pending) {
+    return { actorSmallID: pending.actorSmallID ?? null, decisionStep: pending.decisionStep ?? null,
+      acceptedSequence: pending.acceptedSequence ?? null, decisionSequence: pending.decisionSequence ?? null,
+      controlledAction: pending.controlledAction ?? null, behaviorProbability: null, logProbability: null,
+      behaviorPolicy: pending.behaviorPolicy ?? "legendary-unknown" };
   }
 
   outcomeFeatures(pending) {
@@ -475,18 +535,37 @@ class HybridCombatPolicy {
       .reduce((total, entry) => total + entry.troops, 0);
   }
 
-  actionObservation(behavior, target) {
-    if (!this.enabled() || !this.isStrategicTarget(behavior, target)) return null;
+  omitObservation(reason, values = {}) {
+    this.observations.omitted++;
+    this.observations.reasons[reason] = (this.observations.reasons[reason] || 0) + 1;
+    this.recordLedger("observation-omitted", { ...values, reason });
+    return null;
+  }
+
+  actionObservation(behavior, target, { force = false } = {}) {
+    if (!this.enabled()) return null;
+    this.observations.calls++;
+    if (force) return this.omitObservation("forced-action");
+    if (!this.isStrategicTarget(behavior, target)) return this.omitObservation(
+      target?.type?.() === PlayerType.Bot ? "tribe-target" : "non-strategic-target");
     // Existing land/boat commitments make a new intent's receipt ambiguous.
-    if (this.commitmentTroops(behavior, target) > 0) return null;
+    if (this.commitmentTroops(behavior, target) > 0) return this.omitObservation("ambiguous-commitment", { targetSmallID: target.smallID() });
+    return this.captureActionObservation(behavior, target);
+  }
+
+  captureActionObservation(behavior, target) {
     const gate = this.gateFeatures(behavior);
     const geometry = this.captureGeometry(behavior, target);
-    const features = gate && this.targetFeatures(behavior, target, gate, geometry);
+    let featureReason = null;
+    const features = gate && this.targetFeatures(behavior, target, gate, geometry, { onUnavailable: (reason) => { featureReason = reason; } });
     const tick = behavior.currentAttackDecisionTick();
     const targetSmallID = target.smallID();
-    if (!this.validObservationIdentity(targetSmallID, tick)) return null;
-    if (this.backend === "compact-tanh-v1" && !geometry) return null;
+    if (!this.validObservationIdentity(targetSmallID, tick)) return this.omitObservation("observation-identity-invalid");
+    if (this.backend === "compact-tanh-v1" && !geometry) return this.omitObservation("geometry-unavailable", { targetSmallID, tick });
+    if (!features) return this.omitObservation(gate ? featureReason || "target-features-unavailable" : "gate-features-unavailable", { targetSmallID, tick });
+    this.observations.captured++;
     return features ? { gate, features, geometry, share: gate[2], tick, targetSmallID,
+      actorSmallID: behavior.player.smallID?.() ?? null,
       episodeId: this.episodeId, generation: this.generation,
       modelIdentity: this.backend === "compact-tanh-v1" ? JSON.stringify(this.exportModel()) : null,
       ...this.dispatchMetadata(targetSmallID),
@@ -507,8 +586,13 @@ class HybridCombatPolicy {
   }
 
   dispatchMetadata(targetSmallID) {
-    return { learned: this.dispatch?.targetSmallID === targetSmallID && this.dispatch?.generation === this.generation,
-      dispatchID: this.dispatch?.id ?? null };
+    const learned = this.dispatch?.targetSmallID === targetSmallID && this.dispatch?.generation === this.generation;
+    return { learned, dispatchID: learned ? this.dispatch.id : null,
+      decisionStep: learned ? this.dispatch.decisionStep : null,
+      decisionSequence: learned ? this.dispatch.decisionSequence : null,
+      controlledAction: learned ? "attack" : null,
+      behaviorProbability: null, logProbability: null, behaviorPolicy: learned ? "deterministic-ranked-legal" : "legendary-unknown",
+      ...(learned ? { modelIdentity: this.dispatch.modelIdentity } : {}) };
   }
 
   allowsAttack(behavior, target) {
@@ -522,33 +606,75 @@ class HybridCombatPolicy {
   }
 
   recordAction(behavior, target, observation = null) {
-    if (!this.enabled() || this.pending?.target || !this.isStrategicTarget(behavior, target)) return;
+    if (!this.enabled()) return;
+    if (this.pending?.target) {
+      if (observation) this.recordOmittedAcceptance(observation, "observation-pending");
+      return;
+    }
+    if (!this.isStrategicTarget(behavior, target)) return;
     const captured = observation || this.actionObservation(behavior, target);
     if (captured?.generation === this.generation && captured.episodeId === this.episodeId && captured.targetSmallID === target.smallID()) {
       this.pending = { ...JSON.parse(JSON.stringify(captured)), target };
-      this.recordLedger("accepted", { ...captured, targetSmallID: target.smallID() });
+      const entry = this.recordLedger("accepted", { ...captured, targetSmallID: target.smallID(),
+        acceptedSequence: this.sequence, reason: "action-accepted" });
+      this.pending.acceptedSequence = entry.sequence;
+    } else if (captured) {
+      this.recordOmittedAcceptance(captured, "observation-stale");
     }
   }
 
+  recordOmittedAcceptance(observation, reason) {
+    const entry = { episodeId: observation.episodeId, generation: observation.generation,
+      targetSmallID: observation.targetSmallID, tick: observation.tick, reason, phase: "acceptance" };
+    if (observation.generation !== this.generation || observation.episodeId !== this.episodeId) {
+      if (typeof roundLogRecord === "function") roundLogRecord("bot_decision", { ...entry,
+        kind: "hybrid-combat-observation-omitted", cancelled: true });
+      return;
+    }
+    this.observations.acceptanceOmissions[reason] = (this.observations.acceptanceOmissions[reason] || 0) + 1;
+    this.recordLedger("observation-omitted", entry);
+  }
+
   recordAcceptedAction(behavior, target, observation, generation) {
-    if (generation !== this.generation || !this.enabled() || !this.isStrategicTarget(behavior, target)) return;
+    if (generation !== this.generation) {
+      if (observation) this.recordOmittedAcceptance(observation, "observation-stale");
+      return;
+    }
+    if (!this.enabled()) return;
+    if (!this.isStrategicTarget(behavior, target)) { this.recordUnobservedAcceptedAction(generation); return; }
     if (this.dispatch?.generation === generation && this.dispatch.targetSmallID === target.smallID() && !this.dispatch.accepted) {
       this.dispatch.accepted = true;
       this.control.acceptedLearnedAttacks++;
+      this.funnel.acceptedDispatches++;
     }
     // An accepted but ambiguous reinforcement is still an action, never a wait.
     if (this.pending && !this.pending.target) this.pending = null;
     if (observation) this.recordAction(behavior, target, observation);
   }
 
-  async decide(behavior, enemies) {
+  recordUnobservedAcceptedAction(generation) {
+    if (generation === this.generation && this.enabled() && this.pending && !this.pending.target) this.pending = null;
+  }
+
+  decisionIdentity(behavior) {
+    return { episodeId: this.episodeId, generation: this.generation, step: this.step,
+      tick: behavior.currentAttackDecisionTick(), ingressSequence: this.sequence,
+      actorSmallID: behavior.player?.smallID?.() ?? null, modelIdentity: JSON.stringify(this.exportModel()),
+      decisionSequence: null, decisionReferenceKind: null };
+  }
+
+  async decide(behavior, enemies, identity = null) {
     if (!this.enabled()) return false;
-    this.proposal = { episodeId: this.episodeId, generation: this.generation, step: this.step++,
-      tick: behavior.currentAttackDecisionTick(), targetSmallID: null, reserveRatio: null,
+    this.proposal = { ...(identity ?? this.decisionIdentity(behavior)), step: this.step++,
+      targetSmallID: null, reserveRatio: null,
       candidateCount: 0, controlledAction: null, eligible: null, fallback: true };
+    this.proposal.funnel = { suppliedTargets: enemies.length, nativeEligibleTargets: 0, featureValidTargets: 0,
+      scoredTargets: 0, dispatchAttempts: 0, featureFailures: {} };
+    this.funnel.suppliedTargets += enemies.length;
     this.observe(behavior);
     const gate = this.gateFeatures(behavior);
-    if (!gate || this.numericalError) { this.proposal.eligible = false; return this.fallback(); }
+    if (!gate || this.numericalError) { this.proposal.eligible = false; return this.fallback(
+      this.numericalError ? "numerical-failure" : "gate-features-unavailable"); }
     // Target identity is carried by the live player, never by its array slot.
     const candidates = this.legalCandidates(behavior, enemies, gate);
     const own = Number(behavior.player.troops());
@@ -556,28 +682,42 @@ class HybridCombatPolicy {
     this.proposal.reserveRatio = this.reserveRatio(own, reserve);
     this.proposal.candidateCount = candidates.length;
     // Forced waiting with no legal strategic choice is not a patience example.
-    if (candidates.length === 0) { this.proposal.eligible = false; return this.fallback(); }
+    if (candidates.length === 0) { this.proposal.eligible = false; return this.fallback(
+      this.proposal.funnel.nativeEligibleTargets ? "target-features-unavailable" : "no-native-eligible-target"); }
     this.decisions++;
     const { wait, act } = this.scoreMacro(gate);
     const ranked = this.scoreMicro(candidates);
-    if (this.numericalError) { this.proposal.eligible = false; return this.fallback(); }
+    if (this.numericalError) { this.proposal.eligible = false; return this.fallback("numerical-failure"); }
+    this.funnel.scoredTargets += ranked.length;
+    this.proposal.funnel.scoredTargets = ranked.length;
     const utilityMargin = act - wait;
     if (!Number.isFinite(utilityMargin)) {
       this.proposal.eligible = false;
       this.numericalFailure("Nonfinite hybrid utility margin");
-      return this.fallback();
+      return this.fallback("numerical-failure");
     }
-    this.scoredProposal(behavior, ranked, { wait, act, utilityMargin });
+    this.scoredProposal(behavior, ranked, { wait, act, utilityMargin, gate });
     // A pending attack owns its complete observation interval.
     this.pendingWait(behavior, gate);
     return this.controlProposal(behavior, ranked, act <= wait);
   }
 
   legalCandidates(behavior, enemies, gate) {
-    return enemies.filter((target) => target.type?.() !== PlayerType.Bot && target.isAlive() &&
-      !behavior.player.isFriendly(target) && behavior.player.sharesBorderWith(target) && behavior.canAttackPlayerNow(target))
-      .map((target) => ({ target, features: this.targetFeatures(behavior, target, gate) }))
-      .filter((candidate) => candidate.features !== null);
+    const eligible = enemies.filter((target) => target.type?.() !== PlayerType.Bot && target.isAlive() &&
+      !behavior.player.isFriendly(target) && behavior.player.sharesBorderWith(target) && behavior.canAttackPlayerNow(target));
+    this.funnel.nativeEligibleTargets += eligible.length;
+    if (this.proposal) this.proposal.funnel.nativeEligibleTargets = eligible.length;
+    const candidates = eligible.map((target) => {
+      const evidence = { geometry: null };
+      const features = this.targetFeatures(behavior, target, gate, undefined, { evidence, onUnavailable: (reason) => {
+        this.funnel.featureFailures[reason] = (this.funnel.featureFailures[reason] || 0) + 1;
+        if (this.proposal) this.proposal.funnel.featureFailures[reason] = (this.proposal.funnel.featureFailures[reason] || 0) + 1;
+      } });
+      return { target, features, geometry: evidence.geometry };
+    }).filter((candidate) => candidate.features !== null);
+    this.funnel.featureValidTargets += candidates.length;
+    if (this.proposal) this.proposal.funnel.featureValidTargets = candidates.length;
+    return candidates;
   }
 
   reserveRatio(own, reserve) {
@@ -586,26 +726,52 @@ class HybridCombatPolicy {
     return Number.isFinite(ratio) ? ratio : null;
   }
 
-  scoredProposal(behavior, ranked, { wait, act, utilityMargin }) {
+  scoredProposal(behavior, ranked, { wait, act, utilityMargin, gate }) {
     this.proposal = { ...this.proposal, tick: behavior.currentAttackDecisionTick(), ready: this.ready(),
       episodeId: this.episodeId, generation: this.generation,
       action: act > wait && ranked.length ? "attack" : "wait",
       greedyChoice: act > wait ? "attack" : "wait", utilityMargin,
       target: ranked[0]?.target.smallID() ?? null,
-      targetSmallID: act > wait ? ranked[0]?.target.smallID() ?? null : null, wait, act };
+      targetSmallID: act > wait ? ranked[0]?.target.smallID() ?? null : null, wait, act, gate,
+      behaviorProbability: null, logProbability: null,
+      behaviorPolicy: "deterministic-wait-act-ranked-target",
+      candidates: ranked.map(({ target, features, geometry, score }) => ({ targetSmallID: target.smallID(), features, geometry, score,
+        sourceTick: this.proposal.tick, legal: typeof (behavior.player.__src ?? behavior.player).canAttackPlayer === "function" ? true : null,
+        legalitySource: "existing-canAttackPlayerNow-filter" })),
+      candidateCoverage: { complete: true, truncated: false, count: ranked.length, scope: "feature-valid-native-eligible-targets" } };
+    this.proposal.decisionSequence = this.sequence;
+    this.proposal.decisionReferenceKind = "proposal";
     this.recordLedger("proposal", { ...this.proposal, featureVersion: this.compactContract?.schema ?? HYBRID_COMBAT_SCHEMA });
   }
 
   pendingWait(behavior, gate) {
     if (!this.pending) this.pending = { target: null, targetSmallID: null, gate, share: gate[2],
       tick: behavior.currentAttackDecisionTick(), episodeId: this.episodeId, generation: this.generation,
-      modelIdentity: this.backend === "compact-tanh-v1" ? JSON.stringify(this.exportModel()) : null };
+      modelIdentity: this.proposal.modelIdentity,
+      actorSmallID: this.proposal.actorSmallID };
   }
 
   async controlProposal(behavior, ranked, wait) {
     this.proposal.eligible = this.eligible();
-    if (!this.proposal.eligible) return this.fallback();
-    if (wait) { this.control.controlledWaits++; this.recordDecision("wait"); return true; }
+    if (!this.proposal.eligible) {
+      let reason = "model-not-ready";
+      if (this.mode !== "learned") reason = "shadow-only";
+      if (this.numericalError) reason = "numerical-failure";
+      return this.fallback(reason);
+    }
+    if (wait) {
+      this.control.controlledWaits++;
+      if (this.pending && !this.pending.target && this.pending.tick === behavior.currentAttackDecisionTick()) {
+        this.pending.decisionStep = this.proposal.step;
+        this.pending.decisionSequence = this.proposal.decisionSequence;
+        this.pending.controlledAction = "wait";
+        this.pending.learned = true;
+        this.pending.modelIdentity = this.proposal.modelIdentity;
+        this.pending.behaviorPolicy = "deterministic-wait-act-ranked-target";
+      }
+      this.recordDecision("wait", false, "controlled-wait");
+      return true;
+    }
     const generation = this.generation;
     const decision = { ...this.proposal };
     const sent = await this.sendRankedAttack(behavior, ranked);
@@ -613,8 +779,8 @@ class HybridCombatPolicy {
       this.recordCancelledDecision(decision);
       return sent;
     }
-    if (!sent) return this.fallback();
-    this.recordDecision("attack");
+    if (!sent) return this.fallback(this.proposal.sendReason || "send-rejected-unknown");
+    this.recordDecision("attack", false, "controlled-attack");
     return true;
   }
 
@@ -622,8 +788,19 @@ class HybridCombatPolicy {
     // Publish the old historical identity only to the incremental log; a new
     // episode/configuration must not acquire stale rows or control counters.
     if (typeof roundLogRecord === "function") roundLogRecord("bot_decision", {
-      ...decision, kind: "hybrid-combat-decision", controlledAction: null, fallback: true, cancelled: true,
+      ...decision, sequence: null,
+      kind: "hybrid-combat-decision", controlledAction: null, fallback: true, cancelled: true, reason: "cancelled-generation",
     });
+  }
+
+  recordGeometryCancellation(identity, suppliedTargets, reason) {
+    const decision = { ...identity, suppliedTargets, candidateCount: 0, reserveRatio: null,
+      controlledAction: null, eligible: null, fallback: true, cancelled: true, reason };
+    if (identity.generation !== this.generation) { this.recordCancelledDecision(decision); return; }
+    this.funnel.suppliedTargets += suppliedTargets;
+    this.funnel.callerCancellations++;
+    decision.step = this.step++;
+    this.recordLedger("decision", decision);
   }
 
   async sendRankedAttack(behavior, ranked) {
@@ -632,13 +809,20 @@ class HybridCombatPolicy {
       if (generation !== this.generation || this.mode !== "learned") return false;
       // Coordinated war applies to ordinary strategic attacks; forced defense,
       // tribe conquest and free-land expansion retain Legendary's own policy.
-      if (!this.allowsAttack(behavior, candidate.target)) continue;
-      const dispatch = { id: this.sequence++, generation, episodeId: this.episodeId,
-        targetSmallID: candidate.target.smallID(), accepted: false };
+      if (!this.allowsAttack(behavior, candidate.target)) { this.proposal.sendReason = "commitment-veto"; continue; }
+      const dispatch = { id: this.sequence, generation, episodeId: this.episodeId,
+        targetSmallID: candidate.target.smallID(), accepted: false,
+        decisionStep: this.proposal.step, decisionSequence: this.proposal.decisionSequence, modelIdentity: this.proposal.modelIdentity };
       this.dispatch = dispatch;
+      this.funnel.dispatchAttempts++;
+      this.proposal.funnel.dispatchAttempts++;
+      this.recordLedger("dispatch-attempt", { dispatchID: dispatch.id, targetSmallID: dispatch.targetSmallID,
+        decisionStep: dispatch.decisionStep, decisionSequence: dispatch.decisionSequence, tick: behavior.currentAttackDecisionTick(),
+        reason: null });
       let sent;
       try { sent = await behavior.sendAttack(candidate.target); }
       finally { if (this.dispatch === dispatch) this.dispatch = null; }
+      if (generation === this.generation && !sent) this.proposal.sendReason = dispatch.reason || "send-rejected-unknown";
       if (sent) {
         // Some callers expose acceptance solely through their returned boolean.
         // Never turn that boolean into a receipt or training label.
@@ -651,7 +835,7 @@ class HybridCombatPolicy {
 
   publishAcceptedDispatch(dispatch) {
     if (dispatch.generation !== this.generation || dispatch.episodeId !== this.episodeId) return;
-    if (!dispatch.accepted) this.control.acceptedLearnedAttacks++;
+    if (!dispatch.accepted) { dispatch.accepted = true; this.control.acceptedLearnedAttacks++; this.funnel.acceptedDispatches++; }
     this.proposal = { ...this.proposal, target: dispatch.targetSmallID, targetSmallID: dispatch.targetSmallID };
   }
 
@@ -659,6 +843,8 @@ class HybridCombatPolicy {
     return { mode: this.mode, learning: this.learning, backend: this.backend, episodeId: this.episodeId,
       generation: this.generation, ready: this.ready(), eligible: this.eligible(),
       control: { ...this.control }, ledger: { retained: this.ledger.length, dropped: this.dropped, capacity: this.ledgerCapacity }, decisions: this.decisions,
+      funnel: JSON.parse(JSON.stringify(this.funnel)), observations: JSON.parse(JSON.stringify(this.observations)),
+      readiness: this.readiness(), reasons: [...HYBRID_COMBAT_REASONS],
       samples: Object.fromEntries(Object.entries(this.models).map(([name, model]) => [name, model.samples])),
       proposal: this.proposal ? JSON.parse(JSON.stringify(this.proposal)) : null,
       lastOutcome: this.lastOutcome ? JSON.parse(JSON.stringify(this.lastOutcome)) : null,

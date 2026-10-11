@@ -1,0 +1,723 @@
+function targetEvidence(C, profile, tick, gate) {
+  const geometry = {
+    source: "native-border-centroid-v1",
+    targetSmallID: 2,
+    tick,
+    width: 10,
+    height: 10,
+    own: { x: 1, y: 1 },
+    target: { x: 2, y: 2 },
+  };
+  if (profile)
+    geometry.frontier = {
+      source: "native-target-frontier-v1",
+      actorSmallID: 1,
+      targetSmallID: 2,
+      generation: 3,
+      tick,
+      ownBorderCount: 4,
+      sharedFrontierCount: 2,
+      ownMaxTroops: 100,
+      incomingFromTargetTroops: 20,
+    };
+  const features = [
+    ...gate,
+    0.1,
+    0.2,
+    0.5,
+    0.2,
+    0.1,
+    ...C.geometry(geometry, 2, tick).features,
+    ...(profile
+      ? C.frontierFeatures(geometry.frontier, {
+          actorSmallID: 1,
+          targetSmallID: 2,
+          tick,
+          generation: 3,
+        }).features
+      : []),
+  ];
+  return { geometry, features };
+}
+
+import assert from "node:assert/strict";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  canonical,
+  hash,
+  campaignIdentity,
+  terminalReturns,
+  validateTrajectory,
+} from "../scripts/headless/hybrid-trajectory-contract.mjs";
+import { loadNativeContract } from "../scripts/headless/train-hybrid-returns.mjs";
+import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+
+function warmSnapshot(C) {
+  const snapshot = C.create();
+  const gate = [1, 0.5, 0.2, 0.1];
+  const { features } = targetEvidence(C, undefined, 2, gate);
+  for (const role of ["wait", "act", "target"]) {
+    const input = role === "target" ? features : gate;
+    for (let sample = 0; sample < snapshot.models[role].hidden.length; sample++)
+      snapshot.models[role] = C.update(
+        snapshot.models[role],
+        C.normalize(input, role, snapshot),
+        0.2,
+        snapshot.normalizer[role === "target" ? "target" : "gate"],
+      );
+  }
+  C.validate(snapshot);
+  return snapshot;
+}
+
+export async function producerChecks() {
+  const input = fixture({ actions: ["wait", "attack"] });
+  const events = [];
+  const source =
+    readRepositoryFile("engine/ingame/auto-bot/hybridModelContract.js") +
+    "\n" +
+    readRepositoryFile("engine/ingame/auto-bot/hybridCombat.js") +
+    "\n({ C: HybridCombatContract, policy: hybridCombatPolicy });";
+  const { C, policy } = executeClassicScript(source, {
+    window: { localStorage: null },
+    state: { settings: { winFixes: true } },
+    PlayerType: { Bot: "BOT" },
+    roundLogRecord: (_name, entry) =>
+      events.push({
+        ...JSON.parse(JSON.stringify(entry)),
+        runIdentity: input.selection.manifest.runID,
+      }),
+  });
+  policy.importModel(warmSnapshot(C));
+  policy.configure({ mode: "learned", learning: false });
+  assert.equal(
+    policy.ready(),
+    true,
+    "Readiness comes from native SGD, not manually edited sample counts",
+  );
+  const target = { smallID: () => 2, type: () => "NATION", isPlayer: () => true };
+  const behavior = {
+    player: { smallID: () => 1, canAttackPlayer: () => true, sharesBorderWith: () => true },
+    currentAttackDecisionTick: () => tick,
+  };
+  let tick = 2;
+  const gate = [1, 0.5, 0.2, 0.1];
+  for (const [step, action] of ["wait", "attack"].entries()) {
+    const { geometry, features } = targetEvidence(C, undefined, tick, gate);
+    const ranked = [{ target, geometry, features, score: 0 }];
+    policy.proposal = {
+      ...policy.decisionIdentity(behavior),
+      step,
+      funnel: { dispatchAttempts: 0 },
+    };
+    policy.scoredProposal(behavior, ranked, {
+      wait: action === "wait" ? 1 : 0,
+      act: action === "attack" ? 1 : 0,
+      utilityMargin: action === "wait" ? -1 : 1,
+      gate,
+    });
+    policy.pendingWait(behavior, gate);
+    behavior.sendAttack = async (selected) => {
+      const observation = {
+        tick,
+        gate,
+        features,
+        geometry,
+        share: gate[2],
+        actorSmallID: 1,
+        targetSmallID: selected.smallID(),
+        episodeId: policy.episodeId,
+        generation: policy.generation,
+        modelIdentity: JSON.stringify(policy.exportModel()),
+        attackIds: [],
+        ...policy.dispatchMetadata(selected.smallID()),
+      };
+      policy.recordAcceptedAction(behavior, selected, observation, policy.generation);
+      return true;
+    };
+    assert.equal(await policy.controlProposal(behavior, ranked, action === "wait"), true);
+    if (action === "attack")
+      policy.confirmReceipt(policy.pending, { id: "native-callback-receipt" }, tick + 1);
+    policy.recordOutcome(policy.pending, tick + 2, 0.2, gate, false);
+    policy.pending = null;
+    tick = 5;
+  }
+  bindProducerFixture(input, policy, events);
+  const trajectory = validateFixture(input);
+  assert.deepEqual(
+    trajectory.records.map((record) => record.controlledAction),
+    ["wait", "attack"],
+  );
+  assert.equal(
+    trajectory.records[0].learned,
+    true,
+    "Actual controlled WAIT captures learned pending scope",
+  );
+  assert.ok(
+    events.find((event) => event.kind === "hybrid-combat-accepted").sequence <
+      events.find(
+        (event) => event.kind === "hybrid-combat-decision" && event.controlledAction === "attack",
+      ).sequence,
+    "Actual acceptance precedes final controller decision",
+  );
+  assert.ok(trajectory.records.every((record) => record.terminal === false));
+  process.stdout.write(
+    "hybrid trajectory producer callbacks: passed (actual classic source; offline mocked observations)\n",
+  );
+}
+
+function bindProducerFixture(input, policy, events) {
+  const model = policy.exportModel();
+  input.selection.modelIdentity = JSON.stringify(model);
+  Object.assign(input.selection, { episodeId: policy.episodeId, generation: policy.generation });
+  const manifest = input.selection.manifest;
+  Object.assign(manifest, {
+    modelHash: hash(canonical(model)),
+    normalizerHash: hash(canonical(model.normalizer)),
+    featureHash: hash(
+      canonical({ schema: model.schema, features: model.features, actions: model.actions }),
+    ),
+  });
+  input.dataset.records = events.map((event) => ({ manifest, event }));
+  input.dataset.recordCount = events.length;
+  const result = input.nativeRun.result;
+  result.hybridCombat.model = model;
+  result.hybridCombat.diagnostics = policy.diagnostics();
+  Object.assign(result.hybridEvaluation.latestClosure, {
+    episodeId: policy.episodeId,
+    generation: policy.generation,
+  });
+  result.hybridEvaluation.ledger.entries = [...events, result.hybridEvaluation.latestClosure];
+}
+
+function outcomeFields(snapshot, action, { step, tick, gate, features, geometry, confirmed }) {
+  return {
+    action,
+    controlledAction: action,
+    actionTick: tick,
+    outcomeTick: tick + 2,
+    gate,
+    nextGate: gate,
+    features: action === "attack" ? features : null,
+    geometry: action === "attack" ? geometry : null,
+    featureVersion: snapshot.schema,
+    normalizer: snapshot.normalizer,
+    learned: true,
+    confirmed: action === "wait" || confirmed,
+    behaviorProbability: null,
+    logProbability: null,
+    receiptID: action === "attack" && confirmed ? `receipt-${step}` : null,
+    reward: 0.2,
+    terminal: false,
+    truncated: false,
+  };
+}
+
+function policyEvents(C, snapshot, actions, profile, { emit, events, confirmed }) {
+  const gate = [1, 0.5, 0.2, 0.1];
+  for (const [step, action] of actions.entries()) {
+    const tick = [2, 5, 9][step] ?? step + 10;
+    if (action === "declined") {
+      emit("decision", {
+        step,
+        tick,
+        actorSmallID: 1,
+        controlledAction: null,
+        fallback: true,
+        reason: "no-native-eligible-target",
+        decisionSequence: null,
+        decisionReferenceKind: null,
+      });
+      continue;
+    }
+    const { geometry, features } = targetEvidence(C, profile, tick, gate);
+    const proposal = emit("proposal", {
+      step,
+      tick,
+      actorSmallID: 1,
+      action,
+      controlledAction: null,
+      decisionSequence: events.length,
+      decisionReferenceKind: "proposal",
+      targetSmallID: action === "attack" ? 2 : null,
+      gate,
+      candidates: [
+        {
+          targetSmallID: 2,
+          features,
+          geometry,
+          score: 0,
+          legal: true,
+          sourceTick: tick,
+          legalitySource: "existing-canAttackPlayerNow-filter",
+        },
+      ],
+      candidateCoverage: {
+        complete: true,
+        truncated: false,
+        count: 1,
+        scope: "feature-valid-native-eligible-targets",
+      },
+      behaviorProbability: null,
+      logProbability: null,
+      behaviorPolicy: "deterministic-wait-act-ranked-target",
+    });
+    const links = {
+      decisionStep: step,
+      decisionSequence: proposal.sequence,
+      actorSmallID: 1,
+      targetSmallID: action === "attack" ? 2 : null,
+    };
+    let acceptedSequence = null;
+    if (action === "attack") {
+      acceptedSequence = events.length;
+      emit("accepted", {
+        ...links,
+        tick,
+        gate,
+        features,
+        geometry,
+        acceptedSequence,
+        controlledAction: "attack",
+        learned: true,
+        behaviorProbability: null,
+        logProbability: null,
+      });
+    }
+    emit("decision", {
+      ...proposal,
+      kind: "hybrid-combat-decision",
+      sequence: events.length,
+      controlledAction: action,
+    });
+    if (action === "attack" && confirmed)
+      emit("receipt", { ...links, tick: tick + 1, receiptID: `receipt-${step}`, acceptedSequence });
+    emit("outcome", {
+      ...links,
+      acceptedSequence,
+      ...outcomeFields(snapshot, action, { step, tick, gate, features, geometry, confirmed }),
+    });
+  }
+}
+
+export function fixture({
+  win = true,
+  profile,
+  actions = ["wait", "attack", "wait"],
+  confirmed = true,
+} = {}) {
+  const C = loadNativeContract();
+  const snapshot = C.create(profile ? { featureProfile: profile } : {});
+  const modelIdentity = JSON.stringify(snapshot);
+  const manifest = {
+    runID: "native-run-1",
+    seed: "terminal-seed",
+    engineRevision: "a".repeat(40),
+    engineDiffHash: "b".repeat(64),
+    experimentID: "terminal-return-fixture",
+    sourceHash: "1".repeat(64),
+    harnessHash: "2".repeat(64),
+    bundleHash: "3".repeat(64),
+    configurationHash: "4".repeat(64),
+    featureHash: hash(
+      canonical({
+        schema: snapshot.schema,
+        features: snapshot.features,
+        actions: snapshot.actions,
+      }),
+    ),
+    normalizerHash: hash(canonical(snapshot.normalizer)),
+    modelHash: hash(canonical(snapshot)),
+    learning: false,
+    mode: "learned",
+  };
+  manifest.runID = hash(canonical([manifest.experimentID, manifest.seed, manifest.mode]));
+  const selection = { manifest, episodeId: 1, generation: 3, modelIdentity };
+  const events = [];
+  const emit = (kind, values) => {
+    const event = {
+      kind: `hybrid-combat-${kind}`,
+      episodeId: 1,
+      generation: 3,
+      runIdentity: manifest.runID,
+      sequence: events.length,
+      modelIdentity,
+      ...values,
+    };
+    events.push(event);
+    return event;
+  };
+  policyEvents(C, snapshot, actions, profile, { emit, events, confirmed });
+  const dataset = {
+    version: "ofh-hybrid-ledger-v1",
+    eventScope: "policy-events-only",
+    manifests: [manifest],
+    recordCount: events.length,
+    coverage: [
+      {
+        runID: manifest.runID,
+        available: true,
+        fullDataset: true,
+        dropped: 0,
+        frozenVerified: true,
+      },
+    ],
+    records: events.map((event) => ({ manifest, event })),
+  };
+  const nativeRun = {
+    launch: manifest,
+    frozenVerified: true,
+    code: win ? 0 : 2,
+    interrupted: false,
+    provenanceMatches: true,
+    start: {
+      phase: "start",
+      seed: manifest.seed,
+      engineFingerprint: { revision: manifest.engineRevision, diffHash: manifest.engineDiffHash },
+    },
+    result: {
+      phase: "result",
+      seed: manifest.seed,
+      ticks: 12,
+      stopReason: "winner",
+      winner: win ? "our-team" : "opponent",
+      won: win,
+      intentBudgetViolated: false,
+      hybridCombat: {
+        model: snapshot,
+        learning: false,
+        mode: "learned",
+        diagnostics: { learning: false, mode: "learned" },
+      },
+      hybridEvaluation: { ledger: { entries: [...events], fullDataset: true, dropped: 0 } },
+    },
+  };
+  const closure = {
+    kind: "hybrid-episode-close",
+    runIdentity: manifest.runID,
+    episodeId: 1,
+    generation: 3,
+    tick: 12,
+    reason: "winner",
+    terminated: true,
+    truncated: false,
+    envError: false,
+  };
+  nativeRun.result.hybridEvaluation.ledger.entries.push(closure);
+  nativeRun.result.hybridEvaluation.latestClosure = closure;
+  return { dataset, selection, nativeRun, gammaTick: 0.5 };
+}
+
+export function setStopReason(input, stopReason) {
+  const result = input.nativeRun.result;
+  Object.assign(result, { stopReason, winner: null, won: false, alive: false });
+  const terminated = stopReason === "bot_dead";
+  Object.assign(result.hybridEvaluation.latestClosure, {
+    reason: stopReason,
+    terminated,
+    truncated: !terminated && stopReason !== "env_error",
+    envError: stopReason === "env_error",
+  });
+  return input;
+}
+
+export function encodeLedger(dataset) {
+  const metadata = { ...dataset };
+  delete metadata.records;
+  delete metadata.ledgerBytes;
+  return Buffer.from(
+    [JSON.stringify({ metadata }), ...dataset.records.map((row) => JSON.stringify(row))].join(
+      "\n",
+    ) + "\n",
+  );
+}
+
+export function validateFixture(input, options = {}) {
+  return validateTrajectory(
+    { ...input.dataset, ledgerBytes: encodeLedger(input.dataset) },
+    input.selection,
+    input.nativeRun,
+    {
+      gammaTick: input.gammaTick,
+      ...options,
+    },
+  );
+}
+
+function integrityChecks() {
+  const original = fixture();
+  for (const index of [0, 4, original.dataset.records.length - 1]) {
+    const input = structuredClone(original);
+    input.dataset.records.splice(index, 1);
+    input.dataset.recordCount--;
+    input.nativeRun.result.hybridEvaluation.ledger.entries.splice(index, 1);
+    assert.throws(
+      () => validateFixture(input),
+      /sequence|pending outcome/,
+      "Dropped beginning/middle/end cannot fit sequentially",
+    );
+  }
+  const duplicate = structuredClone(original);
+  const row = structuredClone(duplicate.dataset.records[2]);
+  row.event.reward = -0.2;
+  duplicate.dataset.records.push(row);
+  duplicate.dataset.recordCount++;
+  duplicate.nativeRun.result.hybridEvaluation.ledger.entries.splice(-1, 0, row.event);
+  assert.throws(() => validateFixture(duplicate), /duplicate policy sequence/);
+  const orphan = structuredClone(original);
+  const proposal = {
+    ...structuredClone(orphan.dataset.records[0].event),
+    step: 99,
+    sequence: orphan.dataset.records.length,
+    decisionSequence: orphan.dataset.records.length,
+  };
+  orphan.dataset.records.push({ manifest: orphan.selection.manifest, event: proposal });
+  orphan.dataset.recordCount++;
+  orphan.nativeRun.result.hybridEvaluation.ledger.entries.splice(-1, 0, proposal);
+  assert.throws(() => validateFixture(orphan), /Orphan proposal/);
+  const missingReceipt = structuredClone(original);
+  missingReceipt.dataset.records.find(
+    (entry) => entry.event.kind === "hybrid-combat-receipt",
+  ).event.kind = "hybrid-combat-observation-omitted";
+  assert.throws(() => validateFixture(missingReceipt), /Missing native attack receipt/);
+  const unknownLegal = structuredClone(original);
+  unknownLegal.dataset.records[0].event.candidates[0].legal = null;
+  assert.throws(() => validateFixture(unknownLegal), /mask/);
+  const reversedIdentity = structuredClone(original);
+  reversedIdentity.selection.modelIdentity = JSON.stringify(
+    Object.fromEntries(Object.entries(JSON.parse(original.selection.modelIdentity)).reverse()),
+  );
+  assert.throws(
+    () => validateFixture(reversedIdentity),
+    /model identity/,
+    "Semantically equivalent JSON cannot rewrite ORIGINAL model identity",
+  );
+  const bound = { ...original.dataset, ledgerBytes: encodeLedger(original.dataset) };
+  bound.recordCount--;
+  assert.throws(
+    () => validateTrajectory(bound, original.selection, original.nativeRun, { gammaTick: 0.5 }),
+    /bound original full-file bytes/,
+  );
+  mixedRunChecks(original);
+}
+
+function mixedRunChecks(original) {
+  const second = fixture({ win: false });
+  const manifest = second.selection.manifest;
+  manifest.seed = "other-native-seed";
+  manifest.runID = hash(canonical([manifest.experimentID, manifest.seed, manifest.mode]));
+  second.dataset.coverage[0].runID = manifest.runID;
+  for (const row of second.dataset.records) row.event.runIdentity = manifest.runID;
+  const dataset = {
+    ...original.dataset,
+    manifests: [...original.dataset.manifests, manifest],
+    coverage: [...original.dataset.coverage, ...second.dataset.coverage],
+    records: [...original.dataset.records, ...second.dataset.records],
+    recordCount: original.dataset.recordCount + second.dataset.recordCount,
+  };
+  const selected = validateFixture({ ...original, dataset });
+  assert.equal(
+    selected.records.length,
+    3,
+    "Coincident local episode IDs across seeds never combine",
+  );
+  assert.equal(selected.context.terminalWin, true);
+  assert.equal(selected.excluded.length, second.dataset.recordCount);
+}
+
+function coverageChecks() {
+  const gappedInput = fixture({ actions: ["wait", "declined", "wait"] });
+  const gapped = validateFixture(gappedInput);
+  assert.equal(
+    gapped.trainable,
+    true,
+    "Known fallback does not destroy complete trajectory coverage",
+  );
+  assert.deepEqual(
+    gapped.records.map((record) => record.decisionStep),
+    [0, 2],
+  );
+  assert.deepEqual(gapped.context.coverage, {
+    version: "explicit-exclusions-complete-ledger-v1",
+    ledgerHash: hash(encodeLedger(gappedInput.dataset)),
+    decisionCount: 3,
+    excluded: [{ decisionStep: 1, reason: "declined:no-native-eligible-target" }],
+  });
+  const unconfirmed = validateFixture(fixture({ confirmed: false }));
+  assert.equal(unconfirmed.trainable, true);
+  assert.deepEqual(
+    unconfirmed.records.map((record) => record.decisionStep),
+    [0, 2],
+  );
+  assert.deepEqual(unconfirmed.context.coverage.excluded, [
+    { decisionStep: 1, reason: "unconfirmed-attack" },
+  ]);
+  assert.equal(validateFixture(fixture({ actions: ["declined"] })).trainable, false);
+}
+
+export function invalidNativeRuns() {
+  return [
+    { code: 1 },
+    { code: undefined },
+    { code: 2 },
+    { interrupted: true },
+    { interrupted: undefined },
+    { provenanceMatches: false },
+    { provenanceMatches: undefined },
+    { start: undefined },
+    { start: { phase: "start", seed: "terminal-seed" } },
+    { start: { phase: "start", seed: "wrong" } },
+    {
+      start: {
+        phase: "start",
+        seed: "terminal-seed",
+        engineFingerprint: { revision: "wrong", diffHash: "b".repeat(64) },
+      },
+    },
+    {
+      start: {
+        phase: "start",
+        seed: "terminal-seed",
+        engineFingerprint: { revision: "a".repeat(40), diffHash: "wrong" },
+      },
+    },
+    { signal: "SIGTERM" },
+    { timedOut: true },
+    { error: "failed" },
+  ];
+}
+
+export function trajectoryChecks() {
+  for (const mutation of invalidNativeRuns()) {
+    const invalid = fixture();
+    Object.assign(invalid.nativeRun, mutation);
+    assert.throws(() => validateFixture(invalid), /native|fingerprint|provenance|process/i);
+  }
+  const unsafe = fixture({ win: false });
+  unsafe.nativeRun.result.intentBudgetViolated = true;
+  assert.throws(() => validateFixture(unsafe), /budget/i);
+
+  const input = fixture();
+  const trajectory = validateFixture(input);
+  assert.deepEqual(
+    trajectory.returns.map((row) => row.return),
+    [0.5 ** 10, 0.5 ** 7, 0.5 ** 3],
+  );
+  assert.deepEqual(
+    validateFixture(fixture({ win: false })).returns.map((row) => row.return),
+    [-(0.5 ** 10), -(0.5 ** 7), -(0.5 ** 3)],
+  );
+  assert.ok(
+    trajectory.records.every((row) => row.terminal === false),
+    "Tactical flags never forged terminal",
+  );
+  assert.throws(() => validateFixture(input, { requireStochastic: true }), /policy gradients/);
+  coverageChecks();
+  integrityChecks();
+  assert.equal(
+    campaignIdentity({
+      runID: "r",
+      episodeId: 1,
+      actorSmallID: 1,
+      targetSmallID: 2,
+      action: "attack",
+      quantity: 20,
+    }),
+    campaignIdentity({
+      runID: "r",
+      episodeId: 1,
+      actorSmallID: 1,
+      targetSmallID: 2,
+      action: "attack",
+      quantity: 80,
+    }),
+  );
+  assert.notEqual(
+    campaignIdentity({
+      runID: "r",
+      episodeId: 1,
+      actorSmallID: 1,
+      targetSmallID: 2,
+      action: "attack",
+    }),
+    campaignIdentity({
+      runID: "r",
+      episodeId: 1,
+      actorSmallID: 1,
+      targetSmallID: 3,
+      action: "attack",
+    }),
+  );
+  const rejects = (mutate, pattern) => {
+    const copy = structuredClone(input);
+    mutate(copy);
+    assert.throws(() => validateFixture(copy), pattern);
+  };
+  for (const gammaTick of [undefined, NaN, Infinity, -0.1, 1.1])
+    assert.throws(() => validateFixture({ ...input, gammaTick }), /gammaTick/);
+  for (const stopReason of ["max_ticks", "env_error", "engine_stop", "bot_dead"]) {
+    const copy = structuredClone(input);
+    setStopReason(copy, stopReason);
+    const excluded = validateFixture(copy);
+    assert.equal(excluded.trainable, false);
+    assert.deepEqual(excluded.records, []);
+  }
+  rejects((x) => x.dataset.coverage[0].dropped++, /coverage/);
+  rejects((x) => (x.dataset.coverage[0].fullDataset = false), /coverage/);
+  rejects((x) => x.dataset.records.pop(), /full-file/);
+  rejects((x) => x.dataset.records.reverse(), /native result ledger/);
+  rejects((x) => x.dataset.records[0].event.generation++, /generation/);
+  rejects(
+    (x) => (x.dataset.records[0].event.modelIdentity = "{}"),
+    /model identity|native result ledger/,
+  );
+  rejects((x) => (x.dataset.records[0].event.runIdentity = "other"), /run identity/);
+  rejects((x) => (x.nativeRun.result.seed = "other"), /seed/);
+  rejects((x) => x.nativeRun.result.hybridCombat.model.models.wait.samples++, /model differs/);
+  rejects((x) => (x.dataset.records[0].event.behaviorProbability = 1), /probabilities/);
+  rejects((x) => (x.dataset.records[0].event.logProbability = 0), /logp/);
+  rejects((x) => x.dataset.records[0].event.candidates[0].sourceTick--, /mask/);
+  rejects((x) => {
+    x.dataset.records[0].event.candidates.push({ ...x.dataset.records[0].event.candidates[0] });
+    x.dataset.records[0].event.candidateCoverage.count++;
+  }, /mask/);
+  const outcomeIndex = input.dataset.records.findIndex(
+    (row) => row.event.kind === "hybrid-combat-outcome" && row.event.action === "attack",
+  );
+  rejects(
+    (x) => (x.dataset.records[outcomeIndex].event.decisionStep = 99),
+    /pending outcome|Orphan/,
+  );
+  rejects((x) => (x.dataset.records[outcomeIndex].event.decisionSequence = 99), /reference/);
+  rejects(
+    (x) => (x.dataset.records[outcomeIndex].event.controlledAction = "wait"),
+    /control identity/,
+  );
+  rejects((x) => (x.dataset.records[outcomeIndex].event.targetSmallID = 3), /target/);
+  rejects((x) => (x.dataset.records[outcomeIndex].event.truncated = true), /Truncated/);
+  rejects((x) => x.dataset.records[2].event.actionTick++, /pending record/);
+  rejects((x) => (x.dataset.records[2].event.learned = false), /not controlled/);
+  rejects((x) => (x.dataset.records[1].event.controlledAction = null), /reason missing/);
+  rejects(
+    (x) => (x.dataset.records[outcomeIndex - 1].event.receiptID = "other"),
+    /receipt reference/,
+  );
+  assert.throws(
+    () =>
+      terminalReturns([{ actionTick: 2, outcomeTick: 15, truncated: false, envError: false }], {
+        gammaTick: 1,
+        terminalTick: 12,
+        terminalWin: true,
+      }),
+    /timing/,
+  );
+  process.stdout.write(
+    "hybrid trajectory contract: passed (offline fixtures; confirmed producer fields)\n",
+  );
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  trajectoryChecks();
+  await producerChecks();
+}

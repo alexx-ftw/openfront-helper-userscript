@@ -17,6 +17,8 @@ import {
   matchesCohort,
   pairedUncertainty,
   summarizeTelemetry,
+  summarizeDecisionRows,
+  validateTransitions,
   assessCandidatePromotion,
   selectReplayGroup,
   fingerprintSources,
@@ -67,6 +69,7 @@ export function parseArgs(argv) {
         "--out",
         "--timeout-ms",
         "--policy",
+        "--feature-profile",
         "--cohorts",
         "--requirements",
         "--replay",
@@ -94,6 +97,10 @@ export function parseArgs(argv) {
 function validateOptions(options) {
   options.policy ??= "ridge";
   assert.ok(["ridge", "compact-neural"].includes(options.policy), "Unsupported selected policy");
+  if (options["feature-profile"] !== undefined) {
+    assert.equal(options["feature-profile"], "frontier-v1", "Unsupported feature profile");
+    assert.equal(options.policy, "compact-neural", "Feature profile requires compact-neural");
+  }
   assert.ok(!options.frozenReplay || options.collect, "--frozen-replay requires --collect");
   assert.ok(
     !options.replay ||
@@ -113,15 +120,23 @@ function executeTrustedScript(source, sandbox) {
   return vm.runInNewContext(source, sandbox, { timeout: 1000 });
 }
 
-function validateSeedIdentities(seeds, trainingSeeds) {
+export function validateSeedIdentities(seeds, trainingSeeds) {
   const source = fs.readFileSync(
     path.join(projectRoot, "engine/ingame/auto-bot/portutil.js"),
     "utf8",
   );
+  // Observe the actual house constructor's normalized initial state, rather than
+  // duplicating its zero-to-one normalization or comparing hashes alone.
+  const seam = "this._next01 = function () {";
+  assert.equal(source.split(seam).length, 2, "House PRNG state observation seam changed");
+  const observedSource = source.replace(seam, "this.seedIdentity = s;\n" + seam);
   const values = Array.from(
-    executeTrustedScript(source + "\nseeds.map(simpleHash);", {
-      seeds: [...trainingSeeds, ...seeds],
-    }),
+    executeTrustedScript(
+      observedSource + "\nseeds.map(seed => new PseudoRandom(simpleHash(seed)).seedIdentity);",
+      {
+        seeds: [...trainingSeeds, ...seeds],
+      },
+    ),
   );
   const trainingValues = new Set(values.slice(0, trainingSeeds.length));
   const requestedValues = values.slice(trainingSeeds.length);
@@ -401,6 +416,267 @@ function cohortCoverage(cohorts, pairs) {
   };
 }
 
+// shortcut: cap native files at 64 MiB; use a disk-backed export for larger runs.
+const nativeEventLimit = 64 * 1024 * 1024;
+
+function readNativeEvents(file, outDir) {
+  assert.equal(fs.realpathSync(outDir), path.dirname(file), "Native event path escape");
+  const before = fs.lstatSync(file);
+  assert.ok(before.isFile() && !before.isSymbolicLink(), "Native event symlink/type");
+  assert.ok(before.size <= nativeEventLimit, "Native event file exceeds bounded reader");
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+  const rows = [];
+  try {
+    const opened = fs.fstatSync(fd);
+    assert.equal(opened.ino, before.ino, "Native event file drift");
+    assert.equal(opened.dev, before.dev, "Native event file drift");
+    const buffer = Buffer.alloc(64 * 1024);
+    let pending = Buffer.alloc(0);
+    let bytes = 0;
+    let count;
+    while ((count = fs.readSync(fd, buffer, 0, buffer.length, null))) {
+      bytes += count;
+      assert.ok(bytes <= before.size, "Native event file drift");
+      assert.ok(bytes <= nativeEventLimit, "Native event file exceeds bounded reader");
+      pending = Buffer.concat([pending, buffer.subarray(0, count)]);
+      let newline;
+      while ((newline = pending.indexOf(10)) !== -1) {
+        rows.push(JSON.parse(pending.subarray(0, newline).toString("utf8")));
+        pending = pending.subarray(newline + 1);
+      }
+    }
+    assert.equal(pending.length, 0, "Incomplete native event line");
+    assert.equal(bytes, before.size, "Native event file drift");
+    for (const after of [fs.fstatSync(fd), fs.lstatSync(file)])
+      for (const key of ["dev", "ino", "size", "mtimeMs", "ctimeMs"])
+        assert.equal(after[key], before[key], "Native event file drift");
+  } finally {
+    fs.closeSync(fd);
+  }
+  return rows;
+}
+
+function validateNativeIdentities(entries) {
+  const identities = new Set();
+  for (const row of entries.filter((item) =>
+    ["hybrid-combat-decision", "hybrid-combat-outcome"].includes(item.kind),
+  )) {
+    assert.ok(
+      [row.episodeId, row.generation, row.step].every(
+        (value) => Number.isSafeInteger(value) && value >= 0,
+      ),
+      "Invalid native event identity",
+    );
+    const key = canonical([row.kind, row.episodeId, row.generation, row.step]);
+    assert.ok(!identities.has(key), "Duplicate/conflicting native event identity");
+    identities.add(key);
+  }
+}
+
+function validateNativeSafety(safetyRows, evidence) {
+  const safety = {
+    reserveChecks: 0,
+    reserveViolations: 0,
+    legalityChecks: 0,
+    illegalEmissions: 0,
+  };
+  const coverage = { knownAttempts: 0, unknownAttempts: 0, emissionsWithoutChecks: 0 };
+  for (const [field, check, failure] of [
+    ["reservePassed", "reserveChecks", "reserveViolations"],
+    ["legalityPassed", "legalityChecks", "illegalEmissions"],
+  ]) {
+    const checked = safetyRows.filter((row) => typeof row[field] === "boolean");
+    safety[check] = checked.length;
+    safety[failure] = checked.filter(
+      (row) => !row[field] && (field === "reservePassed" || row.emitted),
+    ).length;
+  }
+  const knownSafety = (row) =>
+    typeof row.reservePassed === "boolean" && typeof row.legalityPassed === "boolean";
+  const known = safetyRows.filter(knownSafety);
+  coverage.knownAttempts = known.length;
+  coverage.unknownAttempts = safetyRows.length - known.length;
+  coverage.emissionsWithoutChecks = safetyRows.filter(
+    (row) => row.emitted && !knownSafety(row),
+  ).length;
+  assert.equal(
+    canonical(safety),
+    canonical(evidence.safety),
+    "Native safety counters missing/mismatch",
+  );
+  assert.equal(
+    canonical(coverage),
+    canonical(evidence.coverage),
+    "Native coverage counters missing/mismatch",
+  );
+}
+
+function validateNativeTransitionRows(transitions, outcomes, runID) {
+  assert.equal(transitions.length, outcomes.length, "Native transition count mismatch");
+  validateTransitions(
+    transitions.map((row) => ({ ...row, episodeId: canonical([row.episodeId, row.generation]) })),
+  );
+  for (const [index, row] of transitions.entries()) {
+    const event = outcomes[index];
+    const expected = {
+      runIdentity: runID,
+      episodeId: event.episodeId,
+      generation: event.generation,
+      step: event.step,
+      tick: event.actionTick,
+      nextTick: event.outcomeTick,
+      first: event.step === 0,
+      terminated: event.terminal === true,
+      truncated: event.truncated === true,
+      envError: event.envError === true,
+      reason: event.reason ?? null,
+      potentialID: "observed-own-land-share-v1",
+      potentialSource: "policy-gate-ownLandShare",
+      potential: event.gate?.[2] ?? null,
+      nextPotential: event.nextGate?.[2] ?? null,
+      baseReward: event.reward,
+      confirmed: event.confirmed === true,
+      kind: "hybrid-transition",
+    };
+    assert.equal(canonical(row), canonical(expected), "Native transition content mismatch");
+  }
+}
+
+function validateNativeRetention(
+  evidence,
+  { entries, decisions, latency, safetyRows, transitions },
+) {
+  for (const [key, values, retained] of [
+    ["entries", entries, evidence.entries],
+    ["decisionRows", decisions, evidence.retainedDecisionRows],
+    ["latencyMs", latency, evidence.retainedLatencyMs],
+    ["safetyRows", safetyRows, evidence.safetyRows],
+    ["transitions", transitions.map(({ kind: _kind, ...row }) => row), evidence.transitionRows],
+  ]) {
+    assert.ok(
+      Number.isSafeInteger(evidence.dropped?.[key]) && evidence.dropped[key] >= 0,
+      "Native retention counters missing",
+    );
+    assert.ok(Array.isArray(retained), "Native retained rows missing");
+    assert.equal(
+      values.length,
+      retained.length + evidence.dropped[key],
+      "Native retention count mismatch",
+    );
+    assert.equal(
+      canonical(retained),
+      canonical(values.slice(values.length - retained.length)),
+      "Native retained content mismatch",
+    );
+  }
+  assert.equal(
+    evidence.ledger.dropped,
+    evidence.dropped.entries,
+    "Native ledger retention mismatch",
+  );
+  assert.equal(
+    canonical(evidence.ledger.entries),
+    canonical(evidence.entries),
+    "Native ledger retained content mismatch",
+  );
+}
+
+function validateNativeEvidence(run, file, outDir, runID) {
+  const evidence = run.result.hybridEvaluation;
+  assert.equal(run.result.seed, run.seed, "Native result seed mismatch");
+  assert.ok(
+    terminalResult(run.result) || run.result.stopReason === "max_ticks",
+    "Native run closure is not a completed/censored game",
+  );
+  assert.equal(evidence.eventFile, file, "Native event path mismatch");
+  const incremental = evidence.ledger?.incrementalFile;
+  assert.equal(incremental?.path, file, "Native incremental path mismatch");
+  assert.equal(incremental.fullDataset, true, "Native incremental coverage unknown");
+  const rows = readNativeEvents(file, outDir);
+  assert.ok(
+    rows.every((row) => row.runIdentity === runID),
+    "Native event run identity mismatch",
+  );
+  const entries = rows.filter((row) => row.kind !== "hybrid-transition");
+  assert.equal(entries.length, incremental.policyEvents, "Native policy event count mismatch");
+  const closure = entries.at(-1);
+  assert.equal(closure?.kind, "hybrid-episode-close", "Native final closure missing");
+  assert.equal(canonical(closure), canonical(evidence.latestClosure), "Native closure mismatch");
+  assert.equal(closure.reason, run.result.stopReason, "Native closure reason mismatch");
+  assert.equal(closure.terminated, terminalResult(run.result), "Native closure terminal mismatch");
+  assert.equal(
+    closure.truncated,
+    !closure.terminated && closure.reason !== "env_error",
+    "Native closure truncation mismatch",
+  );
+  assert.equal(closure.envError, closure.reason === "env_error", "Native closure error mismatch");
+  const decisions = entries.filter((row) => row.kind === "hybrid-combat-decision");
+  const latency = entries
+    .filter((row) => row.kind === "hybrid-latency")
+    .map((row) => row.durationMs);
+  assert.ok(
+    latency.every((value) => Number.isFinite(value) && value >= 0),
+    "Invalid native latency",
+  );
+  validateNativeIdentities(entries);
+  summarizeDecisionRows(decisions);
+  const safetyRows = entries.filter((row) => row.kind === "hybrid-safety");
+  validateNativeSafety(safetyRows, evidence);
+  const transitions = rows.filter((row) => row.kind === "hybrid-transition");
+  const outcomes = entries.filter((row) => row.kind === "hybrid-combat-outcome");
+  validateNativeTransitionRows(transitions, outcomes, runID);
+  const lastGroup = transitions.at(-1);
+  const currentTransitions = transitions.filter(
+    (row) => row.episodeId === lastGroup?.episodeId && row.generation === lastGroup?.generation,
+  );
+  validateNativeRetention(evidence, { entries, decisions, latency, safetyRows, transitions });
+  return {
+    decisionRows: decisions,
+    latencyMs: latency,
+    latencyScope: "hybrid-decision-wall-ms",
+    transitions:
+      currentTransitions.length === transitions.length
+        ? currentTransitions.map(({ kind: _kind, ...row }) => row)
+        : undefined,
+    decisionCoverage: { available: true, dropped: 0 },
+    latencyCoverage: { available: true, dropped: 0 },
+    transitionCoverage: {
+      available: currentTransitions.length === transitions.length,
+      dropped: transitions.length - currentTransitions.length,
+    },
+    ledger: { ...evidence.ledger, entries, fullDataset: true, dropped: 0 },
+    replay: { records: outcomes, fullDataset: true, dropped: 0 },
+  };
+}
+
+function invalidateNativeEvidence(evidence) {
+  if (evidence.ledger) {
+    evidence.ledger.fullDataset = false;
+    if (evidence.ledger.incrementalFile) evidence.ledger.incrementalFile.fullDataset = false;
+  }
+  if (evidence.replay) evidence.replay.fullDataset = false;
+  delete evidence.decisionRows;
+  delete evidence.latencyMs;
+  delete evidence.transitions;
+}
+
+function restoreNativeEvidence(run, file, outDir, runID) {
+  const evidence = run.result?.hybridEvaluation;
+  if (!evidence) return;
+  if (runFailed(run) || run.interrupted) {
+    invalidateNativeEvidence(evidence);
+    return;
+  }
+  try {
+    Object.assign(evidence, validateNativeEvidence(run, file, outDir, runID));
+    // Untrusted native files remain reportable failures, never complete evidence.
+    // eslint-disable-next-line no-restricted-syntax
+  } catch (error) {
+    run.nativeEventError = error.message;
+    invalidateNativeEvidence(evidence);
+  }
+}
+
 export function runMatch({
   seed,
   mode,
@@ -412,11 +688,16 @@ export function runMatch({
   environment,
   runID,
   experimentID,
+  spawnProcess = spawn,
 }) {
-  const logPath = path.join(outDir, `${mode}-${hash(seed).slice(0, 16)}.log`);
+  assert.ok(typeof runID === "string" && runID.trim(), "Native launch run identity required");
+  outDir = fs.realpathSync(outDir);
+  const launchName = `${hash(runID).slice(0, 16)}-${randomUUID()}`;
+  const eventPath = path.join(outDir, `${launchName}.events.jsonl`);
+  const logPath = path.join(outDir, `${launchName}.log`);
   const descriptor = fs.openSync(logPath, "wx");
   return new Promise((resolve) => {
-    const child = spawn(
+    const child = spawnProcess(
       path.join(projectRoot, "node_modules/.bin/tsx"),
       [
         "--tsconfig",
@@ -434,6 +715,7 @@ export function runMatch({
           OFH_HYBRID_COMBAT_LEARNING: learning ? "1" : "0",
           OFH_HYBRID_COMBAT_MODEL: modelPath ?? "",
           OFH_HYBRID_RUN_ID: runID,
+          OFH_HYBRID_EVENT_LOG: eventPath,
           OFH_HYBRID_EXPERIMENT_ID: experimentID,
         },
         stdio: ["ignore", descriptor, descriptor],
@@ -460,7 +742,15 @@ export function runMatch({
       process.removeListener("SIGINT", interrupt);
       process.removeListener("SIGTERM", interrupt);
       fs.closeSync(descriptor);
-      resolve({
+      let records;
+      try {
+        records = readRecords(fs.readFileSync(logPath, "utf8"));
+        // Preserve malformed child output as a failed run in the report.
+        // eslint-disable-next-line no-restricted-syntax
+      } catch (failure) {
+        error = failure.message;
+      }
+      const run = {
         seed,
         mode,
         code,
@@ -469,8 +759,11 @@ export function runMatch({
         interrupted,
         error,
         logPath,
-        ...readRecords(fs.readFileSync(logPath, "utf8")),
-      });
+        eventPath,
+        ...records,
+      };
+      restoreNativeEvidence(run, eventPath, outDir, runID);
+      resolve(run);
     });
   });
 }
@@ -561,14 +854,19 @@ function modelProvenance(model, sourceHash) {
   };
 }
 
-function assertPolicy(model, policy) {
-  const schema = policy === "compact-neural" ? "ofh-combat-compact-tanh-v2" : "ofh-combat-ridge-v1";
-  assert.equal(model.schema, schema, "Selected policy/model kind mismatch");
+function assertPolicy(model, policy, featureProfile) {
+  const schemas =
+    policy === "compact-neural"
+      ? ["ofh-combat-compact-tanh-v2", "ofh-combat-compact-tanh-v3"]
+      : ["ofh-combat-ridge-v1"];
+  assert.ok(schemas.includes(model.schema), "Selected policy/model kind mismatch");
+  if (featureProfile !== undefined)
+    assert.equal(model.featureProfile, featureProfile, "Selected model feature profile mismatch");
 }
 
 function initialModel(options, { source, provenance }) {
   const api = nativeApi(source);
-  let model = options.policy === "compact-neural" ? api.createCompactModel() : api.exportModel();
+  let model;
   let trainingSeeds = [];
   let collectionCounts = { success: 0, errors: 0, horizonRuns: 0 };
   if (options.model) {
@@ -578,7 +876,7 @@ function initialModel(options, { source, provenance }) {
       format,
       "Use the native trained-model.json exported by --collect (includes training provenance)",
     );
-    assertPolicy(saved.model, options.policy);
+    assertPolicy(saved.model, options.policy, options["feature-profile"]);
     validateProvenance(
       saved,
       { ...provenance, ...modelProvenance(saved.model, provenance.sourceHash) },
@@ -601,8 +899,19 @@ function initialModel(options, { source, provenance }) {
     trainingSeeds = saved.trainingSeeds;
     validateSeedIdentities(options.seeds, trainingSeeds);
     model = validateModel(saved.model, source, !options.collect);
-  } else validateSeedIdentities(options.seeds, trainingSeeds);
-  assertPolicy(model, options.policy);
+  } else {
+    validateSeedIdentities(options.seeds, trainingSeeds);
+    const compactOptions =
+      options["feature-profile"] === undefined
+        ? undefined
+        : { featureProfile: options["feature-profile"] };
+    model =
+      options.policy === "compact-neural"
+        ? api.createCompactModel(compactOptions)
+        : api.exportModel();
+    model = validateModel(model, source, false);
+  }
+  assertPolicy(model, options.policy, options["feature-profile"]);
   return { model, trainingSeeds, collectionCounts };
 }
 
@@ -677,7 +986,7 @@ async function evaluationRuns(options, environment, runner, context, state) {
   for (const seed of options.seeds) {
     for (const mode of options.collect ? ["shadow"] : modes) {
       const cell = context.cohorts.cells.find((entry) => entry.seeds.includes(seed));
-      const learning = options.collect && !options.frozenReplay;
+      const learning = options.collect === true && !options.frozenReplay;
       const modelFileHash = hash(fs.readFileSync(modelPath));
       assert.equal(
         modelFileHash,
@@ -717,9 +1026,9 @@ async function evaluationRuns(options, environment, runner, context, state) {
         run.collectionAccepted =
           acceptsCollection(run, seed, learning) && matchesCohort(run.start, cell);
       runs.push(run);
-      save(path.join(outDir, `${mode}-${hash(seed).slice(0, 16)}.json`), run);
       checkFrozenInputs(context, environment, modelPath, modelFileHash);
       run.frozenVerified = true;
+      save(path.join(outDir, `${mode}-${hash(seed).slice(0, 16)}.json`), run);
       assert.ok(
         !run.interrupted,
         "Evaluation interrupted; child stopped and raw evidence retained",
@@ -739,7 +1048,7 @@ function collectRunModel(options, run, state, { launch, source, modelPath, outDi
       "Frozen replay model mutated",
     );
   const model = validateModel(run.result.hybridCombat.model, source, false);
-  assertPolicy(model, options.policy);
+  assertPolicy(model, options.policy, options["feature-profile"]);
   Object.assign(state, { model });
   const nextPath = path.join(outDir, `collected-${hash(run.seed).slice(0, 16)}.json`);
   save(nextPath, model);
@@ -803,8 +1112,8 @@ function replayExportSource(evidence) {
   const fullDataset = (ledger ?? replay)?.fullDataset === true;
   if (fullDataset && ledger) {
     return {
-      events: ledger.entries.filter((event) =>
-        ["outcome", "hybrid-combat-outcome"].includes(event.kind),
+      events: ledger.entries.filter(
+        (event) => event.kind === "outcome" || event.kind.startsWith("hybrid-combat-"),
       ),
       fullDataset,
       dropped: ledger.dropped ?? null,
@@ -835,6 +1144,7 @@ function exportLedgerDataset(outDir, runs) {
   }
   const header = {
     version: "ofh-hybrid-ledger-v1",
+    eventScope: "policy-events-only",
     manifests,
     coverage,
     recordCount: records.length,
@@ -881,7 +1191,16 @@ function offlineReplay(options, inputs, cohorts, environment) {
   const dataset = readLedger(options.replay);
   const selectedInput = bindOption(options.selection);
   const selection = selectedInput.value;
-  const group = selectReplayGroup(dataset, selection);
+  selectReplayGroup(dataset, selection);
+  const group = selectReplayGroup(
+    {
+      ...dataset,
+      records: dataset.records.filter((row) =>
+        ["outcome", "hybrid-combat-outcome"].includes(row.event.kind),
+      ),
+    },
+    selection,
+  );
   const coverage = dataset.coverage?.filter((row) => row.runID === group.manifest.runID);
   assert.ok(
     coverage?.length === 1 &&
@@ -891,7 +1210,7 @@ function offlineReplay(options, inputs, cohorts, environment) {
     "Incomplete selected replay coverage",
   );
   const model = validateModel(group.snapshot, inputs.source, false);
-  assertPolicy(model, options.policy);
+  assertPolicy(model, options.policy, options["feature-profile"]);
   validateProvenance(
     group.manifest,
     { ...inputs.provenance, ...modelProvenance(model, inputs.provenance.sourceHash) },
@@ -1038,6 +1357,7 @@ export async function evaluate(options, environment = process.env, runner = runM
           : "Online shadow observation only; exported samples are not evidence of improved combat or completed wins.",
       }
     : scorePairedRuns(runs, options.seeds, hash(canonical(state.model)), options.cohorts);
+  report.runs = runs;
   report.ledgerDataset = exportLedgerDataset(outDir, runs);
   labelRunner(report, runner);
   report.requirementsHash = options.requirementsBinding?.hash ?? null;

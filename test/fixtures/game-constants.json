@@ -1640,6 +1640,16 @@
     "initializerPreview": "\"openfront-helper-hybrid-combat-v1\""
   },
   {
+    "id": "engine/ingame/auto-bot/hybridCombat.js:HYBRID_COMBAT_REASONS#1",
+    "file": "engine/ingame/auto-bot/hybridCombat.js",
+    "name": "HYBRID_COMBAT_REASONS",
+    "declarationKind": "const",
+    "initializerKind": "CallExpression",
+    "initializerHash": "26ea2699c68f848c1b7542c3265c67412c80648087e898f9f55c7fc1169c3cb2",
+    "initializerLength": 685,
+    "initializerPreview": "Object.freeze([\n    \"gate-features-unavailable\", \"no-native-eligible-target\", \"target-features-unavailable\",\n    \"geometry-unavailable\", \"geometry-stale\", \"frontier-invalid\", \"numerical-failure\", \"model-not-ready\", \"shadow-only\",\n    \"co..."
+  },
+  {
     "id": "engine/ingame/auto-bot/hybridCombat.js:HYBRID_COMBAT_FEATURES#1",
     "file": "engine/ingame/auto-bot/hybridCombat.js",
     "name": "HYBRID_COMBAT_FEATURES",

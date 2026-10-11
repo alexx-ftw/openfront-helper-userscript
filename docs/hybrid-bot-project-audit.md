@@ -531,6 +531,24 @@ Las tres recolecciones anteriores de 8.000 ticks agotaron su timeout y quedaron
 excluidas. Además precedían a las correcciones, por lo que no se usarán para promoción.
 No hay una comparación terminada y válida que demuestre mejora del modo aprendido.
 
+## Extensión del aprendizaje y evidencia posterior
+
+La continuación de entrenamiento en mapas completos produjo un checkpoint táctico
+compacto con 9.286 muestras de esperar y 14 de actuar/objetivo. La API nativa lo
+declaró listo. En el holdout congelado hubo 12 resultados terminales, cuatro pares
+completos, y cero victorias tanto para baseline como para shadow y learned. Learned
+registró tres ataques aceptados y dos confirmados. Estos datos no demuestran mejora
+ni justifican activarlo por defecto; la latencia completa quedó sin verificar por
+descarte de filas en el registro retenido de esa serie.
+
+La extensión siguiente añade un perfil versionado de fronteras, observaciones
+nativas de ventanas, un registro completo enlazado y entrenamiento offline con
+retorno terminal. Conserva identidades originales, controles nativos y exclusiones
+explícitas; no introduce probabilidades artificiales ni convierte el regresor en
+PPO. Los contratos y el flujo de uso se describen en
+[hybrid-learning-workflow.md](hybrid-learning-workflow.md). Cada extensión requiere
+sus propias pruebas de integración y holdout antes de una afirmación de fuerza.
+
 ## Estado de integración y publicación
 
 Los cambios y los bundles están en el checkout local; no se publicaron ni se hizo

@@ -10,8 +10,9 @@ bot (see `src/core/execution/NationExecution.ts` and friends in the game repo).
 
 The config panel now exposes three combat policies: **Legendary only**,
 **Observe and learn** (default), and **Learned combat (experimental)**. The hybrid
-is a separately implemented contextual ridge learner, not an imported PPO network
-or AggroBot checkpoint. It separates waiting/acting from stable-ID target ranking.
+supports separately implemented contextual ridge and compact tanh regressors,
+not an imported PPO network or AggroBot checkpoint. It separates waiting/acting
+from stable-ID target ranking.
 The faithful `winFixes=false` path bypasses it entirely.
 
 Observation leaves Legendary in control. Only confirmed ordinary strategic land
@@ -27,7 +28,8 @@ The feature contract uses troop-capacity ratios, own/target land fractions,
 incoming pressure, relative armies, capture budget and existing commitments. It
 has no fixed opponent slots or wait sentinel inside a truncated list. A unit ridge
 prior regularizes bounded features. The sample floor is the feature dimension
-(4 for each gate arm, 9 for target ranking); `ready` means enough observations to
+(4 for each gate arm; 9 ridge, 13 compact-v2 or 17 frontier-v3 target features);
+`ready` means enough observations to
 try inference, not a performance certification. Cold models fall back to Legendary.
 
 Experimental control retains the existing legality, affordability, reserve,
@@ -39,7 +41,10 @@ Construction, ships, diplomacy and nuclear selection retain their current policy
 Models and mode are saved under `openfront-helper-hybrid-combat-v1`. Export/import
 controls show JSON and reject incompatible schemas, nonfinite weights and invalid
 covariance before replacing an existing model. Storage/input failures appear in
-diagnostics/UI. The browser API is `window.__OFH_hybridCombat`, with `configure`,
+diagnostics/UI. Compact v2/v3 snapshots retain the separate
+`openfront-helper-hybrid-combat-v2` storage key. Choosing a model kind prepares a
+draft; explicit import activates it. Offline terminal-return and shaped models
+disable online tactical learning. The browser API is `window.__OFH_hybridCombat`, with `configure`,
 `diagnostics`, `exportModel` and `importModel`. A new match discards unfinished
 observations while retaining learned parameters. Disable learning for a frozen run.
 
@@ -66,6 +71,8 @@ promotion or external model download occurs.
 
 The source audit and extraction decisions are in
 [`docs/hybrid-bot-project-audit.md`](../../../docs/hybrid-bot-project-audit.md).
+The bounded collection, complete-ledger and offline terminal-return workflows are
+documented in [hybrid-learning-workflow.md](../../../docs/hybrid-learning-workflow.md).
 
 ## Early Game policy
 

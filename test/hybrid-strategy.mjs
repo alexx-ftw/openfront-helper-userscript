@@ -31,6 +31,7 @@ function player(sid) {
     outgoingAttacks: () => (sid === 1 ? [attack] : []),
     incomingAttacks: () => [],
     gold: () => 100n,
+    troops: () => 80,
   };
 }
 const leader = player(1),
@@ -45,6 +46,9 @@ const game = {
 const ctx = { game, player: me, sessionId: "fixture", generation: 1 };
 api.configure({ enabled: true });
 api.observeDuo(ctx);
+const firstWindow = api.describeStrikeWindow(ctx, 3);
+assert.equal(firstWindow.status, "observed", "existing friendly commitment diagnostic survives");
+assert.equal(firstWindow.observations.troopDropObserved, null);
 feeds.set(1, [{ message: "✋", senderID: 1, recipientID: 2, createdAt: 10 }]);
 assert.equal(api.observeDuo(ctx).length, 1);
 assert.equal(api.getJointPlan(ctx, 1), null, "request alone is not ACK");
@@ -52,6 +56,7 @@ tick = 11;
 feeds.set(2, [{ message: "⏳", senderID: 2, recipientID: 1, createdAt: 11 }]);
 api.observeDuo(ctx);
 const plan = api.getJointPlan(ctx, 1);
+assert.equal(api.describeStrikeWindow(ctx, 3).observations.troopDropObserved, false);
 assert.equal(plan.attackId, "attack-1");
 assert.equal(plan.targetSid, 3);
 assert.equal(plan.expiresTick, 60);

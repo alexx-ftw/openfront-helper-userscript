@@ -11,16 +11,29 @@
     // HYBRID_MODEL_IMPORT_BOUNDARY_END
   }
 
+  function hybridModelKind(model) {
+    const kinds = { "ofh-combat-ridge-v1": "ridge-v1",
+      "ofh-combat-compact-tanh-v2": "compact-tanh-v1",
+      "ofh-combat-compact-tanh-v3": "compact-frontier-v1" };
+    if (!Object.hasOwn(kinds, model?.schema)) throw new Error("Unknown combat model schema");
+    return kinds[model.schema];
+  }
+
+  function hybridOfflineModel(model) {
+    return ["potential-shaped-land-delta-ticks-v2", "discounted-terminal-win-return-v1"].includes(model?.reward);
+  }
+
   function restoreHybridCombatSelection() {
     const api = window.__OFH_hybridCombat;
     if (!api) return;
     hybridModelInput(() => {
-      if (window.localStorage.getItem("openfront-helper-hybrid-backend") !== "compact-tanh-v1") return;
+      const kind = window.localStorage.getItem("openfront-helper-hybrid-backend");
+      if (!["compact-tanh-v1", "compact-frontier-v1"].includes(kind)) return;
       const saved = JSON.parse(window.localStorage.getItem("openfront-helper-hybrid-combat-v2"));
-      if (!saved?.model || saved.model.schema !== "ofh-combat-compact-tanh-v2") throw new Error("Missing saved compact model");
+      if (hybridModelKind(saved?.model) !== kind) throw new Error("Saved model kind mismatch");
       // Validate config before importing, so invalid storage cannot partly select.
       if (!["baseline", "shadow", "learned"].includes(saved.config?.mode) || typeof saved.config.learning !== "boolean") throw new Error("Invalid saved configuration");
-      if (saved.model.reward === "potential-shaped-land-delta-ticks-v2" && saved.config.learning) throw new Error("Invalid offline learning configuration");
+      if (hybridOfflineModel(saved.model) && saved.config.learning) throw new Error("Invalid offline learning configuration");
       api.importModel(saved.model);
       api.configure(saved.config);
     }, error => { window.__OFH_hybridStorageError = error.message; });
@@ -394,17 +407,18 @@
   function hybridCombatConfigMarkup() {
     const diagnostics = window.__OFH_hybridCombat?.diagnostics();
     if (!diagnostics) return "";
+    const model = window.__OFH_hybridCombat.exportModel();
     const options = [["baseline", "Legendary only"], ["shadow", "Observe and learn"], ["learned", "Learned combat (experimental)"]];
     return `<div class="ab-cfg-sec">${tr("Hybrid combat")}</div>
       <div class="ab-cfg-row"><label class="ab-cfg-label" for="ab-hybrid-mode">${tr("Combat policy")}</label>
       <select id="ab-hybrid-mode" data-hybrid-mode>${options.map(([value, label]) =>
         `<option value="${value}" ${diagnostics.mode === value ? "selected" : ""}>${tr(label)}</option>`).join("")}</select></div>
       <div class="ab-cfg-row"><label class="ab-cfg-label" for="ab-hybrid-learning">${tr("Learn from completed actions")}</label>
-      <input id="ab-hybrid-learning" type="checkbox" data-hybrid-learning ${diagnostics.learning ? "checked" : ""}></div>
+      <input id="ab-hybrid-learning" type="checkbox" data-hybrid-learning ${diagnostics.learning ? "checked" : ""} ${hybridOfflineModel(model) ? "disabled" : ""}></div>
       <details><summary>${tr("Combat model")}</summary>
       <p>${tr("Observation preserves Legendary decisions. Learned combat needs evaluation.")}</p>
       <select data-hybrid-kind aria-label="${tr("Combat model")}">
-        ${["ridge-v1", "compact-tanh-v1"].map(kind => `<option value="${kind}" ${diagnostics.backend === kind ? "selected" : ""}>${kind}</option>`).join("")}
+        ${["ridge-v1", "compact-tanh-v1", "compact-frontier-v1"].map(kind => `<option value="${kind}" ${hybridModelKind(model) === kind ? "selected" : ""}>${kind}</option>`).join("")}
       </select>
       <textarea data-hybrid-model aria-label="${tr("Combat model")}" rows="3" style="width:100%;box-sizing:border-box"></textarea>
       <button type="button" data-hybrid-export>${tr("Export model")}</button>
@@ -652,6 +666,7 @@
       const showHybridStatus = () => {
         const diagnostics = hybrid.diagnostics();
         hybridLearning.checked = diagnostics.learning;
+        hybridLearning.disabled = hybridOfflineModel(hybrid.exportModel());
         hybridMode.value = diagnostics.mode;
         if (hybridStatus) hybridStatus.textContent =
           diagnostics.error || window.__OFH_hybridStorageError ? `${tr("Model rejected")}: ${diagnostics.error || window.__OFH_hybridStorageError}` :
@@ -668,8 +683,9 @@
       hybridKind?.addEventListener("change", () => {
         // Selecting a draft backend never replaces the active model. Import is
         // the explicit activation step, including an intentionally cold draft.
-        const model = hybridKind.value === "compact-tanh-v1" ? hybrid.createCompactModel()
-          : new HybridCombatPolicy({ storage: null }).exportModel();
+        let model;
+        if (hybridKind.value === "ridge-v1") model = new HybridCombatPolicy({ storage: null }).exportModel();
+        else model = hybrid.createCompactModel(hybridKind.value === "compact-frontier-v1" ? { featureProfile: "frontier-v1" } : undefined);
         hybridModel.value = JSON.stringify(model);
       });
       panel.querySelector("[data-hybrid-export]")?.addEventListener("click", () => {
@@ -679,7 +695,7 @@
       panel.querySelector("[data-hybrid-import]")?.addEventListener("click", () => {
         hybridModelInput(() => {
           const model = JSON.parse(hybridModel.value);
-          const kind = model.schema === "ofh-combat-compact-tanh-v2" ? "compact-tanh-v1" : "ridge-v1";
+          const kind = hybridModelKind(model);
           if (hybridKind && kind !== hybridKind.value) throw new Error("Selected model kind mismatch");
           hybrid.importModel(model);
           window.localStorage.setItem("openfront-helper-hybrid-backend", kind);

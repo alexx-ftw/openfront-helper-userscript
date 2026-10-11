@@ -895,6 +895,18 @@ const decision = accepted.exportLedger().entries.at(-1);
 assert.equal(decision.kind, "decision");
 assert.equal(decision.controlledAction, "wait");
 assert.equal(decision.candidateCount, 128);
+assert.equal(
+  decision.candidates.length,
+  128,
+  "the scored native candidate set is recorded without slot truncation",
+);
+assert.equal(decision.candidateCoverage.complete, true);
+assert.equal(decision.candidateCoverage.truncated, false);
+assert.equal(new Set(decision.candidates.map((row) => row.targetSmallID)).size, 128);
+assert.ok(decision.candidates.every((row) => row.features.length === 13 && row.geometry !== null));
+assert.equal(decision.behaviorProbability, null);
+assert.equal(decision.logProbability, null);
+assert.equal(accepted.pending.decisionStep, decision.step);
 assert.equal(decision.reserveRatio, 0.5);
 assert.ok(decision.utilityMargin < 0);
 assert.equal(decision.fallback, false);
@@ -1368,4 +1380,18 @@ assert.throws(
   /disagree/,
 );
 assert.equal(JSON.stringify(offlineBase), untouchedOffline);
+for (const suite of [
+  "hybrid-combat-funnel",
+  "hybrid-combat-frontier",
+  "hybrid-frontier-contract",
+  "hybrid-model-selection",
+  "hybrid-training-workflow",
+  "hybrid-window-observations",
+  "hybrid-cancelled-outcome",
+])
+  await import(`./${suite}.mjs`);
+const trajectory = await import("./hybrid-trajectory-contract.mjs");
+trajectory.trajectoryChecks();
+await trajectory.producerChecks();
+await import("./hybrid-return-training.mjs");
 process.stdout.write("hybrid combat learning tests passed\n");

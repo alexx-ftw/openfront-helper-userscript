@@ -16,6 +16,20 @@ const HybridCombatContract = {};
     initialStep: "1/input-dimension", backtrackFactor: 0.5, minimumStep: Number.EPSILON,
     acceptance: "finite-nonincreasing-squared-error" };
   const features = { gate, target };
+  const frontierSchema = "ofh-combat-compact-tanh-v3";
+  const frontierTarget = [...target, "sharedFrontierRatio", "incomingFromTargetRatio",
+    "frontierPresent", "incomingFromTargetPresent"];
+  function featuresFor(snapshot) {
+    if (snapshot?.schema === schema && snapshot.featureProfile === undefined) return clone(features);
+    if (snapshot?.schema === frontierSchema && snapshot.featureProfile === "frontier-v1") {
+      return { gate: [...gate], target: [...frontierTarget] };
+    }
+    throw new Error("Incompatible compact neural profile");
+  }
+  function dimensionsFor(snapshot) {
+    const names = featuresFor(snapshot);
+    return { wait: names.gate.length, act: names.gate.length, target: names.target.length };
+  }
   const dimensions = { wait: gate.length, act: gate.length, target: target.length };
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const bounded = (values, dimension) => Array.isArray(values) && values.length === dimension &&
@@ -41,16 +55,16 @@ const HybridCombatContract = {};
       hiddenBias: Array(dimension).fill(0), output: Array(dimension).fill(0), outputBias: 0 };
   }
 
-  function normalizer() {
-    return { kind: "raw", version: "fixed-normalizer-v1", frozen: true,
+  function normalizer(names = features, version = "fixed-normalizer-v1") {
+    return { kind: "raw", version, frozen: true,
       gate: { offset: gate.map(() => 0), scale: gate.map(() => 1) },
-      target: { offset: target.map(() => 0), scale: target.map(() => 1) } };
+      target: { offset: names.target.map(() => 0), scale: names.target.map(() => 1) } };
   }
 
-  function validateNormalizer(value) {
+  function validateNormalizer(value, snapshot) {
     if (!value || !["raw", "fixed-affine"].includes(value.kind) ||
-        value.version !== "fixed-normalizer-v1" || value.frozen !== true) throw new Error("Invalid frozen normalizer");
-    for (const [role, names] of Object.entries(features)) {
+        value.version !== (snapshot.schema === frontierSchema ? "fixed-normalizer-frontier-v1" : "fixed-normalizer-v1") || value.frozen !== true) throw new Error("Invalid frozen normalizer");
+    for (const [role, names] of Object.entries(featuresFor(snapshot))) {
       const entry = value[role];
       if (!finiteVector(entry?.offset, names.length) || !finiteVector(entry?.scale, names.length) ||
           entry.scale.some((scale) => scale <= 0) ||
@@ -73,38 +87,80 @@ const HybridCombatContract = {};
     }
   }
 
-  function create({ provenance = { implementation: "ofh", trainer: architecture.version,
-    datasetID: "online-own-receipts", featureVersion: schema }, normalizer: supplied = normalizer() } = {}) {
-    const result = { schema, features, architecture, normalizer: supplied,
+  function create({ featureProfile, provenance, normalizer: supplied } = {}) {
+    if (featureProfile !== undefined && featureProfile !== "frontier-v1") throw new Error("Invalid feature profile");
+    const identity = { schema: featureProfile ? frontierSchema : schema,
+      ...(featureProfile ? { featureProfile } : {}) };
+    const names = featuresFor(identity);
+    const result = { schema: identity.schema, ...(featureProfile ? { featureProfile } : {}),
+      features: names, architecture,
+      normalizer: supplied ?? normalizer(names,
+        featureProfile ? "fixed-normalizer-frontier-v1" : "fixed-normalizer-v1"),
       actions: { macro: ["wait", "act"], micro: "exact-player-id-land-target" },
-      reward: "own-land-share-change-at-commitment-end", provenance,
-      models: Object.fromEntries(Object.entries(dimensions).map(([name, dimension]) => [name, head(dimension)])) };
+      reward: "own-land-share-change-at-commitment-end",
+      provenance: provenance ?? { implementation: "ofh", trainer: architecture.version,
+        datasetID: "online-own-receipts", featureVersion: identity.schema } };
+    result.models = Object.fromEntries(Object.entries(dimensionsFor(result)).map(([name, dimension]) => [name, head(dimension)]));
     validate(result);
     return clone(result);
   }
 
   function validate(snapshot) {
-    if (!snapshot || snapshot.schema !== schema || JSON.stringify(snapshot.features) !== JSON.stringify(features) ||
+    if (!snapshot || JSON.stringify(snapshot.features) !== JSON.stringify(featuresFor(snapshot)) ||
         JSON.stringify(snapshot.architecture) !== JSON.stringify(architecture) ||
         JSON.stringify(snapshot.actions) !== JSON.stringify({ macro: ["wait", "act"], micro: "exact-player-id-land-target" }) ||
-        !["own-land-share-change-at-commitment-end", "potential-shaped-land-delta-ticks-v2"].includes(snapshot.reward)) throw new Error("Incompatible compact neural contract");
+        !["own-land-share-change-at-commitment-end", "potential-shaped-land-delta-ticks-v2", "discounted-terminal-win-return-v1"].includes(snapshot.reward)) throw new Error("Incompatible compact neural contract");
     validateProvenance(snapshot);
-    validateNormalizer(snapshot.normalizer);
+    validateNormalizer(snapshot.normalizer, snapshot);
     if (!snapshot.models || Object.keys(snapshot.models).sort().join(",") !== "act,target,wait") throw new Error("Invalid compact model keys");
-    for (const [name, dimension] of Object.entries(dimensions)) {
+    for (const [name, dimension] of Object.entries(dimensionsFor(snapshot))) {
       validateHead(snapshot.models[name], dimension);
       validateNormalizedHead(snapshot.models[name], snapshot.normalizer[name === "target" ? "target" : "gate"]);
     }
   }
 
+  function validateReturnProvenance(snapshot) {
+    if (snapshot.reward !== "discounted-terminal-win-return-v1") throw new Error("Incompatible terminal reward provenance");
+    validateReturnContext(snapshot, snapshot.offline);
+    if (snapshot.offline.returnTrainer !== "monte-carlo-tanh-sgd-v1" ||
+        snapshot.offline.originModelIdentity !== snapshot.offline.modelIdentity) throw new Error("Invalid return trainer provenance");
+    const origin = JSON.parse(snapshot.offline.originModelIdentity);
+    validate(origin);
+    if (origin.schema !== snapshot.schema || JSON.stringify(origin.normalizer) !== JSON.stringify(snapshot.normalizer) ||
+        JSON.stringify(origin.provenance) !== JSON.stringify(snapshot.provenance)) throw new Error("Incompatible return origin contract");
+    if (snapshot.offline.originalDecisionSteps !== undefined || snapshot.offline.coverage !== undefined) {
+      validateDecisionCoverage(snapshot.offline.originalDecisionSteps, snapshot.offline.coverage);
+      if (snapshot.offline.originalDecisionSteps.length !== snapshot.offline.fittedRecords) throw new Error("Invalid return decision counts");
+    }
+    validateReturnCounts(snapshot, origin);
+  }
+
+  function validateReturnCounts(snapshot, origin) {
+    const counts = snapshot.offline.headUpdates;
+    if (!counts || Object.keys(counts).sort().join(",") !== "act,target,wait" ||
+        !Object.values(counts).every(exactID) || counts.act !== counts.target ||
+        !exactID(snapshot.offline.fittedRecords) || counts.wait + counts.act !== snapshot.offline.fittedRecords ||
+        !["wait", "act", "target"].every((name) => snapshot.models?.[name]?.samples === origin.models[name].samples + counts[name])) {
+      throw new Error("Invalid return update counts");
+    }
+  }
+
   function validateProvenance(snapshot) {
     if (snapshot.offline) {
-      if (snapshot.offline.version !== "offline-fit-ticks-v2") throw new Error("Invalid offline fit provenance");
-      validateReplayContext(snapshot, snapshot.offline);
+      if (snapshot.offline.version === "offline-terminal-return-v1") validateReturnProvenance(snapshot);
+      else {
+        if (snapshot.offline.version !== "offline-fit-ticks-v2") throw new Error("Invalid offline fit provenance");
+        validateReplayContext(snapshot, snapshot.offline);
+      }
     }
     if (snapshot.reward === "potential-shaped-land-delta-ticks-v2" && snapshot.offline?.ablation?.potentialShaping !== true) throw new Error("Missing offline reward provenance");
+    if (snapshot.reward === "discounted-terminal-win-return-v1" && snapshot.offline?.version !== "offline-terminal-return-v1") throw new Error("Missing terminal reward provenance");
+    validateModelOrigin(snapshot);
+  }
+
+  function validateModelOrigin(snapshot) {
     const origin = snapshot.provenance;
-    if (origin?.implementation !== "ofh" || origin.trainer !== architecture.version || origin.featureVersion !== schema ||
+    if (origin?.implementation !== "ofh" || origin.trainer !== architecture.version || origin.featureVersion !== snapshot.schema ||
         typeof origin.datasetID !== "string" || origin.datasetID.trim().length === 0) throw new Error("Invalid model provenance");
   }
 
@@ -119,9 +175,16 @@ const HybridCombatContract = {};
   }
 
   function normalize(values, name, frozen) {
-    const dimension = dimensions[name];
-    if (!bounded(values, dimension)) throw new Error("Invalid bounded neural features");
+    const snapshot = frozen?.models ? frozen : null;
     const role = name === "target" ? "target" : "gate";
+    const dimension = snapshot ? dimensionsFor(snapshot)[name] : frozen?.[role]?.offset?.length;
+    if (snapshot) {
+      validateNormalizer(snapshot.normalizer, snapshot);
+      frozen = snapshot.normalizer;
+    }
+    if (!["wait", "act", "target"].includes(name) ||
+        ![dimensions[name], name === "target" ? frontierTarget.length : gate.length].includes(dimension)) throw new Error("Invalid neural feature dimension");
+    if (!bounded(values, dimension)) throw new Error("Invalid bounded neural features");
     const result = values.map((value, i) => (value - frozen[role].offset[i]) / frozen[role].scale[i]);
     return result.every(Number.isFinite) ? result : null;
   }
@@ -188,6 +251,30 @@ const HybridCombatContract = {};
     return { raw: clone(value), features: [dx, dy, Math.hypot(dx, dy) / Math.SQRT2, 1] };
   }
 
+  function frontierFeatures(raw, expected) {
+    if (!raw || raw.source !== "native-target-frontier-v1" || !expected ||
+        !["actorSmallID", "targetSmallID", "tick", "generation"].every((key) =>
+          exactID(expected[key]) && raw[key] === expected[key]) ||
+        raw.actorSmallID === raw.targetSmallID) return null;
+    const borderKnown = raw.ownBorderCount !== null || raw.sharedFrontierCount !== null;
+    const incomingKnown = raw.ownMaxTroops !== null || raw.incomingFromTargetTroops !== null;
+    if (borderKnown && !validFrontierCounts(raw)) return null;
+    if (incomingKnown && !validIncomingCounts(raw)) return null;
+    return { raw: clone(raw), features: [borderKnown ? raw.sharedFrontierCount / raw.ownBorderCount : 0,
+      incomingKnown ? Math.min(1, raw.incomingFromTargetTroops / raw.ownMaxTroops) : 0,
+      Number(borderKnown), Number(incomingKnown)] };
+  }
+
+  function validFrontierCounts(raw) {
+    return exactID(raw.ownBorderCount) && raw.ownBorderCount > 0 &&
+      exactID(raw.sharedFrontierCount) && raw.sharedFrontierCount <= raw.ownBorderCount;
+  }
+
+  function validIncomingCounts(raw) {
+    return Number.isFinite(raw.ownMaxTroops) && raw.ownMaxTroops > 0 &&
+      Number.isFinite(raw.incomingFromTargetTroops) && raw.incomingFromTargetTroops >= 0;
+  }
+
   function validPoint(point, value) {
     return Boolean(point && Number.isFinite(point.x) && Number.isFinite(point.y) &&
       point.x >= 0 && point.y >= 0 && point.x < value.width && point.y < value.height);
@@ -228,7 +315,8 @@ const HybridCombatContract = {};
   }
 
   function offlineTransition({ raw, nextRaw, reward, gammaTick, actionTick, outcomeTick, potential, nextPotential,
-    terminal = false, truncated = false, advantage, action, targetID = null, ablation }) {
+    terminal = false, truncated = false, advantage, action, targetID = null, ablation, featureVersion = schema }) {
+    if (![schema, frontierSchema].includes(featureVersion)) throw new Error("Invalid transition feature version");
     if (typeof truncated !== "boolean") throw new Error("Invalid truncation flag");
     if (truncated) return null;
     validateAblation(ablation);
@@ -239,7 +327,7 @@ const HybridCombatContract = {};
     const timing = transitionTiming(ablation, { gammaTick, actionTick, outcomeTick });
     const shaped = reward + (ablation.potentialShaping ? timing.discount * absorbingPotential - potential : 0);
     if (!Number.isFinite(shaped)) throw new Error("Nonfinite potential reward");
-    return clone({ version: "offline-combat-transition-ticks-v2", featureVersion: schema, raw, nextRaw,
+    return clone({ version: "offline-combat-transition-ticks-v2", featureVersion, raw, nextRaw,
       reward, shaped, ...timing, potential, nextPotential: absorbingPotential, terminal, advantage,
       action, targetID, ablation, anchor: ablation.patientAnchors && action === "wait" && advantage > 0 });
   }
@@ -256,6 +344,7 @@ const HybridCombatContract = {};
         (ablation.potentialShaping && (typeof potentialID !== "string" || !potentialID.trim()))) {
       throw new Error("Incompatible offline replay context");
     }
+    if (snapshot.schema === frontierSchema && !exactID(context.actorSmallID)) throw new Error("Missing frontier actor context");
     validateTemporalProvenance(context);
   }
 
@@ -268,10 +357,11 @@ const HybridCombatContract = {};
   }
 
   function validateReplayRecord(snapshot, record, context) {
-    if (record?.featureVersion !== schema || record.generation !== context.generation || record.episodeId !== context.episodeId ||
+    if (record?.featureVersion !== snapshot.schema || record.generation !== context.generation || record.episodeId !== context.episodeId ||
         record.engineRevision !== context.engineRevision || record.experimentID !== context.experimentID ||
         JSON.stringify(record.normalizer) !== JSON.stringify(snapshot.normalizer) ||
         record.modelIdentity !== JSON.stringify(snapshot)) throw new Error("Incompatible raw replay record");
+    if (snapshot.schema === frontierSchema && record.actorSmallID !== context.actorSmallID) throw new Error("Incompatible frontier actor context");
     if (typeof record.terminal !== "boolean" || typeof record.truncated !== "boolean") throw new Error("Invalid replay flags");
   }
 
@@ -279,9 +369,9 @@ const HybridCombatContract = {};
     validateReplayRecord(snapshot, record, context);
     if (record.truncated === true || record.reward === null || record.confirmed !== true) return null;
     if (!["wait", "attack"].includes(record.action)) throw new Error("Invalid replay action");
-    if (record.action === "attack") validateAttackEvidence(record);
+    if (record.action === "attack") validateAttackEvidence(record, snapshot);
     const name = record.action === "wait" ? "wait" : "act";
-    const values = normalize(record.gate, name, snapshot.normalizer);
+    const values = normalize(record.gate, name, snapshot);
     const frozen = forward(snapshot.models[name], values);
     if (!frozen) throw new Error("Invalid frozen replay prediction");
     const { ablation } = context;
@@ -289,21 +379,29 @@ const HybridCombatContract = {};
       gammaTick: context.gammaTick, actionTick: record.actionTick, outcomeTick: record.outcomeTick,
       potential: ablation.potentialShaping ? record.potential : 0,
       nextPotential: ablation.potentialShaping ? record.nextPotential : 0, terminal: record.terminal === true,
-      advantage: record.reward - frozen.prediction, action: name === "wait" ? "wait" : "act", targetID: record.targetSmallID, ablation });
+      featureVersion: snapshot.schema, advantage: record.reward - frozen.prediction, action: name === "wait" ? "wait" : "act", targetID: record.targetSmallID, ablation });
     const examples = [[name, values]];
-    if (name === "act") examples.push(["target", normalize(record.features, "target", snapshot.normalizer)]);
+    if (name === "act") examples.push(["target", normalize(record.features, "target", snapshot)]);
     if (examples.some(([, input]) => input === null)) throw new Error("Invalid normalized replay input");
     return { examples, transition };
   }
 
-  function validateAttackEvidence(record) {
+  function validateAttackEvidence(record, snapshot) {
     if (typeof record.receiptID !== "string" || !record.receiptID.trim()) throw new Error("Missing attack receipt evidence");
     const nativeGeometry = geometry(record.geometry, record.targetSmallID, record.actionTick);
     if (!nativeGeometry) throw new Error("Invalid attack target geometry evidence");
-    if (!bounded(record.features, target.length) || !bounded(record.gate, gate.length)) throw new Error("Invalid attack raw features");
+    if (!bounded(record.features, dimensionsFor(snapshot).target) || !bounded(record.gate, gate.length)) throw new Error("Invalid attack raw features");
     if (record.features.slice(0, gate.length).some((value, i) => value !== record.gate[i]) ||
-        record.features.slice(9).some((value, i) => value !== nativeGeometry.features[i])) {
+        record.features.slice(9, 13).some((value, i) => value !== nativeGeometry.features[i])) {
       throw new Error("Attack raw geometry/features disagree");
+    }
+    if (snapshot.schema === frontierSchema) {
+      const frontier = frontierFeatures(record.geometry.frontier, {
+        actorSmallID: record.actorSmallID, targetSmallID: record.targetSmallID,
+        tick: record.actionTick, generation: record.generation });
+      if (!frontier || record.features.slice(13).some((value, i) => value !== frontier.features[i])) {
+        throw new Error("Attack raw frontier/features disagree");
+      }
     }
   }
 
@@ -317,8 +415,13 @@ const HybridCombatContract = {};
     }
   }
 
+  function offlineActorContext(snapshot, context) {
+    return snapshot.schema === frontierSchema ? { actorSmallID: context.actorSmallID } : {};
+  }
+
   function fitOffline(snapshot, records, context = {}) {
     validate(snapshot);
+    if (snapshot.reward === "discounted-terminal-win-return-v1") throw new Error("Terminal return model requires episode fitter");
     validateReplayContext(snapshot, context);
     const { maxRecords = 256, engineRevision, experimentID, generation, episodeId, gammaTick, potentialID, ablation } = context;
     if (!Number.isSafeInteger(maxRecords) || maxRecords < 1 || !Array.isArray(records) ||
@@ -336,6 +439,7 @@ const HybridCombatContract = {};
       if (prepared.transition.anchor) anchors++;
     }
     output.offline = { version: "offline-fit-ticks-v2", engineRevision, experimentID, generation, episodeId,
+      ...offlineActorContext(snapshot, context),
       ablation: clone(ablation), gammaTick: ablation.potentialShaping ? gammaTick : null,
       discountContract: ablation.potentialShaping ? "elapsed-action-outcome-ticks-v1" : null, potentialID: potentialID ?? null };
     if (ablation.potentialShaping) output.reward = "potential-shaped-land-delta-ticks-v2";
@@ -345,7 +449,110 @@ const HybridCombatContract = {};
       retained: selected.length, complete: records.length === selected.length, performanceClaim: false } };
   }
 
-  Object.assign(HybridCombatContract, { schema, features: clone(features), dimensions: clone(dimensions), create,
-    validate, validateHead, normalize, forward, update, geometry, exactID, offlineTransition, fitOffline, freezeMetadata });
+  function validateDecisionCoverage(steps, coverage) {
+    if (!Array.isArray(steps) || steps.length === 0 || !steps.every((step, i) =>
+        exactID(step) && (i === 0 || step > steps[i - 1]))) throw new Error("Invalid original decision steps");
+    if (coverage === undefined) {
+      if (steps.some((step, i) => i > 0 && step !== steps[i - 1] + 1)) throw new Error("Missing excluded decision coverage");
+      return;
+    }
+    validateCoverageHeader(steps, coverage);
+    const seen = new Set(steps);
+    for (const excluded of coverage.excluded) {
+      if (!exactID(excluded?.decisionStep) || typeof excluded.reason !== "string" || !excluded.reason.trim() ||
+          seen.has(excluded.decisionStep)) throw new Error("Invalid declared decision exclusion");
+      seen.add(excluded.decisionStep);
+    }
+    if ([...seen].some((step) => step >= coverage.decisionCount)) throw new Error("Incomplete decision coverage partition");
+  }
+
+  function validateCoverageHeader(steps, coverage) {
+    if (coverage?.version !== "explicit-exclusions-complete-ledger-v1" ||
+        !/^[0-9a-f]{64}$/.test(coverage.ledgerHash || "") || !exactID(coverage.decisionCount) ||
+        !Array.isArray(coverage.excluded) || coverage.decisionCount !== steps.length + coverage.excluded.length) {
+      throw new Error("Invalid complete decision coverage");
+    }
+  }
+
+  function validateReturnContext(snapshot, context) {
+    if (!context || !/^[0-9a-f]{40}$/.test(context.engineRevision || "") ||
+        ![context.configHash, context.resultHash].every((hash) => /^[0-9a-f]{64}$/.test(hash || "")) ||
+        ![context.experimentID, context.runID, context.modelIdentity].every((value) => typeof value === "string" && value.trim()) ||
+        ![context.episodeId, context.generation, context.terminalTick, context.actorSmallID].every(exactID) ||
+        typeof context.terminalWin !== "boolean" || !Number.isFinite(context.gammaTick) ||
+        context.gammaTick < 0 || context.gammaTick > 1 || context.featureProfile !== snapshot.featureProfile ||
+        context.truncated === true || context.error != null) throw new Error("Invalid terminal return context");
+  }
+
+  function validateReturnRecord(snapshot, record, context) {
+    if (!record || !["engineRevision", "experimentID", "runID", "configHash", "episodeId", "generation", "modelIdentity", "actorSmallID"].every((key) => record[key] === context[key]) ||
+        record.featureVersion !== snapshot.schema || JSON.stringify(record.normalizer) !== JSON.stringify(snapshot.normalizer) ||
+        record.learned !== true || record.confirmed !== true || record.truncated !== false || record.error != null ||
+        typeof record.terminal !== "boolean" || !["wait", "attack"].includes(record.action)) throw new Error("Invalid controlled return record");
+  }
+
+  function validateReturnTiming(record, previous, terminalTick) {
+    if (!exactID(record.decisionStep) || (previous && record.decisionStep <= previous.decisionStep) ||
+        ![record.actionTick, record.outcomeTick].every(exactID) || record.outcomeTick < record.actionTick ||
+        record.outcomeTick > terminalTick || (previous && record.actionTick < previous.actionTick)) throw new Error("Invalid controlled return timing");
+  }
+
+  // Monte Carlo evaluation of observed controlled actions; native winner and
+  // ledger-reference verification belong to the trajectory validator upstream.
+  function fitEpisodeReturns(snapshot, records, context = {}) {
+    validate(snapshot);
+    validateReturnContext(snapshot, context);
+    if (context.modelIdentity !== JSON.stringify(snapshot) ||
+        !Array.isArray(records) || records.length === 0) throw new Error("Invalid terminal return origin/records");
+    const originalDecisionSteps = records.map((record) => record?.decisionStep);
+    validateDecisionCoverage(originalDecisionSteps, context.coverage);
+    const seenReceipts = new Set();
+    const prepared = records.map((record, i) => {
+      validateReturnRecord(snapshot, record, context);
+      validateReturnTiming(record, records[i - 1], context.terminalTick);
+      if (record.action === "wait") {
+        if (record.targetSmallID !== null || record.controlledAction !== "wait") throw new Error("Invalid controlled WAIT evidence");
+      } else {
+        if (record.controlledAction !== "attack" || !exactID(record.targetSmallID) ||
+            record.targetSmallID === context.actorSmallID) throw new Error("Invalid controlled ACT evidence");
+        validateAttackEvidence(record, snapshot);
+        if (seenReceipts.has(record.receiptID)) throw new Error("Duplicate native receipt");
+        seenReceipts.add(record.receiptID);
+      }
+      const name = record.action === "wait" ? "wait" : "act";
+      const values = normalize(record.gate, name, snapshot);
+      const examples = [[name, values]];
+      if (name === "act") examples.push(["target", normalize(record.features, "target", snapshot)]);
+      if (examples.some(([, input]) => input === null)) throw new Error("Invalid normalized return input");
+      const timing = temporalDiscount({ gammaTick: context.gammaTick, actionTick: record.actionTick, outcomeTick: context.terminalTick });
+      const label = (context.terminalWin ? 1 : -1) * timing.discount;
+      return { examples, transition: { anchor: false, shaped: label } };
+    });
+    const output = clone(snapshot);
+    for (const example of prepared) fitRecord(output, example);
+    const headUpdates = Object.fromEntries(Object.keys(output.models).map((name) =>
+      [name, output.models[name].samples - snapshot.models[name].samples]));
+    output.reward = "discounted-terminal-win-return-v1";
+    output.offline = { version: "offline-terminal-return-v1", engineRevision: context.engineRevision,
+      experimentID: context.experimentID, runID: context.runID, configHash: context.configHash,
+      episodeId: context.episodeId, generation: context.generation, actorSmallID: context.actorSmallID,
+      modelIdentity: context.modelIdentity, originModelIdentity: context.modelIdentity,
+      featureProfile: snapshot.featureProfile, gammaTick: context.gammaTick,
+      terminalTick: context.terminalTick, terminalWin: context.terminalWin, resultHash: context.resultHash,
+      returnTrainer: "monte-carlo-tanh-sgd-v1", fittedRecords: prepared.length, headUpdates,
+      originalDecisionSteps: clone(originalDecisionSteps),
+      ...(context.coverage === undefined ? {} : { coverage: clone(context.coverage) }) };
+    validate(output);
+    return { model: output, summary: { fitted: prepared.length, updates: prepared.reduce((sum, row) => sum + row.examples.length, 0),
+      censored: 0, complete: true, performanceClaim: false } };
+  }
+
+  function learningAllowed(snapshot) {
+    validate(snapshot);
+    return snapshot.reward !== "discounted-terminal-win-return-v1";
+  }
+
+  Object.assign(HybridCombatContract, { schema, frontierSchema, learningAllowed, features: clone(features), dimensions: clone(dimensions), create,
+    featuresFor, dimensionsFor, frontierFeatures, validate, validateHead, normalize, forward, update, geometry, exactID, offlineTransition, fitOffline, fitEpisodeReturns, freezeMetadata });
   Object.freeze(HybridCombatContract);
 }
