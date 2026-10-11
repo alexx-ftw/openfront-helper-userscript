@@ -26,15 +26,21 @@ function validateHybridCombatModel(model, dimension) {
         !Array.isArray(row) || row.length !== dimension || !row.every(Number.isFinite))) {
     throw new Error("Invalid hybrid combat model");
   }
+  // Features are bounded in [0, 1]; their absolute dot-product bound must be finite.
+  if (!Number.isFinite(model.weights.reduce((sum, weight) => sum + Math.abs(weight), 0))) {
+    throw new Error("Unsafe hybrid combat weights");
+  }
   validateHybridCombatCovariance(model.inverse, dimension);
 }
+
+class HybridCombatCovarianceError extends Error {}
 
 function validateHybridCombatCovariance(inverse, dimension) {
   // Imported covariance must be symmetric positive definite, not merely finite.
   if (inverse.some((row, i) => row.some((value, j) =>
     Math.abs(value - inverse[j][i]) > Number.EPSILON * dimension * Math.max(
       Math.abs(value), Math.abs(inverse[j][i]), Math.sqrt(Math.abs(inverse[i][i])) * Math.sqrt(Math.abs(inverse[j][j])))))) {
-    throw new Error("Asymmetric hybrid combat covariance");
+    throw new HybridCombatCovarianceError("Asymmetric hybrid combat covariance");
   }
   const lower = Array.from({ length: dimension }, () => Array(dimension).fill(0));
   for (let row = 0; row < dimension; row++) {
@@ -47,9 +53,9 @@ function validateHybridCombatCovariance(inverse, dimension) {
 }
 
 function hybridCombatCholeskyEntry(value, diagonal, divisor) {
-  if (!Number.isFinite(value) || (diagonal && value <= 0)) throw new Error("Invalid hybrid combat covariance");
+  if (!Number.isFinite(value) || (diagonal && value <= 0)) throw new HybridCombatCovarianceError("Invalid hybrid combat covariance");
   const result = diagonal ? Math.sqrt(value) : value / divisor;
-  if (!Number.isFinite(result)) throw new Error("Invalid hybrid combat covariance");
+  if (!Number.isFinite(result)) throw new HybridCombatCovarianceError("Invalid hybrid combat covariance");
   return result;
 }
 
@@ -62,6 +68,7 @@ class HybridCombatPolicy {
     this.pending = null;
     this.proposal = null;
     this.error = null;
+    this.numericalError = null;
     this.decisions = 0;
     this.unconfirmed = 0;
     this.generation = 0;
@@ -113,6 +120,7 @@ class HybridCombatPolicy {
       validateHybridCombatModel(snapshot.models?.[name], dimension);
     }
     this.models = JSON.parse(JSON.stringify(snapshot.models));
+    this.numericalError = null;
     this.pending = null;
     this.generation++;
     this.persist();
@@ -137,22 +145,52 @@ class HybridCombatPolicy {
     if (!model || features.length !== model.weights.length || !features.every(Number.isFinite)) {
       throw new Error("Invalid hybrid combat features");
     }
-    return features.reduce((value, feature, index) => value + feature * model.weights[index], 0);
+    const prediction = features.reduce((value, feature, index) => value + feature * model.weights[index], 0);
+    return Number.isFinite(prediction) ? prediction : this.numericalFailure("Nonfinite hybrid combat prediction");
   }
 
   learn(name, features, reward) {
     const prediction = this.predict(name, features);
     if (!Number.isFinite(reward) || Math.abs(reward) > 1) throw new Error("Invalid hybrid combat reward");
-    if (!this.learning || this.mode === "baseline") return;
+    if (!this.learning || this.mode === "baseline" || this.numericalError || prediction === null) return;
     const model = this.models[name];
     const projected = model.inverse.map((row) => row.reduce((value, entry, index) => value + entry * features[index], 0));
     const denominator = 1 + features.reduce((value, feature, index) => value + feature * projected[index], 0);
-    if (!Number.isFinite(denominator) || denominator < 1) return;
+    if (!Number.isFinite(denominator) || denominator < 1) {
+      this.numericalFailure("Invalid hybrid combat denominator");
+      return;
+    }
     const gain = projected.map((value) => value / denominator);
-    model.weights = model.weights.map((weight, index) => weight + gain[index] * (reward - prediction));
-    model.inverse = model.inverse.map((row, i) => row.map((value, j) => value - gain[i] * projected[j]));
-    model.samples++;
+    const weights = model.weights.map((weight, index) => weight + gain[index] * (reward - prediction));
+    const inverse = model.inverse.map((row, i) => row.map((value, j) => value - gain[i] * projected[j]));
+    const samples = model.samples + 1;
+    if (!Number.isFinite(weights.reduce((sum, weight) => sum + Math.abs(weight), 0)) ||
+        !inverse.every((row) => row.every(Number.isFinite)) || !Number.isSafeInteger(samples)) {
+      this.numericalFailure("Nonfinite hybrid combat update");
+      return;
+    }
+    if (!this.acceptsCovariance(inverse)) return;
+    this.models[name] = { samples, weights, inverse };
     this.persist();
+  }
+
+  acceptsCovariance(inverse) {
+    // HYBRID_MODEL_UPDATE_BOUNDARY_START
+    try {
+      validateHybridCombatCovariance(inverse, inverse.length);
+      return true;
+    // eslint-disable-next-line no-restricted-syntax -- expected numerical rejection only; all other errors propagate
+    } catch (error) {
+      if (!(error instanceof HybridCombatCovarianceError)) throw error;
+      this.numericalFailure(error.message);
+      return false;
+    }
+    // HYBRID_MODEL_UPDATE_BOUNDARY_END
+  }
+
+  numericalFailure(message) {
+    this.numericalError = message;
+    return null;
   }
 
   enabled() {
@@ -273,7 +311,7 @@ class HybridCombatPolicy {
   }
 
   allowsAttack(behavior, target) {
-    if (!this.enabled() || this.mode !== "learned" || !this.ready() ||
+    if (!this.enabled() || this.numericalError || this.mode !== "learned" || !this.ready() ||
         target?.isPlayer?.() !== true || target.type?.() === PlayerType.Bot) return true;
     const key = String(behavior.getOutboundAttackTargetKey(target));
     const engaged = this.commitments(behavior).filter((entry) =>
@@ -300,7 +338,7 @@ class HybridCombatPolicy {
     if (!this.enabled()) return false;
     this.observe(behavior);
     const gate = this.gateFeatures(behavior);
-    if (!gate) return false;
+    if (!gate || this.numericalError) return false;
     // Target identity is carried by the live player, never by its array slot.
     const candidates = enemies.filter((target) => target.type?.() !== PlayerType.Bot && target.isAlive() &&
       !behavior.player.isFriendly(target) && behavior.player.sharesBorderWith(target) && behavior.canAttackPlayerNow(target))
@@ -313,6 +351,7 @@ class HybridCombatPolicy {
     const act = this.predict("act", gate);
     const ranked = candidates.map((candidate) => ({ ...candidate, score: this.predict("target", candidate.features) }))
       .sort((a, b) => b.score - a.score || a.target.smallID() - b.target.smallID());
+    if (this.numericalError) return false;
     this.proposal = { tick: behavior.currentAttackDecisionTick(), ready: this.ready(),
       action: act > wait && ranked.length ? "attack" : "wait",
       target: ranked[0]?.target.smallID() ?? null, wait, act };
@@ -339,7 +378,7 @@ class HybridCombatPolicy {
   diagnostics() {
     return { mode: this.mode, learning: this.learning, ready: this.ready(), decisions: this.decisions,
       samples: Object.fromEntries(Object.entries(this.models).map(([name, model]) => [name, model.samples])),
-      proposal: this.proposal, lastOutcome: this.lastOutcome, unconfirmed: this.unconfirmed, error: this.error };
+      proposal: this.proposal, lastOutcome: this.lastOutcome, unconfirmed: this.unconfirmed, error: this.numericalError || this.error };
   }
 }
 

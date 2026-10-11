@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 // Only this repository's classic script is evaluated in an isolated test realm.
 /* eslint-disable sonarjs/code-eval */
@@ -67,6 +69,20 @@ frozen.configure({ mode: "learned", learning: false });
 const before = JSON.stringify(frozen.exportModel());
 frozen.learn("target", x, -1);
 assert.equal(JSON.stringify(frozen.exportModel()), before, "evaluation freezes training");
+const unsafeScores = learner.exportModel();
+unsafeScores.models.wait.weights = Array(4).fill(Number.MAX_VALUE);
+const importGeneration = frozen.generation;
+assert.throws(
+  () => frozen.importModel(unsafeScores),
+  /Unsafe hybrid combat weights/,
+  "finite imported weights must not overflow bounded predictions",
+);
+assert.equal(JSON.stringify(frozen.exportModel()), before, "unsafe import is atomic");
+assert.equal(
+  frozen.generation,
+  importGeneration,
+  "rejected import keeps the observation generation",
+);
 const corrupt = learner.exportModel();
 corrupt.models.target.inverse[0][0] = -1;
 assert.throws(() => frozen.importModel(corrupt), "invalid covariance is rejected");
@@ -142,6 +158,115 @@ const behavior = {
     return true;
   },
 };
+const unstable = new Policy({ storage: null });
+const unstableModel = unstable.exportModel();
+for (const entry of Object.values(unstableModel.models)) entry.samples = entry.weights.length;
+unstableModel.models.wait.weights[0] = 1e308;
+unstableModel.models.wait.inverse[0][0] = 1e-20;
+unstableModel.models.wait.inverse[1][1] = 1e20;
+unstable.importModel(unstableModel);
+const stableSnapshot = JSON.stringify(unstable.exportModel());
+unstable.learn("wait", [1, 1e-10, 0, 0], 0);
+assert.equal(
+  JSON.stringify(unstable.exportModel()),
+  stableSnapshot,
+  "a nonfinite update preserves weights, covariance and sample counts atomically",
+);
+assert.match(unstable.diagnostics().error, /Nonfinite hybrid combat update/);
+unstable.configure({ mode: "learned", learning: false });
+commitments = [{ target: a, targetKey: "2", targetIsPlayer: true }];
+assert.equal(
+  unstable.allowsAttack(behavior, b),
+  true,
+  "numeric fallback releases learned coordination",
+);
+commitments = [];
+const emittedBeforeFault = emitted;
+assert.equal(
+  await unstable.decide(behavior, [a, b]),
+  false,
+  "numeric failure returns control to Legendary",
+);
+assert.equal(emitted, emittedBeforeFault, "numeric fallback emits no learned action");
+assert.match(
+  unstable.diagnostics().error,
+  /Nonfinite/,
+  "persistence cannot hide the numerical fault",
+);
+unstable.importModel(learner.exportModel());
+assert.equal(unstable.diagnostics().error, null, "a valid replacement clears the numerical fault");
+let covarianceWrites = 0;
+const singular = new Policy({
+  storage: {
+    getItem: () => null,
+    setItem() {
+      covarianceWrites++;
+    },
+  },
+});
+const singularModel = singular.exportModel();
+for (const entry of Object.values(singularModel.models)) entry.samples = entry.weights.length;
+singularModel.models.wait.inverse[0][0] = 1e20;
+singular.importModel(singularModel);
+const beforeSingularUpdate = JSON.stringify(singular.exportModel());
+const beforeSingularWrites = covarianceWrites;
+singular.learn("wait", [1, 0, 0, 0], 0.5);
+assert.equal(
+  JSON.stringify(singular.exportModel()),
+  beforeSingularUpdate,
+  "finite cancellation to singular covariance must preserve the entire model",
+);
+assert.equal(
+  covarianceWrites,
+  beforeSingularWrites,
+  "invalid covariance must not reach persistence",
+);
+assert.match(singular.diagnostics().error, /Invalid hybrid combat covariance/);
+singular.configure({ mode: "learned", learning: false });
+assert.equal(
+  await singular.decide(behavior, [a]),
+  false,
+  "singular covariance exposes Legendary fallback",
+);
+const covarianceValidator = vm.runInContext("validateHybridCombatCovariance", sandbox);
+const unexpectedCovariance = new Policy({ storage: null });
+const beforeUnexpectedCovariance = JSON.stringify(unexpectedCovariance.exportModel());
+vm.runInContext(
+  "validateHybridCombatCovariance = () => { throw new Error('unexpected covariance fault'); };",
+  sandbox,
+);
+try {
+  assert.throws(
+    () => unexpectedCovariance.learn("wait", [1, 0, 0, 0], 0.5),
+    /unexpected covariance fault/,
+    "only the expected covariance validation error is caught",
+  );
+  assert.equal(JSON.stringify(unexpectedCovariance.exportModel()), beforeUnexpectedCovariance);
+  assert.equal(unexpectedCovariance.diagnostics().error, null);
+} finally {
+  sandbox.restoreCovarianceValidator = covarianceValidator;
+  vm.runInContext("validateHybridCombatCovariance = restoreCovarianceValidator;", sandbox);
+  delete sandbox.restoreCovarianceValidator;
+}
+const predictionFault = new Policy({ storage: null });
+predictionFault.models.wait.weights = Array(4).fill(Number.MAX_VALUE);
+assert.equal(predictionFault.predict("wait", [1, 0.5, 0.2, 0]), null);
+assert.match(predictionFault.diagnostics().error, /Nonfinite hybrid combat prediction/);
+assert.throws(() => predictionFault.predict("missing", [1]), /Invalid hybrid combat features/);
+const unexpected = new Policy({ storage: null });
+await assert.rejects(
+  unexpected.decide(
+    {
+      ...behavior,
+      canAttackPlayerNow() {
+        throw new Error("unexpected adapter fault");
+      },
+    },
+    [a],
+  ),
+  /unexpected adapter fault/,
+  "fallback must not intercept unrelated runtime errors",
+);
 const shadow = new Policy({ storage: null });
 assert.equal(await shadow.decide(behavior, [a, b]), false);
 assert.equal(emitted, 0, "shadow never emits or suppresses the original pipeline");
@@ -315,4 +440,135 @@ assert.equal(
   "the faithful port disables hybrid decisions",
 );
 sandbox.state.settings.winFixes = faithful;
+// Import the real adapter method without constructing a bundled bot or running a match.
+const root = fileURLToPath(new URL("../", import.meta.url));
+const bridge = spawnSync(
+  process.execPath,
+  [
+    "--import",
+    "tsx",
+    "--input-type=module",
+    "-e",
+    `
+  import assert from 'node:assert/strict';
+  const { BundledOpponentBot } = await import('./scripts/headless/opponent-adapter.js');
+  const method = BundledOpponentBot.prototype.finalizeHybridCombatObservation;
+  assert.equal(typeof method, 'function', 'the harness needs an observation-only terminal bridge');
+  process.stdout.write(method.toString());
+`,
+  ],
+  {
+    cwd: root,
+    encoding: "utf8",
+    timeout: 10000,
+    env: { ...process.env, TSX_TSCONFIG_PATH: `${root}openfront-engine/tsconfig.json` },
+  },
+);
+assert.equal(bridge.status, 0, bridge.stderr);
+const finalize = vm.runInContext(`({ ${bridge.stdout} }).finalizeHybridCombatObservation`, sandbox);
+vm.runInContext(
+  fs.readFileSync(new URL("../engine/ingame/auto-bot/nationExecution.js", import.meta.url), "utf8"),
+  sandbox,
+);
+const nation = vm.runInContext("Object.create(NationBot.prototype)", sandbox);
+const terminalPolicy = vm.runInContext("hybridCombatPolicy", sandbox);
+const emptyModel = new Policy({ storage: null }).exportModel();
+const originalPlayer = behavior.player;
+let alive = true;
+let winner = null;
+behavior.player = { ...originalPlayer, isAlive: () => alive };
+nation.attackBehavior = behavior;
+nation.behaviorsInitialized = true;
+nation.mg = { getWinner: () => winner };
+const terminalBot = {
+  nationBot: nation,
+  game: nation.mg,
+  pageGame: { myPlayer: () => behavior.player },
+  decide() {
+    throw new Error("finalization must not emit actions");
+  },
+};
+for (const testCase of [
+  { reason: "winner", winner: "our-team", alive: true, confirmed: true, learning: true },
+  { reason: "bot_dead", winner: null, alive: false, confirmed: true, learning: true },
+  { reason: "winner", winner: "our-team", alive: true, confirmed: false, learning: true },
+  { reason: "winner", winner: "our-team", alive: true, confirmed: true, learning: false },
+  { reason: "max_ticks", winner: null, alive: true, confirmed: true, learning: true },
+]) {
+  terminalPolicy.importModel(emptyModel);
+  terminalPolicy.configure({ mode: "shadow", learning: testCase.learning });
+  terminalPolicy.beginSession();
+  commitments = [];
+  alive = true;
+  tiles = 20;
+  tick++;
+  terminalPolicy.recordAction(behavior, a);
+  if (testCase.confirmed) {
+    commitments = [{ target: a, targetKey: "2", targetIsPlayer: true }];
+    tick++;
+    terminalPolicy.observe(behavior);
+  }
+  winner = testCase.winner;
+  alive = testCase.alive;
+  tiles = alive ? 30 : 0;
+  tick++;
+  const modelBeforeFinal = JSON.stringify(terminalPolicy.exportModel());
+  const emittedBeforeFinal = emitted;
+  finalize.call(terminalBot, testCase.reason);
+  const terminal = testCase.reason !== "max_ticks";
+  assert.equal(
+    terminalPolicy.diagnostics().samples.act,
+    Number(terminal && testCase.confirmed && testCase.learning),
+  );
+  assert.equal(
+    terminalPolicy.diagnostics().samples.target,
+    Number(terminal && testCase.confirmed && testCase.learning),
+  );
+  assert.equal(terminalPolicy.diagnostics().unconfirmed, Number(terminal && !testCase.confirmed));
+  assert.equal(Boolean(terminalPolicy.pending), !terminal, "horizons leave open attacks censored");
+  assert.equal(emitted, emittedBeforeFinal);
+  if (!testCase.learning || !terminal) {
+    assert.equal(JSON.stringify(terminalPolicy.exportModel()), modelBeforeFinal);
+  }
+  const afterFinal = JSON.stringify(terminalPolicy.exportModel());
+  finalize.call(terminalBot, testCase.reason);
+  assert.equal(
+    JSON.stringify(terminalPolicy.exportModel()),
+    afterFinal,
+    "terminal outcome is consumed once",
+  );
+}
+terminalPolicy.importModel(emptyModel);
+terminalPolicy.configure({ mode: "shadow", learning: true });
+terminalPolicy.beginSession();
+commitments = [];
+alive = true;
+winner = null;
+tiles = 20;
+tick++;
+assert.equal(await terminalPolicy.decide(behavior, [a]), false);
+const emittedBeforeWaitFinal = emitted;
+winner = "our-team";
+tiles = 30;
+tick++;
+finalize.call(terminalBot, "winner");
+assert.equal(
+  terminalPolicy.diagnostics().samples.wait,
+  1,
+  "terminal waits reuse the existing reward",
+);
+assert.equal(terminalPolicy.diagnostics().samples.act, 0);
+assert.equal(terminalPolicy.pending, null);
+assert.equal(emitted, emittedBeforeWaitFinal);
+behavior.player = originalPlayer;
+commitments = [];
+const runnerSource = fs.readFileSync(
+  new URL("../scripts/headless/run-match.mts", import.meta.url),
+  "utf8",
+);
+const finalizationIndex = runnerSource.indexOf("bot.finalizeHybridCombatObservation(stopReason);");
+assert.ok(
+  finalizationIndex >= 0 && finalizationIndex < runnerSource.indexOf("const finalResult ="),
+  "terminal finalization must run before the harness result snapshot",
+);
 process.stdout.write("hybrid combat learning tests passed\n");

@@ -1065,15 +1065,24 @@ function productionJavaScriptFiles(directory) {
   return files;
 }
 
-function stripHybridModelBoundaries(source) {
-  const startPattern = /\/\/ HYBRID_MODEL_(LOAD|SAVE|IMPORT)_BOUNDARY_START/g;
+function stripHybridModelBoundaries(source, allowUpdate = false) {
+  const startPattern = /\/\/ HYBRID_MODEL_(LOAD|SAVE|IMPORT|UPDATE)_BOUNDARY_START/g;
   let result = "";
   let cursor = 0;
   for (const match of source.matchAll(startPattern)) {
-    if (match.index < cursor) continue;
+    if (match.index < cursor || (match[1] === "UPDATE" && !allowUpdate)) continue;
     const endMarker = `// HYBRID_MODEL_${match[1]}_BOUNDARY_END`;
     const end = source.indexOf(endMarker, match.index + match[0].length);
     if (end === -1) continue;
+    if (match[1] === "UPDATE") {
+      const boundary = source.slice(match.index, end);
+      assert.equal(catchTokens(boundary).length, 1, "only the typed covariance handler is allowed");
+      assert.match(
+        boundary,
+        /catch\s*\(error\)\s*\{\s*if\s*\(!\(error instanceof HybridCombatCovarianceError\)\)\s*throw error;\s*this\.numericalFailure\(error\.message\);\s*return false;\s*\}/,
+        "numerical validation must rethrow unexpected errors before visible fallback",
+      );
+    }
     result += source.slice(cursor, match.index);
     cursor = end + endMarker.length;
   }
@@ -1091,14 +1100,17 @@ for (const sourcePath of productionSources) {
     sourcePath === path.join(root, "scripts/headless/opponent-adapter.js")
       ? source.slice(0, classifierStart) + source.slice(classifierEnd)
       : source;
-  // Only model storage and explicit user-import boundaries may handle errors:
-  // hybrid-combat.mjs verifies corrupt data cannot replace a working policy.
+  // Only model storage, explicit user import, and typed numerical validation handle errors.
+  // hybrid-combat.mjs verifies atomic rejection and propagation of unexpected update errors.
   if (
     ["engine/ingame/auto-bot/hybridCombat.js", "engine/ingame/auto-bot/panel.js"].includes(
       path.relative(root, sourcePath),
     )
   ) {
-    checkedSource = stripHybridModelBoundaries(checkedSource);
+    checkedSource = stripHybridModelBoundaries(
+      checkedSource,
+      sourcePath === path.join(root, "engine/ingame/auto-bot/hybridCombat.js"),
+    );
   }
   assert.equal(
     catchTokens(checkedSource).length,

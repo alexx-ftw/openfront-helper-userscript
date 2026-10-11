@@ -2040,6 +2040,7 @@ const finalMe = runner.game.playerByClientID(clientID);
 const won =
   winner !== null &&
   (winner === finalMe?.team() || (typeof winner !== "string" && winner.clientID() === clientID));
+bot.finalizeHybridCombatObservation(stopReason);
 const finalBotState =
   finalMe === null || finalMe === undefined
     ? null

@@ -56,11 +56,43 @@ export function parseArgs(argv) {
   return options;
 }
 
+function executeTrustedScript(source, sandbox) {
+  // Trusted repository classic scripts only; seed names and model JSON remain data.
+  // eslint-disable-next-line sonarjs/code-eval
+  return vm.runInNewContext(source, sandbox, { timeout: 1000 });
+}
+
+function validateSeedIdentities(seeds, trainingSeeds) {
+  const source = fs.readFileSync(
+    path.join(projectRoot, "engine/ingame/auto-bot/portutil.js"),
+    "utf8",
+  );
+  const values = Array.from(
+    executeTrustedScript(source + "\nseeds.map(simpleHash);", {
+      seeds: [...trainingSeeds, ...seeds],
+    }),
+  );
+  const trainingValues = new Set(values.slice(0, trainingSeeds.length));
+  const requestedValues = values.slice(trainingSeeds.length);
+  assert.equal(
+    trainingValues.size,
+    trainingSeeds.length,
+    "Training seeds must be unique in effective engine PRNG values",
+  );
+  assert.equal(
+    new Set(requestedValues).size,
+    seeds.length,
+    "Seeds must be unique in effective engine PRNG values",
+  );
+  assert.ok(
+    requestedValues.every((value) => !trainingValues.has(value)),
+    "Requested seeds overlap training seeds in effective engine PRNG values",
+  );
+}
+
 export function validateModel(model, source, requireReady = true) {
   const window = {};
-  // Audited local hybridCombat.js only; model JSON is imported as data, never executed.
-  // eslint-disable-next-line sonarjs/code-eval
-  vm.runInNewContext(source, { window, console, performance }, { timeout: 1000 });
+  executeTrustedScript(source, { window, console, performance });
   const api = window.__OFH_hybridCombat;
   assert.ok(api?.importModel && api?.diagnostics, "Native hybrid combat API unavailable");
   assert.notEqual(api.importModel(model), false, "Unsupported native model snapshot");
@@ -205,7 +237,7 @@ export function scorePairedRuns(runs, seeds, modelHash) {
         .filter((outcome) => !outcome.verified).length,
     },
     completedPairs: completedPairs.length,
-    combatExercisedPairs: completedPairs.filter(
+    candidateDecisionPairs: completedPairs.filter(
       (pair) =>
         pair.outcomes.shadow.diagnostics.decisions > 0 &&
         pair.outcomes.learned.diagnostics.decisions > 0,
@@ -217,7 +249,7 @@ export function scorePairedRuns(runs, seeds, modelHash) {
       : null,
     pairs,
     evidence:
-      "Real-engine headless holdout only. Win rates use terminal, verified, fully paired outcomes; tick caps, failures and mode/model mismatches are excluded. Diagnostics and raw logs show inference/fallback activity. No external model integration, live-browser performance, or statistical superiority is established.",
+      "Real-engine headless holdout only. Win rates use terminal, verified, fully paired outcomes; tick caps, failures and mode/model mismatches are excluded. Candidate decision pairs count diagnostics.decisions in shadow and learned, not accepted orders or learned control. Diagnostics and raw logs show inference/fallback activity. No external model integration, live-browser performance, or statistical superiority is established.",
   };
 }
 
@@ -343,13 +375,9 @@ function initialModel(options, { source, provenance }) {
       "Missing training seed provenance",
     );
     trainingSeeds = saved.trainingSeeds;
-    if (!options.collect)
-      assert.ok(
-        options.seeds.every((seed) => !trainingSeeds.includes(seed)),
-        "Holdout seeds overlap training seeds",
-      );
+    validateSeedIdentities(options.seeds, trainingSeeds);
     model = validateModel(saved.model, source, !options.collect);
-  }
+  } else validateSeedIdentities(options.seeds, trainingSeeds);
   return { model, trainingSeeds, collectionCounts };
 }
 

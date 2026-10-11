@@ -1926,6 +1926,14 @@ export class BundledOpponentBot {
     return this.harness.internals.getAutoBotProfileSnapshot();
   }
 
+  finalizeHybridCombatObservation(stopReason) {
+    // A tick cap is censored, never a completed commitment. Do not decide again.
+    if (stopReason !== "winner" && stopReason !== "bot_dead") return;
+    const player = this.pageGame.myPlayer();
+    if (!player || (player.isAlive() && !this.game.getWinner())) return;
+    this.nationBot.observeHybridCombat(player);
+  }
+
   getHybridCombatSnapshot() {
     const api = this.harness.window.__OFH_hybridCombat;
     return api

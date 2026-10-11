@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { foreignGitEnvironment } from "../scripts/git-environment.mjs";
+import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
 import {
   parseArgs,
   readRecords,
@@ -117,7 +118,13 @@ const capped = structuredClone(runs.slice(0, 3));
 capped[2].result.stopReason = "max_ticks";
 assert.equal(scorePairedRuns(capped, ["a"], modelHash).counts.horizonExclusions, 1);
 assert.equal(scorePairedRuns(capped, ["a"], modelHash).counts.errors, 0);
-assert.equal(score.combatExercisedPairs, 2);
+assert.equal(score.candidateDecisionPairs, 2);
+assert.equal(Object.hasOwn(score, "combatExercisedPairs"), false);
+// A candidate decision may be a rejected proposal followed by Legendary fallback.
+// Existing diagnostics do not establish that learned control was exercised.
+const proposalFallback = structuredClone(runs.slice(0, 3));
+proposalFallback[2].result.hybridCombat.diagnostics.proposal = { action: "attack" };
+assert.equal(scorePairedRuns(proposalFallback, ["a"], modelHash).candidateDecisionPairs, 1);
 assert.equal(score.summary.baseline.winRate, 0, "exit 2 is a completed loss");
 assert.equal(score.summary.learned.winRate, 1);
 assert.equal(score.learnedMinusBaselineWins, 2);
@@ -321,6 +328,87 @@ assert.deepEqual(
     .trainingSeeds,
   ["train-a", "train-b", "train-c"],
 );
+const paritySeeds = [
+  "Aa",
+  "BB",
+  "zzzzzz",
+  "BLCNFN]",
+  "",
+  "polygenelubricants",
+  "😀",
+  "é",
+  ...Array.from({ length: 256 }, (_, i) => `seed-parity-${i}`),
+];
+const nativeHashes = JSON.parse(
+  execFileSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "--input-type=module",
+      "-e",
+      "import { simpleHash } from './openfront-engine/src/core/Util.ts'; " +
+        "process.stdout.write(JSON.stringify(JSON.parse(process.argv[1]).map(simpleHash)));",
+      JSON.stringify(paritySeeds),
+    ],
+    {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 10000,
+      env: { ...process.env, TSX_TSCONFIG_PATH: path.join(root, "openfront-engine/tsconfig.json") },
+    },
+  ),
+);
+const portHashes = executeClassicScript(
+  readRepositoryFile("engine/ingame/auto-bot/portutil.js") + "\nparitySeeds.map(simpleHash);",
+  { paritySeeds },
+  { timeout: 1000 },
+);
+assert.deepEqual(
+  Array.from(portHashes),
+  nativeHashes,
+  "ported seed identities match the real engine",
+);
+assert.deepEqual(nativeHashes.slice(0, 4), [2112, 2112, 685785664, 685785664]);
+const savedCollection = JSON.parse(fs.readFileSync(exportedPath, "utf8"));
+const collisionCases = [
+  { collect: true, seeds: ["Aa", "BB"] },
+  { collect: true, seeds: ["zzzzzz", "BLCNFN]"] },
+  { collect: false, seeds: ["Aa", "BB"], trainingSeeds: ["train-a"] },
+  { collect: false, seeds: ["BB"], trainingSeeds: ["Aa"] },
+  { collect: true, seeds: ["BB"], trainingSeeds: ["Aa"] },
+  { collect: false, seeds: ["BLCNFN]"], trainingSeeds: ["zzzzzz"] },
+  { collect: false, seeds: ["holdout"], trainingSeeds: ["Aa", "BB"] },
+  { collect: true, seeds: ["Aa"], trainingSeeds: ["Aa"] },
+];
+const collisionResults = [];
+for (const [i, { trainingSeeds, ...options }] of collisionCases.entries()) {
+  if (trainingSeeds) {
+    options.model = path.join(temporary, `collision-model-${i}.json`);
+    fs.writeFileSync(
+      options.model,
+      JSON.stringify({
+        ...savedCollection,
+        trainingSeeds,
+        model: nativeModel,
+      }),
+    );
+  }
+  const [result] = await Promise.allSettled([
+    evaluate({ ...options, timeoutMs: 100, out: path.join(temporary, `collision-${i}`) }, {}, () =>
+      assert.fail("effective seed collisions must be rejected before any runner call"),
+    ),
+  ]);
+  collisionResults.push(result);
+}
+for (const result of collisionResults) {
+  assert.equal(result.status, "rejected");
+  assert.match(
+    result.reason.message,
+    /effective engine PRNG/,
+    "reject the alias itself, before running",
+  );
+}
 await assert.rejects(
   evaluate(
     { collect: false, model: exportedPath, seeds: ["holdout"], timeoutMs: 100 },
