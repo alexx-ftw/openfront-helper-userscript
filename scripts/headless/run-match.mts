@@ -25,7 +25,11 @@ import { TransportShipExecution } from "../../openfront-engine/src/core/executio
 import type { StampedIntent, Turn } from "../../openfront-engine/src/core/Schemas.ts";
 import { MapPlaylist } from "../../openfront-engine/src/server/MapPlaylist.ts";
 import { NodeGameMapLoader } from "../../openfront-engine/tests/perf/fullgame/NodeGameMapLoader.ts";
-import { createMaxDifficultyOpponent, playersShareSide } from "./opponent-adapter.js";
+import {
+  createMaxDifficultyOpponent,
+  playersShareSide,
+  HybridFifoDispatcher,
+} from "./opponent-adapter.js";
 import { UnitImpl } from "../../openfront-engine/src/core/game/UnitImpl.ts";
 import { PlayerImpl } from "../../openfront-engine/src/core/game/PlayerImpl.ts";
 
@@ -573,7 +577,11 @@ const me = runner.game.playerByClientID(clientID);
 let seaInvasionObserved = false;
 const originalConquerPlayer = runner.game.conquerPlayer.bind(runner.game);
 runner.game.conquerPlayer = (conqueror, conquered) => {
-  if (conquered.clientID() !== clientID && conquered.team() !== null && conquered.team() === me?.team()) {
+  if (
+    conquered.clientID() !== clientID &&
+    conquered.team() !== null &&
+    conquered.team() === me?.team()
+  ) {
     console.warn(
       JSON.stringify({
         phase: "ally-conquered",
@@ -625,7 +633,11 @@ if (process.env.OFH_HYBRID_COMBAT_MODE) {
         encoding: "utf8",
         env: foreignGitEnvironment(),
       }).trim(),
-      diffHash: digest(execFileSync("git", ["-C", engineRoot, "diff", "HEAD", "--binary"], { env: foreignGitEnvironment() })),
+      diffHash: digest(
+        execFileSync("git", ["-C", engineRoot, "diff", "HEAD", "--binary"], {
+          env: foreignGitEnvironment(),
+        }),
+      ),
     },
     mapFingerprint: mapHash.digest("hex"),
   };
@@ -692,6 +704,10 @@ const inFlightTargetedBySam = (missile: UnitImpl): boolean =>
   missile.trajectory().length > 0 ? missile.targetedBySAM() === true : false;
 
 let turnNumber = 0;
+const hybridFifo =
+  process.env.OFH_HYBRID_FIFO_DELAY_TICKS === undefined
+    ? null
+    : new HybridFifoDispatcher({ delayTicks: Number(process.env.OFH_HYBRID_FIFO_DELAY_TICKS) });
 let emittedIntents = 0;
 let hasEverBeenAlive = me?.isAlive() === true;
 let stopReason: "winner" | "max_ticks" | "bot_dead" | "engine_stop" | "spawn_failed" = "max_ticks";
@@ -1522,7 +1538,10 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   }
   const turn: Turn = {
     turnNumber: turnNumber++,
-    intents: intents.map((intent): StampedIntent => ({ ...intent, clientID })),
+    intents: (hybridFifo
+      ? hybridFifo.dispatch(clientID, runner.game.ticks(), intents)
+      : intents
+    ).map((intent): StampedIntent => ({ ...intent, clientID })),
   };
   runner.addTurn(turn);
   const executionStartedAt = performance.now();
@@ -2033,7 +2052,10 @@ while (runner.game.getWinner() === null && runner.game.ticks() < maxTicks && fat
   }
 }
 
-if (fatalError !== null) throw new Error(fatalError);
+if (fatalError !== null) {
+  bot.finalizeHybridCombatObservation("env_error");
+  throw new Error(fatalError);
+}
 const winner = runner.game.getWinner();
 if (winner !== null) stopReason = "winner";
 const finalMe = runner.game.playerByClientID(clientID);
@@ -2217,6 +2239,8 @@ const finalResult = {
   goalRequirements: goalRequirementsSnapshot(),
   spawnLifecycle: bot.getSpawnLifecycleSnapshot(),
   hybridCombat: bot.getHybridCombatSnapshot(),
+  hybridEvaluation: bot.getHybridEvaluationSnapshot(),
+  hybridTransport: hybridFifo?.snapshot() ?? null,
   nuclearStrategy: nuclearStrategyTelemetry,
   intentBudget: bot.getIntentBudgetSnapshot() ?? undefined,
   intentBudgetViolated:

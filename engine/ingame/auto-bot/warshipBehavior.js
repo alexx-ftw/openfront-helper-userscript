@@ -316,10 +316,7 @@
       // trade-driven naval economy (trades 73->41) — so only boards with a
       // >=10M opening treasury take the cap; retaliation and defense-floor
       // lanes keep their paths everywhere.
-      const hugeStart =
-        state.bigStartGold?.decided === true &&
-        state.bigStartGold?.value === true &&
-        state.bigStartGold?.openingGold >= 10_000_000n;
+      const hugeStart = this.hugeStartingTreasury();
       if (fleet >= (hugeStart ? 2 : fleetCap)) return false;
       const warshipCost = this.cost(UNIT.Warship);
       const arsenalReserve = this.legendaryArsenalReserve();
@@ -351,6 +348,11 @@
     // hostile naval pressure and a live economy is the measured signature
     // of the winning rows whose commerce window was cut short by small
     // fleet size. Player scan runs only when the cheap gates pass.
+    hugeStartingTreasury() {
+      return state.bigStartGold?.decided === true && state.bigStartGold?.value === true
+        && state.bigStartGold?.openingGold >= 10_000_000n;
+    }
+
     raidingDominanceGrowthActive() {
       const tick = this.game?.ticks?.();
       if (!Number.isFinite(tick) || tick < 5000) return false;
@@ -1686,7 +1688,11 @@
     }
 
     refreshTransportEvents(s, tick, mySid) {
-      const transportIndex = this.indexById(this.game.units(UNIT.TransportShip));
+      const transports = this.game.units(UNIT.TransportShip);
+      getWarshipRuntimeHost()?.__OFH_hybridStrategy?.observeNaval(
+        { game: this.game, player: this.player }, transports, this.game.motionPlans?.(),
+      );
+      const transportIndex = this.indexById(transports);
       for (const unit of this.player.units(UNIT.TransportShip)) {
         {
           const target = unit.targetTile ? unit.targetTile() : null;
@@ -1702,8 +1708,20 @@
         const current = transportIndex.get(id);
         const stillOurs = current?.isActive() && current.owner().smallID() === mySid;
         if (stillOurs) continue;
-        this.recordTransportLoss(s, position, tick, farFromTarget);
+        this.observeMissingTransport(s, position, id, tick, farFromTarget);
         s.transportPos.delete(id);
+      }
+    }
+
+    observeMissingTransport(s, position, id, tick, farFromTarget) {
+      // Missing client units cannot distinguish landing, recall or destruction.
+      const commitment = getWarshipRuntimeHost()?.__OFH_hybridStrategy?.transportCommitment(
+        { game: this.game, player: this.player }, id,
+      );
+      // Preserve the faithful port's original heuristic. Adaptive strategy
+      // labels absence unknown instead of manufacturing a sinking receipt.
+      if (state.settings.winFixes === false || commitment?.status === "destroyed") {
+        this.recordTransportLoss(s, position, tick, farFromTarget);
       }
     }
 

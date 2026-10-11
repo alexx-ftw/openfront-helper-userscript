@@ -1670,15 +1670,23 @@ function createExactSpawnRankingContext(game, index, points, options, incrementa
   };
 }
 
+function spawnIndexReservationAllows(context, tile) {
+  if (!window.__OFH_hybridStrategy?.diagnostics().enabled) return true;
+  return spawnReservationBook(context.game).reservationAllows(tile,
+    spawnReservationContext(context.game, context.options?.me));
+}
+
+function occupiedSpawnCenter(context, tile) {
+  return (context.game.hasOwner?.(tile) && !spawnTileOwnedByPlayer(context.game, tile, context.options?.me))
+    || context.game.isBorder?.(tile);
+}
+
 function exactSpawnCenterAllowed(context, tile, x, y) {
-  const { area, teamRegion, game, points, minDist } = context;
+  const { area, teamRegion, points, minDist } = context;
+  if (!spawnIndexReservationAllows(context, tile)) return false;
   if (area && (x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height)) return false;
   if (teamRegion && !isPointInsideTeamSpawnRegion(x, y, teamRegion)) return false;
-  {
-    const occupiedByOther = game.hasOwner?.(tile) &&
-      !spawnTileOwnedByPlayer(game, tile, context.options?.me);
-    if (occupiedByOther || game.isBorder?.(tile)) return false;
-  }
+  if (occupiedSpawnCenter(context, tile)) return false;
   return nearestSpawnDistance(points.enemySpawns, x, y) >= minDist &&
     nearestSpawnDistance(points.teamSpawns, x, y) >= minDist;
 }
@@ -2204,9 +2212,83 @@ function computeRegularSpawnTopSpotsForBot(game, me) {
   return rememberBotSpawnTopSpots(src, terrain, tick, result);
 }
 
+const _spawnReservationBooks = new WeakMap();
+function spawnReservationBook(game) {
+  const source = game.__src ?? game;
+  if (!_spawnReservationBooks.has(source)) {
+    _spawnReservationBooks.set(source, getSpawnIndexApi().createReservations(game.width(), game.height()));
+  }
+  const book = _spawnReservationBooks.get(source);
+  const index = existingSpawnCandidateIndex(game);
+  if (index) index.pendingFootprints = book.pendingFootprints;
+  return book;
+}
+
+function spawnReservationContext(game, me) {
+  return { tick: currentSpawnTick(game), actorSid: spawnPlayerSmallId(me),
+    sessionId: game.__src ?? game };
+}
+
+function reserveBotSpawnFootprint(game, me, tile) {
+  if (!window.__OFH_hybridStrategy?.diagnostics().enabled) return false;
+  const index = spawnReservationBook(game);
+  const footprint = getSpawnIndexApi().legalFootprint(game, tile);
+  if (!footprint) return false;
+  const context = spawnReservationContext(game, me);
+  const duration = game.config?.().numSpawnPhaseTurns?.();
+  if (!Number.isInteger(duration) || duration <= 0) return false;
+  return index.reserveFootprint({ ...context, ref: tile, expiresTick: context.tick + duration });
+}
+
+function spawnCongestionScore(game, me, spot) {
+  const points = collectExactSpawnPoints(game, me).teamSpawns;
+  if (!points.length) return 1;
+  // Native radius-four footprints meet at eight tiles. Preserve the existing
+  // allied support score; discount only footprint crowding at this local band.
+  const distance = nearestSpawnDistance(points, spot.x, spot.y);
+  return Math.max(0, Math.min(1, distance / (2 * getSpawnIndexApi().DEFAULT_SPAWN_RADIUS)));
+}
+
+function continueReservedSpawnSearch(game, me, index) {
+  // Cached shortlist may be entirely reserved. Start/continue the same bounded
+  // exact job; its occupancy predicates include pending full discs.
+  _asyncExactSpawnResult = null;
+  _asyncExactSpawnResultSrcRef = null;
+  computeAsyncExactSpawnTopSpotsForBot(game, me);
+  scheduleSpawnCandidateBuild(index);
+}
+
+function filterReservedSpawnSpots(game, me, spots, index, context) {
+  const nativeTile = me?.spawnTile?.() ?? me?.__src?.state?.spawnTile ?? me?.state?.spawnTile;
+  if (nativeTile != null) index?.confirmFootprint(context.actorSid, nativeTile);
+  return (spots ?? []).filter(spot => !index?.reservationAllows || index.reservationAllows(
+    spot.ref ?? game.ref(spot.x, spot.y), context,
+  ));
+}
+
 function computeSpawnTopSpotsForBot(game, me, options = null) {
-  if (options?.initial === true) return computeInitialSpawnTopSpotsForBot(game, me);
-  return computeRegularSpawnTopSpotsForBot(game, me);
+  const spots = options?.initial === true
+    ? computeInitialSpawnTopSpotsForBot(game, me)
+    : computeRegularSpawnTopSpotsForBot(game, me);
+  const index = existingSpawnCandidateIndex(game);
+  if (!window.__OFH_hybridStrategy?.diagnostics().enabled) return spots;
+  const context = spawnReservationContext(game, me);
+  const book = spawnReservationBook(game);
+  const allowed = filterReservedSpawnSpots(game, me, spots, book, context);
+  if (!allowed.length) {
+    const continuationIndex = index ?? ensureSpawnCandidateIndex(game);
+    if (continuationIndex?.ready) continueReservedSpawnSearch(game, me, continuationIndex);
+    return spots ? [] : null;
+  }
+  if (allowed.length < SPAWN_HEATMAP_TOP_N) {
+    const continuationIndex = index ?? ensureSpawnCandidateIndex(game);
+    if (continuationIndex?.ready) continueReservedSpawnSearch(game, me, continuationIndex);
+  }
+  const objectiveApi = getSpawnObjectiveApi();
+  return allowed.map(spot => ({ ...spot, objective: spot.objective
+    ? objectiveApi.evaluateModelCandidate({ ...spot.objective,
+      congestionScore: spawnCongestionScore(game, me, spot) }) : null,
+  })).sort((left, right) => compareDynamicSpawnCandidates(left, right, objectiveApi));
 }
 
 // ── Draw ────────────────────────────────────────────────────────────────

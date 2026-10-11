@@ -223,7 +223,8 @@ style="width:34px">${companionEsc(emoji)}</button>
 <span class="ohcp-label">${companionEsc(labels[id] || id)}</span>
 <div class="ohcp-sw${on ? " on" : ""}" data-cp-emoji-toggle="${id}"></div></div>`;
     }).join("");
-    return rows + `<div class="ohcp-row sub">${companionEsc(
+    return rows + `<div class="ohcp-row"><button data-cp-support="✋">${companionEsc(companionTr("Request support ✋"))}</button>
+<button data-cp-support="⏳">${companionEsc(companionTr("Acknowledge support ⏳"))}</button></div><div class="ohcp-row sub">${companionEsc(
       companionTr("Emoji to one bot targets it; emoji to All players targets every bot."))}</div>`;
   }
 
@@ -362,6 +363,17 @@ style="width:34px">${companionEsc(emoji)}</button>
         companionUpdateChrome(panel);
       });
     }
+
+    panel.querySelectorAll("[data-cp-support]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        companionEnqueue("support-emoji", function () {
+          const game = companionGame();
+          const me = game?.myPlayer?.();
+          const peer = game && companionRefreshBoss(game);
+          return companionSupportEmoji(game, me, peer, el.dataset.cpSupport);
+        });
+      });
+    });
 
     panel.querySelectorAll("[data-cp-toggle]").forEach(function (el) {
       el.addEventListener("click", function () {

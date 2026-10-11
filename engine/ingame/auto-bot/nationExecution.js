@@ -49,6 +49,8 @@
   class NationBot {
     constructor(game, opts) {
       if (typeof hybridCombatPolicy !== "undefined") hybridCombatPolicy.beginSession();
+      globalThis.window?.__OFH_hybridStrategy?.reset();
+      this.configureHybridStrategy();
       this.mg = game;
       this.player = game.myPlayer();
       this.active = true;
@@ -567,8 +569,13 @@
       );
     }
 
+    configureHybridStrategy() {
+      globalThis.window?.__OFH_hybridStrategy?.configure({ enabled: state.settings.winFixes && isLegendaryDifficulty() });
+    }
+
     async tick(ticks, profile, tickGeneration) {
       if (!this.tickIsCurrent(tickGeneration)) return;
+      this.configureHybridStrategy();
       this.player = this.mg.myPlayer();
       this.refreshBehaviorPlayerReferences();
       const me = this.player;
@@ -671,7 +678,10 @@
       this.nukeBehavior = new NukeBehavior(
         r, g, p, this.attackBehavior, this.emojiBehavior,
       );
-      this.structureBehavior = new StructureBehavior(r, g, p);
+      const strategy = globalThis.window?.__OFH_hybridStrategy;
+      this.configureHybridStrategy();
+      this.structureBehavior = strategy
+        ? strategy.createStructureBehavior(r, g, p) : new StructureBehavior(r, g, p);
       this.nukeBehavior.structureBehavior = this.structureBehavior;
       this.structureBehavior.nukeBehavior = this.nukeBehavior;
       this.warshipBehavior.structureBehavior = this.structureBehavior;
@@ -740,6 +750,8 @@
         // A saturated client-side intent budget must not make the bot believe
         // its spawn was accepted. Leaving this false preserves the retry path
         // on the next allowed spawn-selection tick.
+        if (globalThis.window?.__OFH_hybridStrategy?.diagnostics().enabled && typeof reserveBotSpawnFootprint === "function" &&
+            !reserveBotSpawnFootprint(this.mg, this.player, center)) return;
         if (!emitIntent(ctors.spawn, center)) return;
         const moved = this.spawnExecAdded;
         this.spawnExecAdded = true;

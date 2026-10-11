@@ -3,43 +3,77 @@
 // OFH_* match settings are shared by every mode. Tick caps are censored, never losses.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { foreignGitEnvironment } from "../git-environment.mjs";
+import {
+  canonical,
+  digest as hash,
+  resolveCohorts,
+  matchesCohort,
+  pairedUncertainty,
+  summarizeTelemetry,
+  assessCandidatePromotion,
+  selectReplayGroup,
+  fingerprintSources,
+} from "./hybrid-evaluation-contract.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const modes = ["baseline", "shadow", "learned"];
-const format = "ofh-hybrid-combat-evaluation-v1";
-const canonical = (value) =>
-  JSON.stringify(value, (_, item) =>
-    item && typeof item === "object" && !Array.isArray(item)
-      ? Object.fromEntries(
-          Object.keys(item)
-            .sort()
-            .map((key) => [key, item[key]]),
-        )
-      : item,
-  );
-const hash = (value) => createHash("sha256").update(value).digest("hex");
+const format = "ofh-hybrid-combat-evaluation-v2";
+const extendedKeys = [
+  "harnessHash",
+  "evaluationContractHash",
+  "featureHash",
+  "modelHash",
+  "normalizerHash",
+  "rewardHash",
+  "configurationHash",
+];
 const save = (file, value) =>
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
 
-export function validateProvenance(saved, current) {
-  for (const key of ["bundleHash", "sourceHash", "engineRevision", "engineDiffHash"]) {
+export function validateProvenance(saved, current, strict = false) {
+  const keys = [
+    "bundleHash",
+    "sourceHash",
+    "engineRevision",
+    "engineDiffHash",
+    ...(strict ? extendedKeys : []),
+  ];
+  for (const key of keys) {
+    assert.ok(
+      typeof saved[key] === "string" && typeof current[key] === "string",
+      `Missing model provenance: ${key}`,
+    );
     assert.equal(saved[key], current[key], `Model provenance mismatch: ${key}`);
   }
 }
 
 export function parseArgs(argv) {
-  const options = { collect: false };
+  const options = { collect: false, policy: "ridge" };
   for (let i = 0; i < argv.length; i += 1) {
     const name = argv[i];
-    if (name === "--collect") options.collect = true;
-    else if (["--seeds", "--model", "--out", "--timeout-ms"].includes(name)) {
+    if (["--collect", "--anchors", "--frozen-replay"].includes(name))
+      options[name.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = true;
+    else if (
+      [
+        "--seeds",
+        "--model",
+        "--out",
+        "--timeout-ms",
+        "--policy",
+        "--cohorts",
+        "--requirements",
+        "--replay",
+        "--selection",
+        "--potential-shaping",
+      ].includes(name)
+    ) {
       assert.ok(argv[i + 1] && !argv[i + 1].startsWith("--"), `Missing value for ${name}`);
       options[name.slice(2)] = argv[++i];
     } else throw new Error(`Unknown argument ${name}`);
@@ -53,7 +87,24 @@ export function parseArgs(argv) {
     "--timeout-ms must be a positive integer",
   );
   assert.ok(options.collect || options.model, "--model is required for frozen holdout evaluation");
+  validateOptions(options);
   return options;
+}
+
+function validateOptions(options) {
+  options.policy ??= "ridge";
+  assert.ok(["ridge", "compact-neural"].includes(options.policy), "Unsupported selected policy");
+  assert.ok(!options.frozenReplay || options.collect, "--frozen-replay requires --collect");
+  assert.ok(
+    !options.replay ||
+      (options.collect && options.selection && options.policy === "compact-neural"),
+    "Offline replay requires --collect, --selection and --policy compact-neural",
+  );
+  assert.ok(!options.anchors || options.replay, "--anchors requires explicit offline replay");
+  assert.ok(
+    !options["potential-shaping"] || options.replay,
+    "Potential shaping requires explicit offline replay",
+  );
 }
 
 function executeTrustedScript(source, sandbox) {
@@ -90,11 +141,21 @@ function validateSeedIdentities(seeds, trainingSeeds) {
   );
 }
 
-export function validateModel(model, source, requireReady = true) {
+function nativeApi(source) {
   const window = {};
-  executeTrustedScript(source, { window, console, performance });
+  executeTrustedScript(source, {
+    window,
+    console,
+    performance,
+    state: { settings: { winFixes: true } },
+  });
   const api = window.__OFH_hybridCombat;
   assert.ok(api?.importModel && api?.diagnostics, "Native hybrid combat API unavailable");
+  return api;
+}
+
+export function validateModel(model, source, requireReady = true) {
+  const api = nativeApi(source);
   assert.notEqual(api.importModel(model), false, "Unsupported native model snapshot");
   api.configure({ mode: "learned", learning: false });
   const diagnostics = api.diagnostics();
@@ -103,6 +164,32 @@ export function validateModel(model, source, requireReady = true) {
     "Cold or unsupported snapshot: native diagnostics must report ready/modelReady=true",
   );
   return api.exportModel();
+}
+
+export function houseIntentBudgetOracle(events) {
+  const source = fs.readFileSync(
+    path.join(projectRoot, "engine/ingame/intent-rate-limit.js"),
+    "utf8",
+  );
+  let now = 0;
+  const api = executeTrustedScript(
+    source + "\n({ acquire: tryAcquireIntentRateLimit, snapshot: getIntentRateLimitSnapshot });",
+    { Date: { now: () => now } },
+  );
+  const results = events.map((event) => {
+    assert.ok(
+      Number.isFinite(event.atMs) && event.atMs >= now,
+      "Rate oracle arrival times must be ordered",
+    );
+    now = event.atMs;
+    return { ...event, accepted: api.acquire(event.type ?? "intent") };
+  });
+  return {
+    results,
+    snapshot: api.snapshot(),
+    scope: "house-client-intent-gate",
+    serverReceiptClaim: false,
+  };
 }
 
 export function readRecords(text) {
@@ -161,6 +248,21 @@ function verifiedRun(run, seed, configMatches, modelHash) {
   );
 }
 
+function runTelemetry(run, cell) {
+  const rows = run.result?.hybridEvaluation?.decisionRows;
+  if (rows !== undefined) {
+    const runID = run.launch?.runID;
+    assert.ok(
+      typeof runID === "string" &&
+        runID.trim() &&
+        Array.isArray(rows) &&
+        rows.every((row) => row?.runIdentity === runID),
+      "Decision rows do not match the launch run identity",
+    );
+  }
+  return summarizeTelemetry(run.result ?? {}, cell);
+}
+
 function runOutcome(run, seed, configMatches, modelHash) {
   const result = run.result ?? {};
   const verified = verifiedRun(run, seed, configMatches, modelHash);
@@ -175,6 +277,7 @@ function runOutcome(run, seed, configMatches, modelHash) {
     runtimeMs: result.runtimeMs ?? null,
     emittedIntents: result.emittedIntents ?? null,
     diagnostics: result.hybridCombat?.diagnostics ?? null,
+    telemetry: runTelemetry(run),
     code: run.code,
     timedOut: run.timedOut ?? false,
     error: run.error ?? null,
@@ -183,7 +286,8 @@ function runOutcome(run, seed, configMatches, modelHash) {
   };
 }
 
-export function scorePairedRuns(runs, seeds, modelHash) {
+export function scorePairedRuns(runs, seeds, modelHash, cohortDeclaration) {
+  const cohorts = resolveCohorts(cohortDeclaration, seeds);
   const pairs = seeds.map((seed) => {
     const selected = modes.map((mode) => {
       const entries = runs.filter((run) => run.seed === seed && run.mode === mode);
@@ -191,13 +295,16 @@ export function scorePairedRuns(runs, seeds, modelHash) {
       return entries[0];
     });
     const configuration = selected[0].start;
+    const cell = cohorts.cells.find((entry) => entry.seeds.includes(seed));
     const configMatches =
       Boolean(configuration?.engineFingerprint && configuration?.mapFingerprint) &&
+      matchesCohort(configuration, cell) &&
       selected.every((run) => canonical(run.start) === canonical(configuration));
     const outcomes = Object.fromEntries(
       selected.map((run) => [run.mode, runOutcome(run, seed, configMatches, modelHash)]),
     );
-    return { seed, configMatches, configuration, outcomes };
+    for (const run of selected) outcomes[run.mode].telemetry = runTelemetry(run, cell);
+    return { seed, cell: cell.name, configMatches, configuration, outcomes };
   });
   const completedPairs = pairs.filter((pair) =>
     modes.every((mode) => pair.outcomes[mode].completed),
@@ -244,12 +351,53 @@ export function scorePairedRuns(runs, seeds, modelHash) {
     ).length,
     excludedPairs: seeds.length - completedPairs.length,
     summary,
+    uncertainty: uncertaintyFor(completedPairs, cohorts.uncertainty),
+    coverage: cohortCoverage(cohorts, pairs),
+    frozenVerified: runs.every((run) => run.frozenVerified === true),
     learnedMinusBaselineWins: completedPairs.length
       ? summary.learned.wins - summary.baseline.wins
       : null,
     pairs,
     evidence:
       "Real-engine headless holdout only. Win rates use terminal, verified, fully paired outcomes; tick caps, failures and mode/model mismatches are excluded. Candidate decision pairs count diagnostics.decisions in shadow and learned, not accepted orders or learned control. Diagnostics and raw logs show inference/fallback activity. No external model integration, live-browser performance, or statistical superiority is established.",
+  };
+}
+
+function uncertaintyFor(pairs, options) {
+  return pairedUncertainty(
+    pairs.map((pair) => ({
+      baselineWin: pair.outcomes.baseline.won,
+      learnedWin: pair.outcomes.learned.won,
+    })),
+    options,
+  );
+}
+
+function cohortCoverage(cohorts, pairs) {
+  return {
+    declared: cohorts.declared,
+    cells: cohorts.cells.map((cell) => {
+      const selected = pairs.filter((pair) => cell.seeds.includes(pair.seed));
+      const completed = selected.filter((pair) =>
+        modes.every((mode) => pair.outcomes[mode].completed),
+      );
+      return {
+        name: cell.name,
+        expected: cell.expected,
+        seeds: cell.seeds,
+        requested: selected.length,
+        completed: completed.length,
+        excluded: selected.length - completed.length,
+        errors: selected
+          .flatMap((pair) => Object.values(pair.outcomes))
+          .filter((outcome) => outcome.error || ![0, 2].includes(outcome.code)).length,
+        horizons: selected
+          .flatMap((pair) => Object.values(pair.outcomes))
+          .filter((outcome) => outcome.stopReason === "max_ticks").length,
+        uncertainty: uncertaintyFor(completed, cohorts.uncertainty),
+        telemetry: selected.map((pair) => pair.outcomes.learned.telemetry),
+      };
+    }),
   };
 }
 
@@ -262,6 +410,8 @@ export function runMatch({
   outDir,
   timeoutMs,
   environment,
+  runID,
+  experimentID,
 }) {
   const logPath = path.join(outDir, `${mode}-${hash(seed).slice(0, 16)}.log`);
   const descriptor = fs.openSync(logPath, "wx");
@@ -283,6 +433,8 @@ export function runMatch({
           OFH_HYBRID_COMBAT_MODE: mode,
           OFH_HYBRID_COMBAT_LEARNING: learning ? "1" : "0",
           OFH_HYBRID_COMBAT_MODEL: modelPath ?? "",
+          OFH_HYBRID_RUN_ID: runID,
+          OFH_HYBRID_EXPERIMENT_ID: experimentID,
         },
         stdio: ["ignore", descriptor, descriptor],
       },
@@ -323,10 +475,37 @@ export function runMatch({
   });
 }
 
-function evaluationInputs(environment) {
-  const source = fs.readFileSync(
-    path.join(projectRoot, "engine/ingame/auto-bot/hybridCombat.js"),
-    "utf8",
+function evaluationInputs(environment, cohorts) {
+  const sourcePaths = [
+    "engine/ingame/auto-bot/hybridModelContract.js",
+    "engine/ingame/auto-bot/hybridCombat.js",
+  ];
+  const source = sourcePaths
+    .map((file) => `// ${file}\n${fs.readFileSync(path.join(projectRoot, file), "utf8")}`)
+    .join("\n");
+  const externalManifest = Object.assign(
+    {},
+    ...["package.json", "openfront-engine/package.json"].map((file) => {
+      const metadata = JSON.parse(fs.readFileSync(path.join(projectRoot, file), "utf8"));
+      return { ...metadata.dependencies, ...metadata.devDependencies };
+    }),
+  );
+  const harness = fingerprintSources(
+    projectRoot,
+    [
+      "scripts/headless/evaluate-hybrid-combat.mjs",
+      "scripts/headless/hybrid-evaluation-contract.mjs",
+      "scripts/headless/run-match.mts",
+      "scripts/headless/opponent-adapter.js",
+      "engine/ingame/auto-bot/portutil.js",
+      "engine/ingame/intent-rate-limit.js",
+      "package.json",
+      "package-lock.json",
+      "openfront-engine/package.json",
+      "openfront-engine/package-lock.json",
+      "openfront-engine/tsconfig.json",
+    ],
+    externalManifest,
   );
   const engineRoot = path.join(projectRoot, "openfront-engine");
   const bundleInput = path.resolve(
@@ -335,6 +514,19 @@ function evaluationInputs(environment) {
   const provenance = {
     bundleHash: hash(fs.readFileSync(bundleInput)),
     sourceHash: hash(source),
+    harnessHash: harness.hash,
+    evaluationContractHash: hash(
+      fs.readFileSync(path.join(projectRoot, "scripts/headless/hybrid-evaluation-contract.mjs")),
+    ),
+    configurationHash: hash(
+      canonical({
+        environment: evaluationEnvironment(environment),
+        cells: cohorts.cells.map((cell) => ({
+          expected: cell.expected,
+          environment: cell.environment ?? {},
+        })),
+      }),
+    ),
     engineRevision: execFileSync("/usr/bin/git", ["-C", engineRoot, "rev-parse", "HEAD"], {
       encoding: "utf8",
       env: foreignGitEnvironment(),
@@ -345,11 +537,38 @@ function evaluationInputs(environment) {
       }),
     ),
   };
-  return { source, bundleInput, provenance };
+  return { source, sourcePaths, harness, bundleInput, provenance };
+}
+
+function evaluationEnvironment(environment) {
+  return Object.fromEntries(
+    Object.entries(environment).filter(([key]) => key.startsWith("OFH_") || key === "GAME_ENV"),
+  );
+}
+
+function modelProvenance(model, sourceHash) {
+  return {
+    modelHash: hash(canonical(model)),
+    featureHash: hash(
+      canonical({ schema: model.schema, features: model.features, actions: model.actions }),
+    ),
+    normalizerHash: hash(
+      canonical(
+        model.normalizer ?? { kind: "fixed-native-ratios", features: model.features, sourceHash },
+      ),
+    ),
+    rewardHash: hash(canonical({ reward: model.reward, offline: model.offline })),
+  };
+}
+
+function assertPolicy(model, policy) {
+  const schema = policy === "compact-neural" ? "ofh-combat-compact-tanh-v2" : "ofh-combat-ridge-v1";
+  assert.equal(model.schema, schema, "Selected policy/model kind mismatch");
 }
 
 function initialModel(options, { source, provenance }) {
-  let model;
+  const api = nativeApi(source);
+  let model = options.policy === "compact-neural" ? api.createCompactModel() : api.exportModel();
   let trainingSeeds = [];
   let collectionCounts = { success: 0, errors: 0, horizonRuns: 0 };
   if (options.model) {
@@ -359,7 +578,12 @@ function initialModel(options, { source, provenance }) {
       format,
       "Use the native trained-model.json exported by --collect (includes training provenance)",
     );
-    validateProvenance(saved, provenance);
+    assertPolicy(saved.model, options.policy);
+    validateProvenance(
+      saved,
+      { ...provenance, ...modelProvenance(saved.model, provenance.sourceHash) },
+      true,
+    );
     if (saved.collectionCounts) {
       for (const key of Object.keys(collectionCounts)) {
         assert.ok(
@@ -378,13 +602,14 @@ function initialModel(options, { source, provenance }) {
     validateSeedIdentities(options.seeds, trainingSeeds);
     model = validateModel(saved.model, source, !options.collect);
   } else validateSeedIdentities(options.seeds, trainingSeeds);
+  assertPolicy(model, options.policy);
   return { model, trainingSeeds, collectionCounts };
 }
 
 function prepareOutput(
   options,
   environment,
-  { bundleInput, provenance },
+  { bundleInput, provenance, harness, sourcePaths },
   { model, trainingSeeds },
 ) {
   const outDir = options.out
@@ -400,24 +625,47 @@ function prepareOutput(
     modelPath = path.join(outDir, "input-model.json");
     save(modelPath, model);
   }
+  const experimentID = randomUUID();
+  const collectionArm = options.collect ? "shadow-collection" : "frozen-holdout";
   save(path.join(outDir, "manifest.json"), {
     format,
+    experimentID,
+    requirementsHash: options.requirementsBinding?.hash ?? null,
+    requirementsFrozenBeforeLaunch: Boolean(options.requirementsBinding),
+    requirements: options.requirements,
+    cohortDeclarationHash: options.cohortBinding?.hash ?? null,
     seeds: options.seeds,
     trainingSeeds,
     collect: options.collect,
     timeoutMs: options.timeoutMs,
+    policy: options.policy,
+    frozenReplay: options.frozenReplay === true,
+    arm: options.replay ? "offline-frozen-group-fit" : collectionArm,
+    cohortDeclaration: options.cohorts,
+    harness,
+    sourcePaths,
     ...provenance,
-    environment: Object.fromEntries(
-      Object.entries(environment).filter(([key]) => key.startsWith("OFH_") || key === "GAME_ENV"),
-    ),
+    ...modelProvenance(model, provenance.sourceHash),
+    environment: evaluationEnvironment(environment),
   });
-  return { outDir, bundlePath, modelPath };
+  return {
+    outDir,
+    bundlePath,
+    modelPath,
+    frozenBundleHash: hash(fs.readFileSync(bundlePath)),
+    experimentID,
+    frozenManifestHash: hash(fs.readFileSync(path.join(outDir, "manifest.json"))),
+    requirementsBinding: options.requirementsBinding,
+    requirements: options.requirements,
+    cohortBinding: options.cohortBinding,
+    cohortDeclaration: options.cohorts,
+  };
 }
 
-function acceptsCollection(run, seed) {
+function acceptsCollection(run, seed, learning) {
   if (runFailed(run) || !run.provenanceMatches || run.result.seed !== seed) return false;
   return (
-    policyConfigurationMatches(run.result.hybridCombat, "shadow", true) &&
+    policyConfigurationMatches(run.result.hybridCombat, "shadow", learning) &&
     run.result.hybridCombat.model != null
   );
 }
@@ -428,47 +676,356 @@ async function evaluationRuns(options, environment, runner, context, state) {
   const runs = [];
   for (const seed of options.seeds) {
     for (const mode of options.collect ? ["shadow"] : modes) {
+      const cell = context.cohorts.cells.find((entry) => entry.seeds.includes(seed));
+      const learning = options.collect && !options.frozenReplay;
+      const modelFileHash = hash(fs.readFileSync(modelPath));
+      assert.equal(
+        modelFileHash,
+        hash(`${JSON.stringify(state.model, null, 2)}\n`),
+        "Frozen model file mismatch before launch",
+      );
+      checkFrozenInputs(context, environment, modelPath, modelFileHash);
+      const runID = hash(canonical([context.experimentID, seed, mode]));
+      const launch = {
+        runID,
+        experimentID: context.experimentID,
+        seed,
+        mode,
+        learning,
+        ...provenance,
+        ...modelProvenance(state.model, provenance.sourceHash),
+        trainingSeeds: state.trainingSeeds,
+      };
       process.stdout.write(`[hybrid] ${mode} ${seed}\n`);
       const run = await runner({
         seed,
         mode,
-        learning: options.collect,
+        learning,
         modelPath,
         bundlePath,
         outDir,
         timeoutMs: options.timeoutMs,
-        environment,
+        environment: { ...environment, ...cell.environment },
+        runID,
+        experimentID: context.experimentID,
       });
+      run.launch = { ...launch, mapFingerprint: run.start?.mapFingerprint ?? null };
       run.provenanceMatches =
         run.start?.engineFingerprint?.revision === provenance.engineRevision &&
         run.start?.engineFingerprint?.diffHash === provenance.engineDiffHash;
-      if (options.collect) run.collectionAccepted = acceptsCollection(run, seed);
+      if (options.collect)
+        run.collectionAccepted =
+          acceptsCollection(run, seed, learning) && matchesCohort(run.start, cell);
       runs.push(run);
       save(path.join(outDir, `${mode}-${hash(seed).slice(0, 16)}.json`), run);
+      checkFrozenInputs(context, environment, modelPath, modelFileHash);
+      run.frozenVerified = true;
       assert.ok(
         !run.interrupted,
         "Evaluation interrupted; child stopped and raw evidence retained",
       );
-      if (options.collect && run.collectionAccepted) {
-        state.model = validateModel(run.result.hybridCombat.model, source, false);
-        modelPath = path.join(outDir, `collected-${hash(seed).slice(0, 16)}.json`);
-        save(modelPath, state.model);
-      }
+      modelPath = collectRunModel(options, run, state, { launch, source, modelPath, outDir });
     }
   }
   return runs;
 }
 
-export async function evaluate(options, environment = process.env, runner = runMatch) {
-  const inputs = evaluationInputs(environment);
-  const state = initialModel(options, inputs);
-  const { trainingSeeds, collectionCounts } = state;
+function collectRunModel(options, run, state, { launch, source, modelPath, outDir }) {
+  if (!options.collect || !run.collectionAccepted) return modelPath;
+  if (options.frozenReplay)
+    assert.equal(
+      hash(canonical(run.result.hybridCombat.model)),
+      launch.modelHash,
+      "Frozen replay model mutated",
+    );
+  const model = validateModel(run.result.hybridCombat.model, source, false);
+  assertPolicy(model, options.policy);
+  Object.assign(state, { model });
+  const nextPath = path.join(outDir, `collected-${hash(run.seed).slice(0, 16)}.json`);
+  save(nextPath, model);
+  return nextPath;
+}
+
+function checkFrozenInputs(context, environment, modelPath, modelFileHash) {
+  checkRequirements(context);
+  checkBinding(context.cohortBinding, context.cohortDeclaration, "cohort declaration");
+  assert.equal(
+    hash(fs.readFileSync(path.join(context.outDir, "manifest.json"))),
+    context.frozenManifestHash,
+    "Frozen manifest drift",
+  );
+  const current = evaluationInputs(environment, context.cohorts);
+  validateProvenance(context.provenance, current.provenance);
+  for (const key of ["harnessHash", "evaluationContractHash", "configurationHash"]) {
+    assert.equal(current.provenance[key], context.provenance[key], `Frozen ${key} drift`);
+  }
+  assert.equal(
+    hash(fs.readFileSync(context.bundlePath)),
+    context.frozenBundleHash,
+    "Frozen bundle drift",
+  );
+  assert.equal(hash(fs.readFileSync(modelPath)), modelFileHash, "Frozen model file drift");
+}
+
+function checkRequirements(context) {
+  checkBinding(context.requirementsBinding, context.requirements, "requirements");
+}
+
+function checkBinding(binding, value, label) {
+  if (!binding) return;
+  assert.equal(hash(canonical(value)), binding.hash, `Frozen ${label} object drift`);
+  if (binding.file)
+    assert.equal(
+      hash(fs.readFileSync(binding.file)),
+      binding.fileHash,
+      `Frozen ${label} file drift`,
+    );
+}
+
+function jsonOption(value) {
+  return typeof value === "string" ? JSON.parse(fs.readFileSync(value, "utf8")) : value;
+}
+
+function bindOption(value) {
+  const file = typeof value === "string" ? path.resolve(value) : null;
+  const parsed = jsonOption(value);
+  return {
+    value: parsed,
+    binding: parsed
+      ? { hash: hash(canonical(parsed)), file, fileHash: file ? hash(fs.readFileSync(file)) : null }
+      : null,
+  };
+}
+
+function replayExportSource(evidence) {
+  const ledger = evidence?.ledger;
+  const replay = evidence?.replay;
+  const fullDataset = (ledger ?? replay)?.fullDataset === true;
+  if (fullDataset && ledger) {
+    return {
+      events: ledger.entries.filter((event) =>
+        ["outcome", "hybrid-combat-outcome"].includes(event.kind),
+      ),
+      fullDataset,
+      dropped: ledger.dropped ?? null,
+    };
+  }
+  return {
+    events: replay?.records,
+    fullDataset,
+    dropped: replay?.dropped ?? ledger?.dropped ?? null,
+  };
+}
+
+function exportLedgerDataset(outDir, runs) {
+  const manifests = runs.map((run) => run.launch);
+  const records = [];
+  const coverage = [];
+  for (const run of runs) {
+    const { events, fullDataset, dropped } = replayExportSource(run.result?.hybridEvaluation);
+    coverage.push({
+      runID: run.launch.runID,
+      available: Array.isArray(events),
+      fullDataset,
+      dropped,
+      frozenVerified: run.frozenVerified === true,
+    });
+    if (Array.isArray(events))
+      for (const event of events) records.push({ manifest: run.launch, event });
+  }
+  const header = {
+    version: "ofh-hybrid-ledger-v1",
+    manifests,
+    coverage,
+    recordCount: records.length,
+  };
+  const file = path.join(outDir, "ledger.jsonl");
+  fs.writeFileSync(file, `${JSON.stringify({ metadata: header })}\n`, { flag: "wx" });
+  for (const record of records) fs.appendFileSync(file, `${JSON.stringify(record)}\n`);
+  return { path: file, hash: hash(fs.readFileSync(file)), ...header };
+}
+
+function readLedger(file) {
+  const lines = fs
+    .readFileSync(file, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const [first, ...records] = lines;
+  assert.ok(first.metadata?.recordCount === records.length, "Ledger record count mismatch");
+  return { ...first.metadata, records };
+}
+
+function potentialRecords(records, shaping) {
+  if (!shaping) return records;
+  assert.equal(
+    shaping.potentialID,
+    "observed-own-land-share-v1",
+    "Unsupported observed potential contract",
+  );
+  assert.ok(
+    Number.isFinite(shaping.gammaTick) && shaping.gammaTick >= 0 && shaping.gammaTick <= 1,
+    "Invalid gammaTick",
+  );
+  return records.map((record) => {
+    assert.ok(
+      Number.isFinite(record.gate?.[2]) && Number.isFinite(record.nextGate?.[2]),
+      "Missing observed potential",
+    );
+    return { ...record, potential: record.gate[2], nextPotential: record.nextGate[2] };
+  });
+}
+
+function offlineReplay(options, inputs, cohorts, environment) {
+  const replayHash = hash(fs.readFileSync(options.replay));
+  const dataset = readLedger(options.replay);
+  const selectedInput = bindOption(options.selection);
+  const selection = selectedInput.value;
+  const group = selectReplayGroup(dataset, selection);
+  const coverage = dataset.coverage?.filter((row) => row.runID === group.manifest.runID);
+  assert.ok(
+    coverage?.length === 1 &&
+      coverage[0].available === true &&
+      coverage[0].fullDataset === true &&
+      coverage[0].dropped === 0,
+    "Incomplete selected replay coverage",
+  );
+  const model = validateModel(group.snapshot, inputs.source, false);
+  assertPolicy(model, options.policy);
+  validateProvenance(
+    group.manifest,
+    { ...inputs.provenance, ...modelProvenance(model, inputs.provenance.sourceHash) },
+    true,
+  );
+  validateSeedIdentities(options.seeds, group.manifest.trainingSeeds ?? []);
+  assert.deepEqual(
+    options.seeds,
+    [group.manifest.seed],
+    "Offline replay must explicitly select its real training seed",
+  );
+  const shaping = jsonOption(options["potential-shaping"]);
+  assert.ok(
+    selection.maxRecords === undefined || selection.maxRecords === group.records.length,
+    "Offline replay must fit the full explicitly selected group; no silent subset",
+  );
+  const context = {
+    engineRevision: group.manifest.engineRevision,
+    experimentID: group.manifest.experimentID,
+    episodeId: selection.episodeId,
+    generation: selection.generation,
+    normalizer: model.normalizer,
+    maxRecords: group.records.length,
+    ablation: {
+      version: "patient-potential-v1",
+      patientAnchors: options.anchors === true,
+      potentialShaping: Boolean(shaping),
+    },
+    gammaTick: shaping?.gammaTick,
+    potentialID: shaping?.potentialID,
+  };
+  const fitted = nativeApi(inputs.source).replayFit(
+    group.snapshot,
+    potentialRecords(group.records, shaping),
+    context,
+  );
+  const state = {
+    model: fitted.model,
+    trainingSeeds: [...(group.manifest.trainingSeeds ?? []), group.manifest.seed],
+  };
   const output = prepareOutput(options, environment, inputs, state);
-  const runs = await evaluationRuns(options, environment, runner, { ...inputs, ...output }, state);
+  const report = {
+    collection: true,
+    offlineReplay: true,
+    policy: options.policy,
+    selected: selection,
+    exclusions: group.excluded,
+    summary: fitted.summary,
+    datasetHash: hash(fs.readFileSync(options.replay)),
+    counts: { success: fitted.summary.fitted, errors: 0, horizonRuns: fitted.summary.censored },
+    cumulativeCounts: {
+      success: fitted.summary.fitted,
+      errors: 0,
+      horizonRuns: fitted.summary.censored,
+    },
+    evidence:
+      "Native explicit frozen-group fit only; anchor/PBRS ablation is not a combat-strength or promotion claim.",
+  };
+  checkFrozenInputs(
+    { ...inputs, ...output, cohorts },
+    environment,
+    output.modelPath,
+    hash(fs.readFileSync(output.modelPath)),
+  );
+  assert.equal(hash(fs.readFileSync(options.replay)), replayHash, "Offline dataset drift");
+  checkBinding(selectedInput.binding, selection, "replay selection");
+  report.frozenVerified = true;
+  saveTrainedModel(output.outDir, state, inputs, report);
+  save(path.join(output.outDir, "evaluation.json"), report);
+  return { outDir: output.outDir, report };
+}
+
+function saveTrainedModel(outDir, state, inputs, report) {
+  save(path.join(outDir, "trained-model.json"), {
+    format,
+    policy: report.policy,
+    trainingSeeds: [...new Set([...state.trainingSeeds, ...(report.seeds ?? [])])],
+    model: state.model,
+    ...inputs.provenance,
+    ...modelProvenance(state.model, inputs.provenance.sourceHash),
+    collectionCounts: report.cumulativeCounts,
+  });
+}
+
+function labelRunner(report, runner) {
+  report.runner =
+    runner === runMatch
+      ? "official-gameimpl-bundled-harness"
+      : "injected-runner-fixture-or-unverified";
+  if (runner !== runMatch)
+    report.evidence =
+      "Injected runner fixture or unverified integration; not official-engine execution or combat-strength evidence.";
+}
+
+export async function evaluate(options, environment = process.env, runner = runMatch) {
+  options = { ...options };
+  environment = { ...environment };
+  validateOptions(options);
+  const cohortsInput = bindOption(options.cohorts);
+  const requirementsInput = bindOption(options.requirements);
+  Object.assign(options, {
+    cohorts: cohortsInput.value,
+    cohortBinding: cohortsInput.binding,
+    requirements: requirementsInput.value,
+    requirementsBinding: requirementsInput.binding,
+  });
+  const cohorts = resolveCohorts(options.cohorts, options.seeds);
+  if (options.requirements) {
+    assessCandidatePromotion({}, options.requirements);
+    if (options.requirements.uncertainty)
+      assert.equal(
+        canonical(cohorts.uncertainty),
+        canonical(options.requirements.uncertainty),
+        "Preregistered uncertainty must match declared cohort parameters",
+      );
+  }
+  const inputs = evaluationInputs(environment, cohorts);
+  if (options.replay) return offlineReplay(options, inputs, cohorts, environment);
+  const state = initialModel(options, inputs);
+  const { collectionCounts } = state;
+  const output = prepareOutput(options, environment, inputs, state);
+  const runs = await evaluationRuns(
+    options,
+    environment,
+    runner,
+    { ...inputs, ...output, cohorts },
+    state,
+  );
   const { outDir } = output;
   const report = options.collect
     ? {
         collection: true,
+        policy: options.policy,
+        frozenReplay: options.frozenReplay === true,
         seeds: runs.filter((run) => run.collectionAccepted).map((run) => run.seed),
         counts: {
           success: runs.filter((run) => run.collectionAccepted).length,
@@ -476,22 +1033,22 @@ export async function evaluate(options, environment = process.env, runner = runM
           horizonRuns: runs.filter((run) => run.result?.stopReason === "max_ticks").length,
         },
         runs,
-        evidence:
-          "Online shadow observation only; exported samples are not evidence of improved combat or completed wins.",
+        evidence: options.frozenReplay
+          ? "Frozen shadow replay collection; original per-action identities retained. No training or combat-strength claim."
+          : "Online shadow observation only; exported samples are not evidence of improved combat or completed wins.",
       }
-    : scorePairedRuns(runs, options.seeds, hash(canonical(state.model)));
+    : scorePairedRuns(runs, options.seeds, hash(canonical(state.model)), options.cohorts);
+  report.ledgerDataset = exportLedgerDataset(outDir, runs);
+  labelRunner(report, runner);
+  report.requirementsHash = options.requirementsBinding?.hash ?? null;
+  report.requirementsFrozenBeforeLaunch = Boolean(options.requirementsBinding);
+  if (options.requirements)
+    report.eligibility = assessCandidatePromotion(report, options.requirements);
   if (options.collect)
     report.cumulativeCounts = Object.fromEntries(
       Object.keys(collectionCounts).map((key) => [key, collectionCounts[key] + report.counts[key]]),
     );
-  if (options.collect && state.model)
-    save(path.join(outDir, "trained-model.json"), {
-      format,
-      trainingSeeds: [...new Set([...trainingSeeds, ...report.seeds])],
-      model: state.model,
-      ...inputs.provenance,
-      collectionCounts: report.cumulativeCounts,
-    });
+  if (options.collect && state.model) saveTrainedModel(outDir, state, inputs, report);
   save(path.join(outDir, "evaluation.json"), report);
   return { outDir, report };
 }

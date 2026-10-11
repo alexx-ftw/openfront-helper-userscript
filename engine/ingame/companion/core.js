@@ -180,6 +180,7 @@
   const companionState = {
     settings: null,
     bossSmallID: null,
+    supportPlan: null,
     bossStatus: "idle",   // "idle" | "found" | "missing" | "self"
     paused: false,
     log: [],

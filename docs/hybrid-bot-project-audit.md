@@ -379,7 +379,10 @@ mediciones acotadas; la fuerza se juzgaría por holdout pareado de victorias com
 
 Implementación propia: `hybridCombat.js`, hooks en el flujo real de ataques/ticks,
 controles y export/import, seis idiomas, y evaluador pareado con el harness real.
-La regresión contextual online no es una red neuronal ni una reproducción de PPO.
+El backend ridge usa regresión contextual. La ampliación añade una red compacta
+tanh propia para predecir utilidad contextual, con features y normalizador fijos;
+no reproduce PPO ni importa checkpoints externos. Sus conteos de readiness no
+certifican promoción, probabilidad de WAIT ni entropía de una política.
 No se han copiado pesos, assets, encoders, entrenadores ni bloques de fuente de los
 proyectos. Se conservaron Legendary y sus guards como base; se reimplementaron ideas
 arquitectónicas acotadas. Observar es el modo inicial; controlar es experimental.
@@ -430,6 +433,63 @@ no se realizó una segunda ejecución de esas pruebas. Cantidades de comandos, t
 son unidades distintas y no se suman como un único total. Las propuestas por cada
 proyecto son hipótesis de extracción propia; sólo se integró el módulo local y las
 correcciones de integridad indicadas, no las 29 ideas ni redes externas.
+
+## Cobertura de las 29 adaptaciones
+
+Componentes Task1/2/3 con revisiones scoped CLEAR. Task4 fix round1 congelado; **ambos SCOPED CLEAR recibidos** (Dalton primary y Parfit cuatro callers, comunicados por el coordinador). La tabla enlaza fuentes/callers y pruebas acotadas; no certifica eficacia global. Los módulos bot abreviados están en `engine/ingame/auto-bot/`; spawn/companion en `engine/ingame/`.
+
+| ID  | Fuente/componente                                                                   | Caller integrado                                                                                                                      | Tests                    | Límite                                                                                      |
+| --- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
+| A1  | scripts/headless/evaluate-hybrid-combat.mjs; hybrid-evaluation-contract.mjs         | scripts/headless/run-match.mts :: result.hybridEvaluation ← getHybridEvaluationSnapshot                                               | EC, E, RI, RE            | Cohortes amplias/uncertainty no ejecutadas; promoción ausente.                              |
+| A2  | hybridStrategy.js; nationExecution.js; context.js                                   | engine/ingame/auto-bot/hybridStrategy.js :: Structure binding(raw game/SID) ← Nation current wrapper; Context typed upgrade admission | S, SN, RI, RN            | Canonical SID/session + typed upgrade callers; no all-branches certificate.                 |
+| A3  | warshipBehavior.js; hybridStrategy.js                                               | engine/ingame/auto-bot/attackBehavior.js :: recordHybridBoatRisk                                                                      | S, SN, NI, WM, RI        | ETA diagnóstica; llegada/retorno no confirmados.                                            |
+| A4  | companion/{panel,actions,engine}.js; hybridStrategy.js                              | engine/ingame/auto-bot/attackBehavior.js :: tryHybridJointAttack → accepted emit → consumeJointPlan                                   | S, SN, RI, RN            | Accepted exchange consumed; failed emit retryable; fresh directed exchange tested.          |
+| A5  | spawn-{index,heatmap,objective}.js; companion/actions.js                            | engine/ingame/auto-bot/nationExecution.js :: final spawn admission → reserveBotSpawnFootprint                                         | S, SN, SI, SH, SO, RI    | Footprint/blocked/disabled; calidad estratégica de spawn no probada.                        |
+| I1  | hybridNativeKnowledge.js: quoteNuclearPurchase/describeSilo                         | engine/ingame/auto-bot/hybridNativeKnowledge.js :: capability-safe quoteNuclearPurchase ← client panel                                | S, SN, NK, RI, RN        | Missing/malformed native cost capabilities=unknown; no swallowed unexpected error.          |
+| I2  | hybridNativeKnowledge.js: describeSam                                               | engine/ingame/auto-bot/panel.js :: hybridNativeKnowledgeMarkup → describeSam                                                          | S, SN, NK, RI            | Slots/range/SAM fixture; intercepción garantizada no afirmada.                              |
+| I3  | warshipBehavior.js; hybridStrategy.js: observeNaval                                 | engine/ingame/auto-bot/attackBehavior.js :: recordHybridBoatRisk                                                                      | S, SN, NI, WM, RI        | Portless/cap/recall acotados; retorno/victoria no probados.                                 |
+| I4  | test/hybrid-strategy-native.mts; hybrid-evaluation-contract.mjs                     | scripts/headless/opponent-adapter.js :: getHybridEvaluationSnapshot                                                                   | EC, E, S, SN, RI, RE, RN | Microescenarios; campañas por cohortes no ejecutadas.                                       |
+| L1  | hybridModelContract.js: fitOffline; evaluate-hybrid-combat.mjs                      | scripts/headless/opponent-adapter.js :: HybridRuntimeEvidence.record → recordTransition                                               | C, EC, E, RI, RE, RN     | 21 outcomes PBRS; eficacia y mejora de reward no probadas.                                  |
+| L2  | hybridModelContract.js; hybrid-evaluation-contract.mjs                              | scripts/headless/opponent-adapter.js :: HybridRuntimeEvidence.closeEpisode                                                            | C, EC, E, RI, RE, RN     | Flags/closure acotados; no transición inventada al cerrar sin acción.                       |
+| L3  | hybrid-evaluation-contract.mjs; intent-rate-limit.js                                | scripts/headless/opponent-adapter.js :: HybridFifoDispatcher native arrival admission                                                 | EC, E, RI, RE            | Admisión headless nativa; recibo de servidor no probado.                                    |
+| L4  | scripts/headless/hybrid-evaluation-contract.mjs; run-match.mts; opponent-adapter.js | scripts/headless/run-match.mts :: buffered turn dispatch → hybridFifo.dispatch                                                        | EC, E, RI, RE            | FIFO opcional/off; no assurance de latencia online.                                         |
+| L5  | spawn-index.js: continueCandidates; spawn-heatmap.js                                | engine/ingame/auto-bot/nationExecution.js :: final spawn admission → reserveBotSpawnFootprint                                         | S, SN, SI, SH, SO, RI    | Continuación y reservas; no benchmark de todos los mapas.                                   |
+| G1  | hybridStrategy.js: propose/validate/rebase                                          | engine/ingame/auto-bot/attackBehavior.js :: tryHybridJointAttack; async geometry generation guard                                     | S, SN, RI                | Per-exchange consumption + expiry/generation; proposal never emission authority.            |
+| G2  | hybridStrategy.js: describeStrikeWindow                                             | engine/ingame/auto-bot/panel.js :: hybridNativeKnowledgeMarkup → describeStrikeWindow                                                 | C, S, SN, RI             | Diagnóstico observable; no PRNG Human ni nuevos features.                                   |
+| G3  | hybridStrategy.js; attackBehavior.js; context.js                                    | engine/ingame/auto-bot/context.js :: autoBotEconomicPurchaseAllowed → shared token/emitter                                            | S, SN, RI                | Un ledger/emisor; no certificación de todas las acciones.                                   |
+| G4  | hybridStrategy.js: HybridStructureBehavior/admitEconomicPurchase                    | engine/ingame/auto-bot/context.js :: current typed upgrade ID/owner/type/tile → economic veto → token                                 | S, SN, RI                | Typed upgrade resolves omitted tile before veto; owner/type/site fail closed.               |
+| G5  | hybridStrategy.js: buildableFor; spawn-heatmap.js; evaluator                        | engine/ingame/auto-bot/nationExecution.js :: initializeBehaviors → subclass buildableFor observer                                     | EC, E, S, SN, RI         | Observers conectados; benchmark completo de queries no ejecutado.                           |
+| D1  | hybridCombat.js; hybridModelContract.js; hybridStrategy.js                          | engine/ingame/auto-bot/attackBehavior.js :: prepareHybridCombatGeometry                                                               | C, S, SN, RI, RN         | Geometría nativa actual; ausente/stale abstiene.                                            |
+| D2  | hybridCombat.js: ledger; hybridStrategy.js: observeDuo/observeNaval                 | scripts/headless/opponent-adapter.js :: HybridRuntimeEvidence snapshot → explicit retained/full replay coverage                       | C, S, SN, RI, RE, RN     | Drops→canonical replay unavailable; retained partial explicit; full JSONL separate.         |
+| D3  | hybridModelContract.js: fitOffline (mismo contrato L1)                              | scripts/headless/opponent-adapter.js :: recordTransition → independent PBRS offline arm                                               | C, EC, E, RI, RE, RN     | Mismo stream L1; ablation separada, sin segundo reward online.                              |
+| D4  | evaluate-hybrid-combat.mjs; hybrid-evaluation-contract.mjs                          | scripts/headless/run-match.mts :: result.hybridEvaluation ← getHybridEvaluationSnapshot                                               | C, EC, E, RI, RE, RN     | Disjoint replay/holdout plumbing; completedPairs=0.                                         |
+| D5  | hybridCombat.js; attackBehavior.js                                                  | engine/ingame/auto-bot/attackBehavior.js :: decideHybridCombat; decision-wall callback                                                | C, RI, RN                | Latencia fixture síncrona; no Worker/budget/browser assurance.                              |
+| M1  | hybridCombat.js: scoreMacro/scoreMicro                                              | engine/ingame/auto-bot/attackBehavior.js :: decideHybridCombat → macro/micro                                                          | C, RI, RN                | 17 candidatos compactos;0 WAIT controlados en holdout.                                      |
+| M2  | hybridModelContract.js; hybridStrategy.js: describeStrikeWindow                     | engine/ingame/auto-bot/attackBehavior.js :: hybridCombatGeometry                                                                      | C, S, SN, RI, RN         | Features congelados; strike-window solo diagnóstico.                                        |
+| M3  | hybridModelContract.js; hybridCombat.js; evaluator                                  | engine/ingame/auto-bot/panel.js :: restoreHybridCombatSelection; explicit import/backend                                              | C, EC, E, RI, RN         | Ridge/compact separados; no migración/checkpoint PPO externo.                               |
+| M4  | hybrid-evaluation-contract.mjs: summarizeTelemetry/cohortes                         | scripts/headless/opponent-adapter.js :: HybridRuntimeEvidence.snapshot → decisionCoverage                                             | EC, E, RI, RE            | Drops→unavailable; bins solo si cohortes declaradas.                                        |
+| M5  | hybridModelContract.js: fitOffline; evaluate-hybrid-combat.mjs                      | scripts/headless/evaluate-hybrid-combat.mjs :: selected complete replay coverage → replayFit                                          | C, EC, E, RI, RE, RN     | Incomplete/dropped/missing selected coverage rejects fit;21 outcomes/1 anchor, no efficacy. |
+
+Tests (paths exactos; `.mts` usa el launcher `tsx` de la casa):
+
+- **C**: `test/hybrid-combat.mjs`.
+- **E**: `test/hybrid-combat-evaluation.mjs`.
+- **EC**: `test/hybrid-evaluation-contract.mjs`.
+- **S**: `test/hybrid-strategy.mjs`.
+- **SN**: `test/hybrid-strategy-native.mts`.
+- **NK**: `test/hybrid-native-knowledge.mts`.
+- **RI**: `test/hybrid-runtime-integration.mjs`.
+- **RE**: `test/hybrid-runtime-evidence.mts`.
+- **RN**: `test/hybrid-runtime-native.mts`.
+- **NI**: `test/naval-interception.mjs`.
+- **WM**: `test/warship-micro.mjs`.
+- **SI**: `test/spawn-index.mjs`.
+- **SH**: `test/spawn-heatmap.mjs`.
+- **SO**: `test/spawn-objective.mjs`.
+
+Recibo nativo congelado de Task4: fixture oficial guiado y acotado,17 recibos de cold-shadow y17 de frozen replay; holdout learned19 decisiones/19 aceptaciones/17 confirmaciones/2 fallbacks,19 checks de reserva y19 de legalidad,0 violaciones observadas;0 WAIT controlados.17 candidatos llegan al camino compacto real. Anchors y PBRS ajustan21 outcomes; un anchor WAIT positivo en el brazo correspondiente. **Todos los pares holdout truncados; completedPairs=0, performanceClaim=false y sin promoción.** Aceptación cliente no equivale a recibo nativo; un fixture no prueba rendimiento de partida completa ni de navegador/servidor.
+
+Incidente de artefactos: Task4 documenta un raw build accidental en root; no se certifica preservación de los outputs generados. Los pins y el recibo corresponden al snapshot aislado reconstruido; el coordinador hará el build combinado final. Fuentes del recibo: `/tmp/ofh-task4-round1/{manifest.json,report.md,caller-29.json,native-proof-final.json,check-results.json}`; hashes y source pins en `audit-table-task4-round1.json`. Ambos SCOPED CLEAR recibidos según el coordinador; revalidación local de37 pins root/snapshot PASS. Clearance acotado: no certifica toda rama/acción ni eficacia. Outputs root pendientes del build combinado final.
 
 ## Validación histórica local de la primera entrega
 

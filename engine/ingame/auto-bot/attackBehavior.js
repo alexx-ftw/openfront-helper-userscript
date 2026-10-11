@@ -1028,6 +1028,64 @@
       }
     }
 
+    // Compact inference never labels the adapter's time-reused border cache as
+    // current. Read the actual actor/target snapshots and reject tick drift.
+    async prepareHybridCombatGeometry(targets) {
+      const tick = this.currentAttackDecisionTick();
+      this.hybridGeometrySnapshot = null;
+      const actors = [this.player, ...targets];
+      const borders = await Promise.all(actors.map((actor) => {
+        const native = actor.__src ?? actor;
+        return typeof native.borderTiles === "function"
+          ? withTimeout(Promise.resolve(native.borderTiles()), WORKER_TIMEOUT_MS, null)
+          : null;
+      }));
+      if (tick !== this.currentAttackDecisionTick()) return;
+      const width = Number(this.game.width());
+      const height = Number(this.game.height());
+      if (![width, height].every(Number.isSafeInteger) || width < 1 || height < 1) return;
+      const centers = borders.map((border) => this.hybridBorderCentroid(border, width, height));
+      if (!centers[0]) return;
+      this.hybridGeometrySnapshot = { tick, width, height, own: centers[0],
+        targets: new Map(targets.map((target, i) => [target.smallID(), centers[i + 1]])) };
+    }
+
+    hybridBorderCentroid(response, width, height) {
+      const border = response?.borderTiles ?? response;
+      if (!border || typeof border[Symbol.iterator] !== "function") return null;
+      let x = 0, y = 0, count = 0;
+      for (const tile of border) {
+        const tx = Number(this.game.x(tile)), ty = Number(this.game.y(tile));
+        if (!Number.isFinite(tx) || !Number.isFinite(ty) || tx < 0 || ty < 0 || tx >= width || ty >= height) return null;
+        x += tx; y += ty; count++;
+      }
+      return count && Number.isFinite(x) && Number.isFinite(y) ? { x: x / count, y: y / count } : null;
+    }
+
+    hybridCombatGeometry(target) {
+      const snapshot = this.hybridGeometrySnapshot;
+      const center = snapshot?.targets.get(target.smallID());
+      if (!center || snapshot.tick !== this.currentAttackDecisionTick()) return null;
+      return { targetSmallID: target.smallID(), tick: snapshot.tick, source: "native-border-centroid-v1",
+        own: snapshot.own, target: center, width: snapshot.width, height: snapshot.height };
+    }
+
+    async decideHybridCombat(enemies) {
+      if (typeof hybridCombatPolicy === "undefined") return false;
+      const generation = hybridCombatPolicy.generation;
+      const tick = this.currentAttackDecisionTick();
+      const startedAt = typeof window.__OFH_profileNow === "function" ? window.__OFH_profileNow() : performance.now();
+      try {
+        if (hybridCombatPolicy.backend === "compact-tanh-v1") await this.prepareHybridCombatGeometry(enemies);
+        if (generation !== hybridCombatPolicy.generation || tick !== this.currentAttackDecisionTick()) return false;
+        return await hybridCombatPolicy.decide(this, enemies);
+      }
+      finally {
+        window.__OFH_hybridDecisionTiming?.({ generation, tick,
+          durationMs: (typeof window.__OFH_profileNow === "function" ? window.__OFH_profileNow() : performance.now()) - startedAt });
+      }
+    }
+
     resetBoatRouteEtaCache(tick = null) {
       this.boatRouteEtaCacheTick = tick;
       this.boatRouteEtaCache = new Map();
@@ -7692,15 +7750,21 @@
 
     boatLaunchWarshipDanger(dst) {
       if (!this.boatLaunchWarshipDangerGateActive()) return false;
-      if (
-        this.hostileWarshipNearDestination(
-          dst,
-          this.boatWarshipDangerRadius(),
-        )
-      ) {
-        return true;
-      }
-      return this.hostileHunterCoversCorridor(dst);
+      const danger = this.hostileWarshipNearDestination(dst, this.boatWarshipDangerRadius()) ||
+        this.hostileHunterCoversCorridor(dst);
+      this.recordHybridBoatRisk(dst, danger);
+      return danger;
+    }
+
+    recordHybridBoatRisk(destination, blocked) {
+      const strategy = typeof window === "undefined" ? null : window.__OFH_hybridStrategy;
+      if (!strategy) return;
+      const units = this.player.units(UNIT.TransportShip);
+      const context = { game: this.game.__src ?? this.game, player: this.player };
+      this.hybridBoatRisk = { tick: this.currentAttackDecisionTick(), destination, blocked,
+        scope: "existing-local-warship-launch-guard", dropped: Math.max(0, units.length - 64),
+        transports: units.slice(0, 64).map(unit => strategy.transportCommitment(context, unit.id())) };
+      window.__OFH_hybridBoatRisk?.(this.hybridBoatRisk);
     }
 
     // Predictive corridor gate keyed to LIVE hunters: a hostile warship's
@@ -8042,8 +8106,8 @@
 
       // DIVERGENCE: the shadow learner never emits orders; a frozen, ready
       // learned policy may choose a legal strategic land target or wait.
-      if (typeof hybridCombatPolicy !== "undefined" &&
-          await hybridCombatPolicy.decide(this, borderingEnemies)) return;
+      if (await this.tryHybridJointAttack()) return;
+      if (await this.decideHybridCombat(borderingEnemies)) return;
 
       // Get attack strategies in priority order based on difficulty
       const strategies = this.getAttackStrategies(
@@ -9920,11 +9984,40 @@
     canAttackPlayerNow(target) {
       if (target?.isPlayer?.() !== true) return true;
       if (typeof this.player?.canAttackPlayer !== "function") return true;
-      return this.player.canAttackPlayer(target, false) === true;
+      const allowed = this.player.canAttackPlayer(target, false) === true;
+      if (this.hybridSafetyAttempt && typeof (this.player.__src ?? this.player).canAttackPlayer === "function") {
+        this.hybridSafetyAttempt.legalityPassed = allowed;
+      }
+      return allowed;
     }
 
     async sendAttack(...args) {
       const options = this.normalizeSendAttackArgs(args);
+      const attempt = this.beginHybridSafetyAttempt(options);
+      try {
+        const emitted = await this.sendAuthorizedAttack(options);
+        if (attempt) attempt.emitted = emitted;
+        return emitted;
+      } finally {
+        if (attempt) window.__OFH_hybridSafety?.({ ...attempt });
+        if (this.hybridSafetyAttempt === attempt) this.hybridSafetyAttempt = null;
+      }
+    }
+
+    beginHybridSafetyAttempt(options) {
+      if (options.force || typeof hybridCombatPolicy === "undefined") return null;
+      const dispatch = hybridCombatPolicy.dispatch;
+      if (!dispatch || dispatch.generation !== hybridCombatPolicy.generation ||
+          dispatch.targetSmallID !== options.target.smallID()) return null;
+      const attempt = { episodeId: hybridCombatPolicy.episodeId, generation: dispatch.generation,
+        step: hybridCombatPolicy.proposal.step, attemptId: dispatch.id, tick: this.currentAttackDecisionTick(),
+        targetSmallID: dispatch.targetSmallID, reservePassed: null, legalityPassed: null, emitted: false,
+        payloadTroops: null, spendableTroops: null };
+      this.hybridSafetyAttempt = attempt;
+      return attempt;
+    }
+
+    async sendAuthorizedAttack(options) {
       const { target, force } = options;
       if (!this.canAttackPlayerNow(target)) return false;
       if (!force && !this.shouldAttack(target)) return false;
@@ -9946,6 +10039,20 @@
         return false;
       }
       return this.sendAttackWithHybridObservation(options);
+    }
+
+    async tryHybridJointAttack() {
+      if (!state.settings.winFixes || typeof companionJointPlan !== "function") return false;
+      const plan = companionJointPlan(this.game.__src ?? this.game, this.player);
+      if (!plan || plan.actorSid !== this.player.smallID() || plan.tick !== this.currentAttackDecisionTick() ||
+          plan.expiresTick <= plan.tick || this.incomingHostileAttackPressure() > 0) return false;
+      const target = this.game.players().find(player => player.smallID() === plan.targetSid);
+      if (!target || !target.isAlive() || this.player.isFriendly(target) || !this.player.sharesBorderWith(target)) return false;
+      // sendAttack retains the same reserve, native legality, duplicate and
+      // coordination checks; consent itself never emits another support order.
+      const accepted = await this.sendAttack(target);
+      if (accepted) window.__OFH_hybridStrategy.consumeJointPlan({ game: this.game.__src ?? this.game, player: this.player }, plan);
+      return accepted;
     }
 
     hybridAllowsAttack(target) {
@@ -10391,10 +10498,9 @@
       // counterattacks deliberately retain their forced route, while tribes
       // keep their own capture-floor calculation above.
       if (this.shouldBlockInitialPlayerAttack(context, existing, minimum)) {
-        if (
-          context.targetSpendableTroops < minimum ||
-          this.proactiveWarExceedsAppetite(context, minimum)
-        ) {
+        const insufficientReserve = context.targetSpendableTroops < minimum;
+        this.recordHybridReserveAdmission(context, minimum, !insufficientReserve);
+        if (insufficientReserve || this.proactiveWarExceedsAppetite(context, minimum)) {
           context.attackBlocked = true;
           return 0;
         }
@@ -10415,6 +10521,12 @@
         minimum,
         preferred,
       );
+    }
+
+    recordHybridReserveAdmission(context, minimum, passed) {
+      if (!this.hybridSafetyAttempt) return;
+      this.hybridSafetyAttempt.reservePassed = Number.isFinite(context.targetSpendableTroops) && Number.isFinite(minimum)
+        ? passed : null;
     }
 
     shouldBlockInitialPlayerAttack(context, existing, minimum) {
@@ -10553,6 +10665,12 @@
         return false;
       }
       troops = this.adjustLandAttackTroops(context, troops);
+      if (this.hybridSafetyAttempt) {
+        this.hybridSafetyAttempt.payloadTroops = troops;
+        this.hybridSafetyAttempt.spendableTroops = context.finalSpendableTroops;
+        this.hybridSafetyAttempt.reservePassed = Number.isFinite(troops) && Number.isFinite(context.finalSpendableTroops)
+          ? troops <= context.finalSpendableTroops : null;
+      }
       if (!this.landAttackTroopsAreSafe(context, troops)) {
         this.restoreLandAttackReservation(context);
         return false;

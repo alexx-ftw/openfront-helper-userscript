@@ -318,6 +318,7 @@
 
     const tile = companionPickSpawnTile(g, me, boss, s.spawnMinRadius, s.spawnMaxRadius);
     if (tile != null) {
+      if (typeof reserveBotSpawnFootprint === "function") reserveBotSpawnFootprint(g, me, tile);
       companionState.lastBossSpawnTile = bossSpawn;
       companionState.lastSpawnTile = tile;
     }
@@ -485,6 +486,9 @@
     if (!boss) return;
     const settings = companionSettings();
     const ctx = { game: game, me: me, boss: boss };
+    companionState.supportPlan = window.__OFH_hybridStrategy?.getJointPlan(
+      { game, player: me }, boss.smallID(),
+    ) ?? null;
     companionQueueEmojiCommands(settings, me, ctx);
     companionQueueAllianceRenewal(me, boss, now);
     if (companionState.paused) return;
@@ -630,3 +634,11 @@
       logLines: companionState.log.length,
     };
   };
+
+  // Task4 AttackBehavior consumes this receipt through its ordinary ingress.
+  // Companion never emits a strategic support attack directly.
+  function companionJointPlan(game, player) {
+    const boss = companionRefreshBoss(game);
+    if (!companionState.enabled || companionState.paused || !boss) return null;
+    return window.__OFH_hybridStrategy?.getJointPlan({ game, player }, boss.smallID()) ?? null;
+  }

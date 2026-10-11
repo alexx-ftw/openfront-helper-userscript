@@ -2,6 +2,32 @@
 
 "use strict";
 
+  function hybridModelInput(action, rejected) {
+    // HYBRID_MODEL_IMPORT_BOUNDARY_START
+    // User JSON/storage is an explicit optional input; report rejection.
+    try { return action(); }
+    // eslint-disable-next-line no-restricted-syntax -- explicit user model input; rejection is reported beside the field
+    catch (error) { rejected(error); return null; }
+    // HYBRID_MODEL_IMPORT_BOUNDARY_END
+  }
+
+  function restoreHybridCombatSelection() {
+    const api = window.__OFH_hybridCombat;
+    if (!api) return;
+    hybridModelInput(() => {
+      if (window.localStorage.getItem("openfront-helper-hybrid-backend") !== "compact-tanh-v1") return;
+      const saved = JSON.parse(window.localStorage.getItem("openfront-helper-hybrid-combat-v2"));
+      if (!saved?.model || saved.model.schema !== "ofh-combat-compact-tanh-v2") throw new Error("Missing saved compact model");
+      // Validate config before importing, so invalid storage cannot partly select.
+      if (!["baseline", "shadow", "learned"].includes(saved.config?.mode) || typeof saved.config.learning !== "boolean") throw new Error("Invalid saved configuration");
+      if (saved.model.reward === "potential-shaped-land-delta-ticks-v2" && saved.config.learning) throw new Error("Invalid offline learning configuration");
+      api.importModel(saved.model);
+      api.configure(saved.config);
+    }, error => { window.__OFH_hybridStorageError = error.message; });
+  }
+
+  restoreHybridCombatSelection();
+
   // =========================================================================
   // Floating control panel
   // =========================================================================
@@ -361,6 +387,7 @@
       <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Smart spawn")}</span><div class="ab-cfg-sw ${state.settings.smartSpawn ? "on" : ""}" data-cfg="smartSpawn"></div></div>
       <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Performance profiling")}</span><div class="ab-cfg-sw ${state.settings.performanceProfiling ? "on" : ""}" data-cfg="performanceProfiling"></div></div>
       ${hybridCombatConfigMarkup()}
+      ${hybridNativeKnowledgeMarkup()}
       <div class="ab-cfg-row"><span class="ab-cfg-label">${tr("Tick interval (ms)")}</span><input class="ab-cfg-num" type="number" min="${MIN_TICK_INTERVAL_MS}" max="${MAX_TICK_INTERVAL_MS}" step="${TICK_INTERVAL_STEP_MS}" value="${state.settings.tickMs || DEFAULTS.tickMs}" data-cfg-num="tickMs"></div>`;
   }
 
@@ -376,10 +403,37 @@
       <input id="ab-hybrid-learning" type="checkbox" data-hybrid-learning ${diagnostics.learning ? "checked" : ""}></div>
       <details><summary>${tr("Combat model")}</summary>
       <p>${tr("Observation preserves Legendary decisions. Learned combat needs evaluation.")}</p>
+      <select data-hybrid-kind aria-label="${tr("Combat model")}">
+        ${["ridge-v1", "compact-tanh-v1"].map(kind => `<option value="${kind}" ${diagnostics.backend === kind ? "selected" : ""}>${kind}</option>`).join("")}
+      </select>
       <textarea data-hybrid-model aria-label="${tr("Combat model")}" rows="3" style="width:100%;box-sizing:border-box"></textarea>
       <button type="button" data-hybrid-export>${tr("Export model")}</button>
       <button type="button" data-hybrid-import>${tr("Import model")}</button>
       <div data-hybrid-status role="status"></div></details>`;
+  }
+
+  function hybridNativeKnowledgeMarkup() {
+    const game = typeof getGame === "function" ? getGame() : null;
+    const player = game?.myPlayer?.();
+    const knowledge = window.__OFH_hybridNativeKnowledge;
+    if (!game || !player || !knowledge) return "";
+    const context = { game, player };
+    const costs = ["Atom Bomb", "Hydrogen Bomb", "MIRV"].map(type => {
+      const quote = knowledge.quoteNuclearPurchase(context, type);
+      return `${tr(type)}: ${quote.costDecimal ?? "?"}`;
+    }).join(" · ");
+    const silos = player.units(UNIT.MissileSilo).map(unit => knowledge.describeSilo(context, unit));
+    const sams = player.units(UNIT.SAMLauncher).map(unit => knowledge.describeSam(context, unit));
+    const slots = silos.map(fact => fact.readySlots ?? "?").join(" / ") || "?";
+    const proposal = window.__OFH_hybridCombat?.diagnostics().proposal;
+    const strike = window.__OFH_hybridStrategy?.describeStrikeWindow(context, proposal?.targetSmallID ?? null);
+    return `<details><summary>${tr("Ready silo slots")}: ${slots}</summary>
+      <p>${tr("Next nuclear purchase cost")}: ${costs}</p>
+      <pre>${escapeHybridKnowledge({ silos, sams, strike })}</pre></details>`;
+  }
+
+  function escapeHybridKnowledge(value) {
+    return JSON.stringify(value, null, 2).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   }
 
   function donateConfigMarkup() {
@@ -593,36 +647,47 @@
     const hybridLearning = panel.querySelector("[data-hybrid-learning]");
     const hybridModel = panel.querySelector("[data-hybrid-model]");
     const hybridStatus = panel.querySelector("[data-hybrid-status]");
+    const hybridKind = panel.querySelector("[data-hybrid-kind]");
     if (hybrid && hybridMode && hybridLearning) {
       const showHybridStatus = () => {
         const diagnostics = hybrid.diagnostics();
+        hybridLearning.checked = diagnostics.learning;
+        hybridMode.value = diagnostics.mode;
         if (hybridStatus) hybridStatus.textContent =
-          diagnostics.error ? `${tr("Model rejected")}: ${diagnostics.error}` :
+          diagnostics.error || window.__OFH_hybridStorageError ? `${tr("Model rejected")}: ${diagnostics.error || window.__OFH_hybridStorageError}` :
           `${tr("Completed observations")}: ${Object.values(diagnostics.samples).join(" / ")}`;
       };
       hybridMode.addEventListener("change", () => {
-        hybrid.configure({ mode: hybridMode.value });
+        hybridModelInput(() => hybrid.configure({ mode: hybridMode.value }), error => { window.__OFH_hybridStorageError = error.message; });
         showHybridStatus();
       });
       hybridLearning.addEventListener("change", () => {
-        hybrid.configure({ learning: hybridLearning.checked });
+        hybridModelInput(() => hybrid.configure({ learning: hybridLearning.checked }), error => { window.__OFH_hybridStorageError = error.message; });
         showHybridStatus();
+      });
+      hybridKind?.addEventListener("change", () => {
+        // Selecting a draft backend never replaces the active model. Import is
+        // the explicit activation step, including an intentionally cold draft.
+        const model = hybridKind.value === "compact-tanh-v1" ? hybrid.createCompactModel()
+          : new HybridCombatPolicy({ storage: null }).exportModel();
+        hybridModel.value = JSON.stringify(model);
       });
       panel.querySelector("[data-hybrid-export]")?.addEventListener("click", () => {
         hybridModel.value = JSON.stringify(hybrid.exportModel());
         showHybridStatus();
       });
       panel.querySelector("[data-hybrid-import]")?.addEventListener("click", () => {
-        // HYBRID_MODEL_IMPORT_BOUNDARY_START
-        // Invalid user input is reported beside the model field.
-        try {
-          hybrid.importModel(JSON.parse(hybridModel.value));
+        hybridModelInput(() => {
+          const model = JSON.parse(hybridModel.value);
+          const kind = model.schema === "ofh-combat-compact-tanh-v2" ? "compact-tanh-v1" : "ridge-v1";
+          if (hybridKind && kind !== hybridKind.value) throw new Error("Selected model kind mismatch");
+          hybrid.importModel(model);
+          window.localStorage.setItem("openfront-helper-hybrid-backend", kind);
+          window.__OFH_hybridStorageError = null;
           showHybridStatus();
-        // eslint-disable-next-line no-restricted-syntax -- explicit user model input; rejection is reported beside the field
-        } catch (error) {
+        }, error => {
           if (hybridStatus) hybridStatus.textContent = `${tr("Model rejected")}: ${error.message}`;
-        }
-        // HYBRID_MODEL_IMPORT_BOUNDARY_END
+        });
       });
       showHybridStatus();
     }

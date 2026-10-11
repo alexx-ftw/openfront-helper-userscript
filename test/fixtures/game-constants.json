@@ -1650,6 +1650,16 @@
     "initializerPreview": "{\n    gate: [\"bias\", \"ownTroopRatio\", \"ownLandShare\", \"incomingTroopRatio\"],\n    target: [\"bias\", \"ownTroopRatio\", \"ownLandShare\", \"incomingTroopRatio\",\n        \"targetLandShare\", \"targetTroopRatio\", \"relativeArmy\", \"captureBudgetRatio\",..."
   },
   {
+    "id": "engine/ingame/auto-bot/hybridStrategy.js:VERSION#1",
+    "file": "engine/ingame/auto-bot/hybridStrategy.js",
+    "name": "VERSION",
+    "declarationKind": "const",
+    "initializerKind": "StringLiteral",
+    "initializerHash": "b69ce4b6658c418f98607de467645328a6517568c1c11e6aa0889b0e329051e0",
+    "initializerLength": 24,
+    "initializerPreview": "\"ofh-hybrid-strategy-v1\""
+  },
+  {
     "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_PRIORITY_FIELDS#1",
     "file": "engine/ingame/auto-bot/legendaryPlanner.js",
     "name": "LEGENDARY_PRIORITY_FIELDS",

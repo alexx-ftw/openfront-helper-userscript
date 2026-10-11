@@ -125,6 +125,8 @@
     if (typeof game.isLand === "function" && !game.isLand(tile)) return null;
     if (typeof game.hasOwner === "function" && game.hasOwner(tile)) return null;
     if (typeof game.isBorder === "function" && game.isBorder(tile)) return null;
+    const indexApi = window.__OFHSpawnIndex || globalThis.__OFHSpawnIndex;
+    if (indexApi?.legalFootprint && !indexApi.legalFootprint(game, tile, { isCenterAllowed: (ref, cx, cy) => companionSpawnAreaAllowed(game, cx, cy) })) return null;
     return tile;
   }
 
@@ -164,6 +166,11 @@
     // z.number(), so a negative or fractional value would be accepted here and
     // rejected (silently) further in.
     if (tile == null || !Number.isInteger(t) || t < 0) return false;
+    if (typeof companionGame === "function" && typeof reserveBotSpawnFootprint === "function") {
+      const game = companionGame();
+      const me = game?.myPlayer?.();
+      if (game && me) reserveBotSpawnFootprint(game, me, t);
+    }
     return companionSend({ type: "spawn", tile: t });
   }
 
@@ -259,4 +266,39 @@
     const amount = companionPercentAmount(troops, pct);
     if (amount <= 0) return false;
     return companionSend({ type: "attack", targetID: targetID, troops: amount });
+  }
+
+  // Directed native messages only. A send result is never an ACK receipt.
+  function companionSupportEmoji(game, me, peer, emoji) {
+    const strategy = window.__OFH_hybridStrategy;
+    if (!strategy?.diagnostics().enabled || !companionSupportPeer(me, peer)) return false;
+    if (me.canSendEmoji?.(peer) === false) return false;
+    const context = { game, player: me };
+    const plans = strategy.observeDuo(context);
+    if (emoji === "⏳" && !plans.some(plan => plan.peerSid === peer.smallID()
+      && plan.status === "ack-pending" && game.ticks() < plan.expiresTick)) return false;
+    if (emoji === "✋" && !companionSupportAttack(me, game)) return false;
+    const nativeIds = { "✋": 17, "⏳": 29 };
+    return companionSend({ type: "emoji", recipient: peer.id(), emoji: nativeIds[emoji] });
+  }
+
+  function companionSupportPeer(me, peer) {
+    return Boolean(me?.isAlive?.() && peer?.isAlive?.()
+      && String(peer.type?.()).toUpperCase() === "HUMAN" && me.isFriendly(peer));
+  }
+
+  function companionSpawnAreaAllowed(game, x, y) {
+    if (typeof getSpawnAreaForGame !== "function") return true;
+    const area = getSpawnAreaForGame(game, game.myPlayer?.());
+    return !area || (x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height);
+  }
+
+  function companionSupportAttack(me, game) {
+    const attacks = me.outgoingAttacks?.() ?? [];
+    if (attacks.length !== 1) return false;
+    const attack = attacks[0];
+    const targetSid = typeof attack.target === "function" ? attack.target()?.smallID() : attack.targetID;
+    const target = game.players().find(player => player.smallID() === targetSid);
+    const retreating = typeof attack.retreating === "function" ? attack.retreating() : attack.retreating;
+    return Boolean(target?.isAlive?.() && !me.isFriendly(target) && !retreating);
   }

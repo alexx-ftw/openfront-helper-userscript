@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import vm from "vm";
+import os from "node:os";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { fileURLToPath } from "url";
 import { JSDOM } from "jsdom";
@@ -11,6 +12,8 @@ import {
 import { getSpawnTiles } from "../../openfront-engine/src/core/execution/Util.ts";
 import { GameUpdateType } from "../../openfront-engine/src/core/game/GameUpdates.ts";
 import { unpackMotionPlans } from "../../openfront-engine/src/core/game/MotionPlans.ts";
+import { ClientMsgRateLimiter } from "../../openfront-engine/src/server/ClientMsgRateLimiter.ts";
+import { FifoTransport } from "./hybrid-evaluation-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUNDLE_PATH =
@@ -19,6 +22,247 @@ const STORAGE_KEY = "openfront-helper-autobot-v1";
 // Static simulation-only diagnostic switch.  The shipped userscript never reads
 // this environment variable.
 const AUTO_BUILD_ENABLED = process.env.OFH_AUTOBUILD !== "0";
+
+// Bounded result telemetry; optional JSONL receives each actual event as it
+// arrives. Retained arrays never certify a complete dataset after eviction.
+export class HybridRuntimeEvidence {
+  constructor({ runIdentity, capacity = 256, file = null }) {
+    if (
+      typeof runIdentity !== "string" ||
+      !runIdentity.trim() ||
+      !Number.isSafeInteger(capacity) ||
+      capacity < 1
+    ) {
+      throw new Error("Invalid hybrid runtime evidence identity/capacity");
+    }
+    this.runIdentity = runIdentity;
+    this.capacity = capacity;
+    this.file = file;
+    this.eventCount = 0;
+    this.latestClosure = null;
+    if (file) fs.writeFileSync(file, "", { flag: "wx" });
+    this.rows = { entries: [], decisionRows: [], safetyRows: [], latencyMs: [], transitions: [] };
+    this.dropped = Object.fromEntries(Object.keys(this.rows).map((key) => [key, 0]));
+    this.counters = {
+      reserveChecks: 0,
+      reserveViolations: 0,
+      legalityChecks: 0,
+      illegalEmissions: 0,
+    };
+    this.coverage = { knownAttempts: 0, unknownAttempts: 0, emissionsWithoutChecks: 0 };
+    this.transitionSteps = new Map();
+    this.transitionGroup = null;
+  }
+
+  retain(key, value) {
+    if (this.rows[key].length === this.capacity) {
+      this.rows[key].shift();
+      this.dropped[key]++;
+    }
+    this.rows[key].push(value);
+  }
+
+  record(value) {
+    const identity =
+      value.kind === "hybrid-combat-outcome"
+        ? {
+            step: this.transitionSteps.get(`${value.episodeId}:${value.generation}`) ?? 0,
+            stepScope: "outcome-observation",
+          }
+        : {};
+    const event = JSON.parse(
+      JSON.stringify({ ...value, ...identity, runIdentity: this.runIdentity }),
+    );
+    this.eventCount++;
+    if (this.file) fs.appendFileSync(this.file, `${JSON.stringify(event)}\n`);
+    this.retain("entries", event);
+    if (event.kind === "hybrid-combat-decision") this.retain("decisionRows", event);
+    if (event.kind === "hybrid-combat-outcome") this.recordTransition(event);
+  }
+
+  recordTransition(event) {
+    const group = `${event.episodeId}:${event.generation}`;
+    // The existing evaluator validates one episode stream by numeric episodeId.
+    // Generation boundaries are retained in the complete event file; do not
+    // concatenate independent FIRST sequences with coincident local IDs.
+    if (this.transitionGroup !== null && this.transitionGroup !== group) {
+      this.dropped.transitions += this.rows.transitions.length;
+      this.rows.transitions = [];
+      this.transitionSteps.clear();
+    }
+    this.transitionGroup = group;
+    const step = this.transitionSteps.get(group) ?? 0;
+    this.transitionSteps.set(group, step + 1);
+    const transition = {
+      runIdentity: this.runIdentity,
+      episodeId: event.episodeId,
+      generation: event.generation,
+      step,
+      tick: event.actionTick,
+      nextTick: event.outcomeTick,
+      first: step === 0,
+      terminated: event.terminal === true,
+      truncated: event.truncated === true,
+      envError: event.envError === true,
+      reason: event.reason ?? null,
+      potentialID: "observed-own-land-share-v1",
+      potentialSource: "policy-gate-ownLandShare",
+      potential: event.gate?.[2] ?? null,
+      nextPotential: event.nextGate?.[2] ?? null,
+      baseReward: event.reward,
+      confirmed: event.confirmed === true,
+    };
+    if (this.file)
+      fs.appendFileSync(
+        this.file,
+        `${JSON.stringify({ ...transition, kind: "hybrid-transition" })}\n`,
+      );
+    this.retain("transitions", transition);
+  }
+
+  safety(value) {
+    const row = JSON.parse(JSON.stringify({ ...value, runIdentity: this.runIdentity }));
+    for (const [field, check, fail] of [
+      ["reservePassed", "reserveChecks", "reserveViolations"],
+      ["legalityPassed", "legalityChecks", "illegalEmissions"],
+    ]) {
+      if (typeof row[field] !== "boolean") continue;
+      this.counters[check]++;
+      if (!row[field] && (field === "reservePassed" || row.emitted)) this.counters[fail]++;
+    }
+    const known = typeof row.reservePassed === "boolean" && typeof row.legalityPassed === "boolean";
+    this.coverage[known ? "knownAttempts" : "unknownAttempts"]++;
+    if (row.emitted && !known) this.coverage.emissionsWithoutChecks++;
+    this.retain("safetyRows", row);
+    this.record({ ...row, kind: "hybrid-safety" });
+  }
+
+  latency(value) {
+    if (!Number.isFinite(value.durationMs) || value.durationMs < 0)
+      throw new Error("Invalid actual hybrid decision latency");
+    this.retain("latencyMs", value.durationMs);
+    this.record({ ...value, kind: "hybrid-latency" });
+  }
+
+  closeEpisode(value) {
+    this.latestClosure = { ...value, runIdentity: this.runIdentity, kind: "hybrid-episode-close" };
+    this.record(this.latestClosure);
+  }
+
+  snapshot() {
+    const entries = this.rows.entries;
+    return structuredClone({
+      ...this.rows,
+      decisionRows: this.dropped.decisionRows ? undefined : this.rows.decisionRows,
+      retainedDecisionRows: this.rows.decisionRows,
+      decisionCoverage: {
+        dropped: this.dropped.decisionRows,
+        available: this.dropped.decisionRows === 0,
+      },
+      latencyMs: this.dropped.latencyMs ? undefined : this.rows.latencyMs,
+      retainedLatencyMs: this.rows.latencyMs,
+      latencyCoverage: { dropped: this.dropped.latencyMs, available: this.dropped.latencyMs === 0 },
+      transitions: this.dropped.transitions ? undefined : this.rows.transitions,
+      transitionRows: this.rows.transitions,
+      transitionCoverage: {
+        dropped: this.dropped.transitions,
+        available: this.dropped.transitions === 0,
+      },
+      latestClosure: this.latestClosure,
+      safety: this.counters,
+      coverage: this.coverage,
+      latencyScope: "hybrid-decision-wall-ms",
+      safetyScope: "learned-attack-gate",
+      dropped: this.dropped,
+      eventFile: this.file,
+      ledger: {
+        entries,
+        dropped: this.dropped.entries,
+        fullDataset: this.dropped.entries === 0,
+        coverage: "actual-incremental-policy-events",
+        capacity: this.capacity,
+        incrementalFile: this.file
+          ? { path: this.file, fullDataset: true, policyEvents: this.eventCount }
+          : null,
+      },
+      replay: {
+        records: this.dropped.entries
+          ? undefined
+          : entries.filter((row) => row.kind === "hybrid-combat-outcome"),
+        dropped: this.dropped.entries,
+        fullDataset: this.dropped.entries === 0,
+      },
+      retainedReplayRecords: entries.filter((row) => row.kind === "hybrid-combat-outcome"),
+    });
+  }
+}
+
+// Experimental headless transport only. The browser's sole emitter/token
+// ledger stays intact; admission is checked at actual arrival wall time.
+export class HybridFifoDispatcher {
+  constructor({ delayTicks }) {
+    if (!Number.isSafeInteger(delayTicks) || delayTicks < 0)
+      throw new Error("Invalid FIFO delay ticks");
+    this.delayTicks = delayTicks;
+    this.queue = new FifoTransport();
+    this.limiter = new ClientMsgRateLimiter();
+    this.stats = { nativeChecks: 0, accepted: 0, rejected: 0, kicks: 0 };
+    this.arrivals = [];
+    this.dropped = 0;
+  }
+
+  dispatch(seat, tick, intents) {
+    this.queue.schedule({ seat, tick, delayTicks: this.delayTicks, intents });
+    const delivered = [];
+    for (const batch of this.queue.take(tick)) {
+      for (const intent of batch.intents) {
+        const atMs = Math.floor(performance.now());
+        const result = this.limiter.check(
+          batch.seat,
+          "intent",
+          Buffer.byteLength(JSON.stringify({ type: "intent", intent })),
+        );
+        this.stats.nativeChecks++;
+        this.stats[result === "ok" ? "accepted" : "rejected"]++;
+        if (result === "kick") this.stats.kicks++;
+        if (this.arrivals.length === 256) {
+          this.arrivals.shift();
+          this.dropped++;
+        }
+        this.arrivals.push({
+          seat: batch.seat,
+          enqueueTick: batch.tick,
+          deliveryTick: batch.deliveryTick,
+          dispatchTick: tick,
+          atMs,
+          result,
+        });
+        if (result === "ok") delivered.push(intent);
+      }
+    }
+    return delivered;
+  }
+
+  clear() {
+    this.queue.clear();
+    this.limiter = new ClientMsgRateLimiter();
+    this.stats = { nativeChecks: 0, accepted: 0, rejected: 0, kicks: 0 };
+    this.arrivals = [];
+    this.dropped = 0;
+  }
+
+  snapshot() {
+    return {
+      ...this.stats,
+      pendingBatches: this.queue.queue.length,
+      pendingIntents: this.queue.queue.reduce((sum, batch) => sum + batch.intents.length, 0),
+      arrivals: structuredClone(this.arrivals),
+      dropped: this.dropped,
+      scope: "headless-native-client-admission-at-dispatch-wall-time",
+      serverReceiptClaim: false,
+    };
+  }
+}
 
 export function playersShareSide(player, other) {
   return Boolean(
@@ -49,7 +293,10 @@ if (process.env.BLITZBOT_PROFILE_OPPONENT === "1") {
 }
 
 export function createBundledOpponentHarness(options = {}) {
-  bundledHarnessSource ??= createBundledHarnessSource();
+  if (!options.bundlePath) bundledHarnessSource ??= createBundledHarnessSource();
+  const source = options.bundlePath
+    ? createBundledHarnessSource(options.bundlePath)
+    : bundledHarnessSource;
   const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
     url: "https://openfront.io/",
     runScripts: "outside-only",
@@ -167,20 +414,106 @@ export function createBundledOpponentHarness(options = {}) {
   if (process.env.OFH_BEACHHEAD_LANE === "0") {
     window.localStorage.setItem("ofh:beachheadLane", "0");
   }
-  // The harness deliberately executes the locally built userscript inside an
-  // isolated JSDOM VM. No network or untrusted source is evaluated here.
-  // eslint-disable-next-line sonarjs/code-eval
-  bundledHarnessScript ??= new vm.Script(bundledHarnessSource, { filename: BUNDLE_PATH });
-  bundledHarnessScript.runInContext(context);
-  configureHybridCombat(window, process.env.OFH_HYBRID_COMBAT_MODE);
+  const script = bundledOpponentScript(source, options.bundlePath);
+  script.runInContext(context);
+  configureHybridCombat(
+    window,
+    options.hybrid?.mode ?? process.env.OFH_HYBRID_COMBAT_MODE,
+    options.hybrid,
+  );
   const internals = window.__OFH_realOpponentHarness;
   if (!internals) {
     throw new Error("Bundled opponent internals were not exposed");
   }
-  return { window, current, internals };
+  const evidence = installHybridRuntimeEvidence(window, internals, options);
+  return { window, current, internals, evidence };
 }
 
-function configureHybridCombat(window, mode) {
+function bundledOpponentScript(source, bundlePath) {
+  if (!bundlePath && bundledHarnessScript) return bundledHarnessScript;
+  // Only the declared local build fixture is executed in an isolated JSDOM VM.
+  // eslint-disable-next-line sonarjs/code-eval
+  const script = new vm.Script(source, { filename: bundlePath ?? BUNDLE_PATH });
+  if (!bundlePath) bundledHarnessScript = script;
+  return script;
+}
+
+function installHybridRuntimeEvidence(window, internals, options) {
+  const runIdentity = options.runIdentity ?? process.env.OFH_HYBRID_RUN_ID;
+  if (!runIdentity) return null;
+  const evidence = new HybridRuntimeEvidence({
+    runIdentity,
+    capacity: options.evidenceCapacity ?? 256,
+    file:
+      options.eventFile ??
+      process.env.OFH_HYBRID_EVENT_LOG ??
+      path.join(fs.mkdtempSync(path.join(os.tmpdir(), "ofh-hybrid-events-")), "events.jsonl"),
+  });
+  window.__OFH_hybridRuntimeEvent = (row) => evidence.record(row);
+  window.__OFH_hybridDecisionTiming = (row) => evidence.latency(row);
+  window.__OFH_hybridSafety = (row) => evidence.safety(row);
+  window.__OFH_hybridBoatRisk = (row) => evidence.record({ ...row, kind: "hybrid-boat-risk" });
+  const policy = internals.hybridCombatPolicy;
+  for (const method of ["configure", "importModel", "resetEpisode"]) {
+    const original = policy[method];
+    policy[method] = function (...args) {
+      const pending = this.pending;
+      const previous = this.generation;
+      const episodeId = this.episodeId;
+      const observation = evidence.observation?.();
+      const result = original.apply(this, args);
+      if (previous !== this.generation && observation) {
+        if (pending) evidence.record(cancelledHybridOutcome(pending, "reset", observation));
+        evidence.closeEpisode({
+          episodeId,
+          generation: previous,
+          tick: observation.tick,
+          potential: observation.gate?.[2] ?? null,
+          potentialID: "observed-own-land-share-v1",
+          potentialSource: "policy-gate-ownLandShare",
+          reason: "reset",
+          terminated: false,
+          truncated: true,
+          envError: false,
+        });
+      }
+      return result;
+    };
+  }
+  return evidence;
+}
+
+function cancelledHybridOutcome(pending, reason, observation) {
+  return {
+    ...cancelledHybridFeatures(pending),
+    kind: "hybrid-combat-outcome",
+    episodeId: pending.episodeId,
+    generation: pending.generation,
+    action: pending.target ? "attack" : "wait",
+    actionTick: pending.tick,
+    outcomeTick: observation?.tick ?? pending.tick,
+    gate: pending.gate,
+    nextGate: observation?.gate ?? null,
+    reward: null,
+    confirmed: pending.target ? pending.confirmed === true : true,
+    receiptID: pending.receiptID ?? null,
+    targetSmallID: pending.targetSmallID ?? null,
+    features: pending.features ?? null,
+    geometry: pending.geometry ?? null,
+    modelIdentity: pending.modelIdentity ?? null,
+    terminal: false,
+    truncated: reason !== "env_error",
+    envError: reason === "env_error",
+    reason,
+  };
+}
+
+function cancelledHybridFeatures(pending) {
+  const original = pending.modelIdentity ? JSON.parse(pending.modelIdentity) : null;
+  return { featureVersion: original?.schema ?? null, normalizer: original?.normalizer ?? null };
+}
+
+function configureHybridCombat(window, mode, config = {}) {
   if (!mode) return;
   if (!["baseline", "shadow", "learned"].includes(mode)) {
     throw new Error(`Unsupported hybrid combat mode ${mode}`);
@@ -193,11 +526,13 @@ function configureHybridCombat(window, mode) {
   ) {
     throw new Error("Hybrid combat API unavailable in page realm");
   }
-  const modelPath = process.env.OFH_HYBRID_COMBAT_MODEL;
+  const modelPath = config.modelPath ?? process.env.OFH_HYBRID_COMBAT_MODEL;
   if (modelPath && api.importModel(JSON.parse(fs.readFileSync(modelPath, "utf8"))) === false) {
     throw new Error("Unsupported hybrid combat model snapshot");
   }
-  const learningFlag = process.env.OFH_HYBRID_COMBAT_LEARNING;
+  const configuredLearning = config.learning ? "1" : "0";
+  const learningFlag =
+    config.learning === undefined ? process.env.OFH_HYBRID_COMBAT_LEARNING : configuredLearning;
   if (learningFlag !== undefined && learningFlag !== "0" && learningFlag !== "1") {
     throw new Error("OFH_HYBRID_COMBAT_LEARNING must be 0 or 1");
   }
@@ -206,8 +541,8 @@ function configureHybridCombat(window, mode) {
   window.__OFH_hybridCombatRun = { mode, learning, modelImported: Boolean(modelPath) };
 }
 
-function createBundledHarnessSource() {
-  const rawSource = fs.readFileSync(BUNDLE_PATH, "utf8");
+function createBundledHarnessSource(bundlePath = BUNDLE_PATH) {
+  const rawSource = fs.readFileSync(bundlePath, "utf8");
   const exportNeedle = "window.__OFH_autobot=";
   let exportIndex = rawSource.lastIndexOf(exportNeedle);
   if (exportIndex < 0) exportIndex = rawSource.lastIndexOf("window.__OFH_autobot =");
@@ -217,6 +552,8 @@ function createBundledHarnessSource() {
 
   const exportHook = `
 window.__OFH_realOpponentHarness = {
+  hybridCombatPolicy,
+  hybridNativeKnowledgeMarkup,
   NationBot,
   AllianceBehavior,
   StructureBehavior,
@@ -237,6 +574,11 @@ window.__OFH_realOpponentHarness = {
   ,getTeamSpawnRegion
   ,isPointInsideTeamSpawnRegion
   ,getSpawnCandidateConnectivitySnapshot
+};
+const originalHybridRoundLog = roundLogRecord;
+roundLogRecord = function(category, data) {
+  originalHybridRoundLog(category, data);
+  if (category === "bot_decision" && String(data.kind).startsWith("hybrid-combat-")) window.__OFH_hybridRuntimeEvent?.(data);
 };
 `;
   return rawSource.slice(0, exportIndex) + exportHook + rawSource.slice(exportIndex);
@@ -739,6 +1081,7 @@ export class BundledOpponentBot {
       gameId: this.gameID,
       playerId: this.clientID,
     });
+    if (this.harness.evidence) this.harness.evidence.observation = () => this.hybridObservation();
     if (process.env.OFH_LOG_NAVAL === "1") this.enableNavalTrace();
     if (process.env.OFH_CONSTRUCTION_DUMP === "1") this.enableConstructionDump();
     if (process.env.OFH_LOG_STRUCTURES === "1") this.enableStructureTrace();
@@ -1883,7 +2226,13 @@ export class BundledOpponentBot {
     profileEnd("api.beginTick", beginTickStart);
     const nationTickStart = profileStart();
     const botProfile = harness.internals.beginAutoBotProfileTick();
-    await this.nationBot.tick(this.game.ticks(), botProfile);
+    let tickCompleted = false;
+    try {
+      await this.nationBot.tick(this.game.ticks(), botProfile);
+      tickCompleted = true;
+    } finally {
+      if (!tickCompleted) this.finalizeHybridCombatObservation("env_error");
+    }
     harness.internals.finishAutoBotProfileTick(botProfile);
     profileEnd("nationBot.tick", nationTickStart);
 
@@ -1927,11 +2276,54 @@ export class BundledOpponentBot {
   }
 
   finalizeHybridCombatObservation(stopReason) {
-    // A tick cap is censored, never a completed commitment. Do not decide again.
-    if (stopReason !== "winner" && stopReason !== "bot_dead") return;
+    // Flush only authoritative stop facts; never decide or emit another order.
     const player = this.pageGame.myPlayer();
-    if (!player || (player.isAlive() && !this.game.getWinner())) return;
-    this.nationBot.observeHybridCombat(player);
+    const terminal = player && (!player.isAlive() || this.game.getWinner());
+    if ((stopReason === "winner" || stopReason === "bot_dead") && terminal) {
+      this.nationBot.observeHybridCombat(player);
+    }
+    // Legacy/non-instrumented callers retain the original terminal flush.
+    // Censor/reset export belongs only to an attached runtime evidence stream.
+    if (!this.harness?.evidence) return;
+    const policy = this.harness.internals.hybridCombatPolicy;
+    if (policy?.pending && this.harness.evidence) {
+      this.harness.evidence.record(
+        cancelledHybridOutcome(policy.pending, stopReason, this.hybridObservation()),
+      );
+      policy.pending = null;
+    }
+    this.recordHybridEpisodeClosure(stopReason, Boolean(terminal), policy);
+  }
+
+  recordHybridEpisodeClosure(reason, terminal, policy) {
+    if (!this.harness.evidence) return;
+    const observation = this.hybridObservation();
+    const terminated = terminal && (reason === "winner" || reason === "bot_dead");
+    this.harness.evidence.closeEpisode({
+      episodeId: policy.episodeId,
+      generation: policy.generation,
+      tick: observation.tick,
+      potential: observation.gate?.[2] ?? null,
+      potentialID: "observed-own-land-share-v1",
+      potentialSource: "policy-gate-ownLandShare",
+      reason,
+      terminated,
+      truncated: !terminated && reason !== "env_error",
+      envError: reason === "env_error",
+    });
+  }
+
+  hybridObservation() {
+    const behavior = this.nationBot?.attackBehavior;
+    const policy = this.harness.internals.hybridCombatPolicy;
+    return {
+      tick: behavior ? behavior.currentAttackDecisionTick() : this.game.ticks(),
+      gate: behavior ? policy.gateFeatures(behavior) : null,
+    };
+  }
+
+  getHybridEvaluationSnapshot() {
+    return this.harness.evidence?.snapshot() ?? null;
   }
 
   getHybridCombatSnapshot() {
@@ -2050,6 +2442,7 @@ export function createBuildMenu(bot) {
   const eventBus = createEventBus(bot, bot.harness.window);
   bot.buildMenu = {
     eventBus,
+    game: bot.pageGame,
     uiState: { rocketDirectionUp: true },
     sendBuildOrUpgrade(buildable, tile) {
       if (!buildable) return;

@@ -173,7 +173,22 @@
     };
   }
 
-  function autoBotPrepareBuildReservation(game, player, buildable, trackNuke) {
+  function autoBotEconomicPurchaseAllowed({ game, player, buildable, tile, reserved, tick }) {
+    const strategy = window.__OFH_hybridStrategy;
+    let observedTile = tile;
+    const managedUpgrade = strategy?.diagnostics?.().enabled && ["City", "Factory", "Port"].includes(buildable.type)
+      && buildable.canUpgrade != null && buildable.canUpgrade !== false;
+    if (managedUpgrade) {
+      observedTile = strategy.economicUpgradeTile({ game, player, buildable });
+      if (observedTile == null || (tile !== undefined && tile !== observedTile)) return false;
+    }
+    const admission = strategy?.admitEconomicPurchase({
+      game, player, buildable, tile: observedTile, reservedGold: reserved, proposalId: buildable.proposalId,
+    });
+    return !admission?.blocked && (admission?.notBeforeTick == null || tick >= admission.notBeforeTick);
+  }
+
+  function autoBotPrepareBuildReservation({ game, player, buildable, trackNuke, tile }) {
     const cost = autoBotBuildCost(buildable);
     if (cost === null) return null;
     const tick = autoBotBuildTick(game);
@@ -190,6 +205,7 @@
       const slots = autoBotBuildNukeSlots(game, player);
       if (slots && ![...slots.values()].some((count) => count > 0)) return null;
     }
+    if (!autoBotEconomicPurchaseAllowed({ game, player, buildable, tile, reserved, tick })) return null;
     return { cost, tick, playerId, reservations, nuclear };
   }
 
@@ -198,7 +214,7 @@
     if (game === null || typeof game !== "object") return false;
     const dispatch = autoBotBuildDispatch(buildMenu, buildable, tile);
     if (!dispatch) return false;
-    const reservation = autoBotPrepareBuildReservation(game, player, buildable, trackNuke);
+    const reservation = autoBotPrepareBuildReservation({ game, player, buildable, trackNuke, tile });
     if (!reservation) return false;
     const { cost, tick, playerId, reservations, nuclear } = reservation;
     // The build menu emits straight onto the EventBus, bypassing emitIntent's

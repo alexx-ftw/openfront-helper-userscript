@@ -47,6 +47,8 @@
         delete out[id];
         continue;
       }
+      // Native support consent is reserved; legacy commands cannot impersonate it.
+      if (saved[id] === "✋" || saved[id] === "⏳") { delete out[id]; continue; }
       if (typeof saved[id] === "string" && saved[id] !== "") out[id] = saved[id];
     }
     return out;

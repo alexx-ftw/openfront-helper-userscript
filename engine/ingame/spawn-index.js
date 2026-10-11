@@ -143,6 +143,7 @@
       const configuration = createSpawnIndexConfiguration(options);
       Object.assign(this, configuration);
       this.blocked = createSpawnBlockedBuffer(options, this.size);
+      this.pendingFootprints = new Map();
 
       this.diskOffsets = buildSpawnDiskOffsets(this.spawnRadius);
       this.frontierOffsets = buildSpawnFrontierOffsets(this.diskOffsets);
@@ -556,9 +557,61 @@
         : this._syncTerrainRefs(readByte, refs);
     }
 
+    footprintRefs(ref) {
+      if (!this._isValidRef(ref)) return [];
+      const x = ref % this.width;
+      const y = Math.floor(ref / this.width);
+      const refs = [];
+      for (const offset of this.diskOffsets) {
+        const nx = x + offset.dx;
+        const ny = y + offset.dy;
+        if (nx < 0 || ny < 0 || nx >= this.width || ny >= this.height) continue;
+        refs.push(ny * this.width + nx);
+      }
+      return refs;
+    }
+
+    reservationAllows(ref, options = {}) {
+      if (this.pendingFootprints.size === 0) return true;
+      const refs = this.footprintRefs(ref);
+      for (const [actor, pending] of this.pendingFootprints) {
+        if (options.sessionId !== undefined && Number.isInteger(options.tick)
+          && (options.sessionId !== pending.sessionId || options.tick >= pending.expiresTick)) {
+          this.pendingFootprints.delete(actor);
+          this.version++;
+          continue;
+        }
+        if (actor === options.actorSid) continue;
+        if (refs.some(tile => pending.refs.has(tile))) return false;
+      }
+      return true;
+    }
+
+    reserveFootprint(reservation) {
+      if (!Number.isInteger(reservation.tick) || reservation.expiresTick <= reservation.tick) return false;
+      const existing = this.pendingFootprints.get(reservation.actorSid);
+      if (existing?.sessionId === reservation.sessionId && existing.ref === reservation.ref
+        && reservation.tick < existing.expiresTick) return true;
+      if (!this._isValidRef(reservation.ref) || !this.reservationAllows(reservation.ref, reservation)) return false;
+      if (this.ready && !this.getCandidate(reservation.ref, reservation)) return false;
+      this.version++;
+      this.pendingFootprints.set(reservation.actorSid, { ...reservation,
+        refs: new Set(this.footprintRefs(reservation.ref)), status: "pending" });
+      return true;
+    }
+
+    confirmFootprint(actorSid, nativeSpawnTile) {
+      const pending = this.pendingFootprints.get(actorSid);
+      if (!pending || pending.ref !== nativeSpawnTile) return false;
+      this.pendingFootprints.delete(actorSid);
+      this.version++;
+      return true;
+    }
+
     getCandidate(ref, options = {}) {
       if (!this.ready || !this._isValidRef(ref)) return null;
       if (!this._cellValid(ref)) return null;
+      if (!this.reservationAllows(ref, options)) return null;
       const mode = options.mode === "random" ? "random" : "explicit";
       if (mode === "random" && this.invalidCount[ref] !== 0) return null;
       if (mode === "explicit" && this.spawnGain[ref] === 0) return null;
@@ -603,6 +656,10 @@
       let count = 0;
       for (let ref = start; ref < end; ref += 1) {
         if (!this._candidateRangeAllowed(ref, mode, options.isCenterAllowed)) continue;
+        // Contextual iterators opt into reservations. Unscoped rank callers
+        // already apply their actor-aware/adaptive policy in isCenterAllowed.
+        if (options.sessionId !== undefined && Number.isInteger(options.tick)
+          && !this.reservationAllows(ref, options)) continue;
         const x = ref % this.width;
         const y = Math.floor(ref / this.width);
         options.onCandidate(
@@ -620,6 +677,13 @@
         count += 1;
       }
       return count;
+    }
+
+    continueCandidates(options = {}) {
+      const startRef = Math.max(0, Math.floor(options.cursor ?? 0));
+      const endRef = Math.min(this.size, startRef + Math.max(1, Math.floor(options.budget ?? 1)));
+      const count = this.forEachCandidateRange({ ...options, startRef, endRef });
+      return { cursor: endRef, done: endRef === this.size, count };
     }
 
     forEachCandidate(options = {}) {
@@ -652,7 +716,41 @@
     }
   }
 
+  function legalFootprintCenter(game, ref, x, y, options) {
+    return !game.isBorder?.(ref) && options.isCenterAllowed?.(ref, x, y) !== false;
+  }
+
+  function legalFootprintTile(game, tile) {
+    return game.isLand(tile) && !game.isImpassable?.(tile) && !game.hasFallout?.(tile);
+  }
+
+  function legalFootprint(game, ref, options = {}) {
+    const width = game.width();
+    const x = ref % width;
+    const y = Math.floor(ref / width);
+    if (!game.isValidCoord(x, y) || !game.isLand(ref) || game.hasOwner(ref)) return null;
+    if (!legalFootprintCenter(game, ref, x, y, options)) return null;
+    const refs = [];
+    for (const offset of buildSpawnDiskOffsets(DEFAULT_SPAWN_RADIUS)) {
+      const nx = x + offset.dx;
+      const ny = y + offset.dy;
+      if (!game.isValidCoord(nx, ny)) continue;
+      const tile = game.ref(nx, ny);
+      if (game.hasOwner(tile)) return null;
+      if (legalFootprintTile(game, tile)) refs.push(tile);
+    }
+    return refs.length ? refs : null;
+  }
+
   const api = {
+    createReservations(width, height) {
+      // Reuse exact footprint methods without allocating the map-sized ranker.
+      return Object.assign(Object.create(SpawnCandidateIndex.prototype), {
+        width, height, size: width * height, ready: false, version: 0,
+        diskOffsets: buildSpawnDiskOffsets(DEFAULT_SPAWN_RADIUS), pendingFootprints: new Map(),
+      });
+    },
+    legalFootprint,
     DEFAULT_SPAWN_RADIUS,
     DEFAULT_IMPASSABLE_MAGNITUDE,
     FRONTIER_VALUE_SCALE,

@@ -93,6 +93,7 @@
     const expansionScore = clampScore(candidate.expansionScore);
     const safetyScore = clampScore(candidate.safetyScore);
     const teamScore = clampScore(candidate.teamScore, 1);
+    const congestionScore = clampScore(candidate.congestionScore, 1);
     const tribeScore = clampScore(candidate.tribeScore, 1);
     const nationScore = clampScore(candidate.nationScore, 1);
     const tribeReachScore = clampScore(candidate.tribeReachScore, 1);
@@ -116,6 +117,7 @@
     const teamInteriorScore = clampScore(candidate.teamInteriorScore);
     return {
       startScore,
+      congestionScore,
       expansionScore,
       safetyScore,
       teamScore,
@@ -136,6 +138,7 @@
         safetyScore,
         resourceScore,
         teamScore,
+        congestionScore,
       ),
     };
   }

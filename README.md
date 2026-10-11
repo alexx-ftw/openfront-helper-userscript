@@ -294,6 +294,31 @@ adds no polling loop to gameplay; snapshots are assembled only when requested.
 
 After any source change, rebuild and commit both the source and the regenerated `openfront-helper.user.js` — the published userscript is that file.
 
+### Experimental hybrid learning and evaluation
+
+The [six-project audit](docs/hybrid-bot-project-audit.md) records the source revisions,
+reusable ideas, licensing and limits behind the hybrid bot. Its combat models are
+trained for this userscript: the existing ridge model and an optional compact tanh
+network share explicit feature contracts. External PPO or Run3 checkpoints are not
+compatible. The compact network predicts action utility; it does not report a policy
+probability or entropy.
+
+`scripts/headless/evaluate-hybrid-combat.mjs` supports collection with `--collect`,
+an explicit `--policy ridge` or `--policy compact-neural`, and frozen evaluation with
+`--model`. Every invocation requires explicit `--seeds` and `--timeout-ms` values.
+Use `--cohorts` to declare seed/configuration coverage and uncertainty parameters,
+and `--requirements` to bind acceptance limits before launching evaluation.
+The report distinguishes terminal pairs, censored runs, errors and unavailable
+telemetry; missing evidence cannot qualify a model for promotion.
+
+Offline neural fitting requires `--replay` and `--selection` for one explicitly
+selected frozen run/seed/episode/generation/original-model group. `--anchors` adds
+a separate patient-action fit; `--potential-shaping` selects a separately versioned
+reward using actual action/outcome ticks. Neither changes the live reward or
+activates the fitted model. Keep collection, fitting and holdout seeds separate,
+and compare complete paired outcomes before choosing a model manually. Model
+readiness and passing fixture tests alone do not establish stronger gameplay.
+
 ---
 
 ## Credits
