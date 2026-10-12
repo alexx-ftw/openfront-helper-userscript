@@ -92,7 +92,7 @@
     },
     "sonarjs/no-nested-conditional": {
       "warning": 0,
-      "error": 5
+      "error": 4
     },
     "max-depth": {
       "warning": 0,

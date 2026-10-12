@@ -91,6 +91,7 @@ priorityBehavior.maybeUpgradeLegendarySam = async () => false;
 priorityBehavior.maybeOpenLegendaryNavalEconomy = async () => false;
 priorityBehavior.maybeOpenLegendaryArsenal = async () => false;
 priorityBehavior.ownSamCapacity = () => 1;
+priorityBehavior.ownProjectedSamCapacity = () => 1;
 priorityBehavior.maybeSpawnHostileSiloSam = async () => false;
 priorityBehavior.legendaryMissileDefenseUrgent = () => false;
 priorityBehavior.legendaryConstructionCandidates = () => [

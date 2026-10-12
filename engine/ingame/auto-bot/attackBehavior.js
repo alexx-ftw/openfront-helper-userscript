@@ -1655,7 +1655,10 @@
         return Number.isFinite(age) && age >= 0 && age < BOT_OUTBOUND_INTENT_GRACE_TICKS;
       });
       const pending = this.botAttackPendingIntentCommitments;
-      if (!Array.isArray(pending) || pending.length === 0) return;
+      if (
+        (!Array.isArray(pending) || pending.length === 0) &&
+        (this.botAcknowledgedOutboundIntents ?? []).length === 0
+      ) return;
 
       const context = {
         attacks: this.getOutboundAttackSnapshot(),
@@ -1669,7 +1672,7 @@
       };
       this.botAcknowledgedOutboundIntents = this.botAcknowledgedOutboundIntents.filter((record) =>
         this.reconcileOutboundAcknowledgement(record, context, tick));
-      this.botAttackPendingIntentCommitments = pending.filter((entry) =>
+      this.botAttackPendingIntentCommitments = (Array.isArray(pending) ? pending : []).filter((entry) =>
         this.reconcileOutboundAttackEntry(entry, context, tick),
       );
       for (const entry of this.botAttackPendingIntentCommitments) {
@@ -1699,13 +1702,25 @@
       }
     }
 
-    getPendingOutboundAttackTroops() {
-      this.reconcileOutboundAttackIntentCommitments();
+    getPendingOutboundAttackTroops(force = false) {
+      this.reconcileOutboundAttackIntentCommitments(
+        this.currentAttackDecisionTick(),
+        force,
+      );
       const pending = this.botAttackPendingIntentCommitments;
-      if (!Array.isArray(pending)) return 0;
-      return pending.reduce(
+      const committed = Array.isArray(pending) ? pending.reduce(
         (total, entry) => total + Math.max(0, Number(entry.troops) || 0),
         0,
+      ) : 0;
+      return (this.botAcknowledgedOutboundIntents ?? []).reduce(
+        (total, record) =>
+          total +
+          Math.max(
+            0,
+            (Number(record.entry?.troops) || 0) -
+              (Number(record.debitAmount) || 0),
+          ),
+        committed,
       );
     }
 

@@ -617,7 +617,7 @@ const pendingPartnerPortValue = plannerSandbox.legendaryEconomyNetGold("Port", {
   },
 });
 assert.ok(
-  pendingPartnerPortValue?.netTeamGold > 0 && pendingPartnerPortValue.productiveTicks === 450,
+  pendingPartnerPortValue?.netTeamGold > 0 && pendingPartnerPortValue.productiveTicks === 500,
   "a new source Port earns at an eligible destination still under construction after its own 50-tick build",
 );
 assert.equal(
@@ -643,8 +643,8 @@ assert.equal(
       unitInfo: () => ({ constructionDuration: 50 }),
       tradeShipSpawnRate: () => 1,
     },
-  }).refused,
-  true,
+  })?.netTeamGold ?? null,
+  null,
   "a new source Port cannot earn before its own construction completes",
 );
 const portUpgradeValue = plannerSandbox.legendaryEconomyNetGold("Port", {
@@ -755,6 +755,7 @@ assert.ok(
 const seedPortInputs = {
   hasCompletedTradePartner: false,
   portSeedWindowOpen: true,
+  portSeedPartnerCommitted: true,
   seedPairDelayTicks: 50,
   tradeShipCount: 0,
   portSeedSources: [
@@ -768,8 +769,8 @@ assert.equal(
     horizonTicks: 50,
     inputs: seedPortInputs,
     config: { unitInfo: () => ({ constructionDuration: 50 }), tradeShipSpawnRate: () => 1 },
-  }).refused,
-  true,
+  })?.netTeamGold ?? 0,
+  0,
   "a two-owner seed pair earns no trade gold before both Ports are complete",
 );
 assert.ok(
@@ -780,6 +781,35 @@ assert.ok(
     config: { unitInfo: () => ({ constructionDuration: 50 }), tradeShipSpawnRate: () => 1 },
   }).netTeamGold > 0,
   "both owners' live trade-ship streams count after the seed pair completes",
+);
+const staggeredSeedValue = plannerSandbox.legendaryEconomyNetGold("Port", {
+  cost: 1,
+  horizonTicks: 80,
+  inputs: {
+    ...seedPortInputs,
+    seedPairDelayTicks: 100,
+    portSeedSources: [
+      {
+        level: 1,
+        portSeedStream: "own",
+        routes: [{ weight: 1, distance: 0, teamGoldPerArrival: 100 }],
+      },
+      {
+        level: 1,
+        portSeedStream: "partner",
+        constructionDelayTicks: 100,
+        routes: [{ weight: 1, distance: 0, teamGoldPerArrival: 100 }],
+      },
+    ],
+  },
+  config: {
+    unitInfo: () => ({ constructionDuration: 50 }),
+    tradeShipSpawnRate: () => 1,
+  },
+});
+assert.ok(
+  staggeredSeedValue?.netTeamGold > 0,
+  "a committed seed begins paying from the first completed source instead of waiting for both Ports",
 );
 const cityAllianceConfig = {
   unitInfo: () => ({ constructionDuration: 0 }),
@@ -1799,21 +1829,27 @@ structureSandbox.UNIT.TradeShip = "Trade Ship";
 structureSandbox.UNIT.City = "City";
 structureSandbox.UNIT.Port = "Port";
 structureSandbox.UNIT.Factory = "Factory";
-const networkStation = (id, tile, level, underConstruction = false) => ({
+const networkStation = (
+  id,
+  tile,
+  level,
+  underConstruction = false,
+  hasTrainStation = !underConstruction,
+) => ({
   id: () => id,
   tile: () => tile,
   level: () => level,
   isUnderConstruction: () => underConstruction,
   isMarkedForDeletion: () => false,
   isActive: () => true,
-  hasTrainStation: () => true,
+  hasTrainStation: () => hasTrainStation,
 });
-const networkOwner = (smallId, teamId, unitsByType) => ({
-  __src: { isLobbyCreator: () => false },
+const networkOwner = (smallId, teamId, unitsByType, isPlayer = true) => ({
+  __src: { isLobbyCreator: () => false, ownerId: smallId },
   id: () => smallId,
   smallID: () => smallId,
   teamId,
-  isPlayer: () => true,
+  isPlayer: () => isPlayer,
   isAlive: () => true,
   hasEmbargoAgainst: () => false,
   isOnSameTeam: (other) => other?.teamId === teamId,
@@ -1827,6 +1863,25 @@ const networkActor = networkOwner(30, 7, { City: [networkCity] });
 const networkTeammate = networkOwner(31, 7, {
   Factory: [networkCompleteFactory, networkPendingFactory],
 });
+const networkBot = networkOwner(32, 8, { Port: [networkStation(38, 80, 1)] }, false);
+const botSeedBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+Object.assign(botSeedBehavior, {
+  player: networkActor,
+  game: {
+    players: () => [networkActor, networkBot],
+    sharedWaterComponents: () => new Set([9]),
+  },
+});
+assert.deepEqual(
+  Array.from(botSeedBehavior.legendaryPortSeedOwnerIds(9)),
+  ["30", "32"],
+  "tradeable bot owners participate in deterministic shared-water seed selection",
+);
+assert.deepEqual(
+  Array.from(botSeedBehavior.tradeableForeignPortOwners().map((owner) => owner.smallID())),
+  [32],
+  "tradeable bot-owned Ports remain eligible partners",
+);
 const networkEconomyBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 Object.assign(networkEconomyBehavior, {
   player: networkActor,
@@ -1845,7 +1900,10 @@ Object.assign(networkEconomyBehavior, {
   },
   buildReachableStations: (types, owners) =>
     owners.flatMap((owner) =>
-      owner.units(...types).map((unit) => ({ tile: unit.tile(), cluster: "rail" })),
+      owner
+        .units(...types)
+        .filter((unit) => unit.hasTrainStation())
+        .map((unit) => ({ tile: unit.tile(), cluster: "rail" })),
     ),
   portWaterComponents: () => new Set(),
   legendaryPortSeedWindowOpen: () => false,
@@ -1863,21 +1921,88 @@ const inProgressNetworkInputs = networkEconomyBehavior.legendaryEconomyInputs({
 const pendingRailSource = inProgressNetworkInputs.trainSources[0];
 assert.equal(
   pendingRailSource.factoryCount,
-  2,
-  "the spawn denominator counts completed Factory levels only (engine unitCount)",
+  3,
+  "the spawn denominator sums level() over all owner units including construction (engine unitCount)",
 );
 assert.deepEqual(Array.from(pendingRailSource.productiveFactoryLevels), [2]);
 assert.deepEqual(Array.from(pendingRailSource.pendingFactoryLevels), [1]);
 assert.equal(pendingRailSource.factoryConstructionDelayTicks, 100);
 assert.equal(inProgressNetworkInputs.teamFactoryLevels, 3);
-assert.equal(pendingRailSource.paidStopsAfterBuild, 2);
+const clusterAFactory = networkStation(51, 51, 1);
+const clusterACity = networkStation(52, 52, 1);
+const clusterBFactory = networkStation(53, 61, 1);
+const clusterBCities = [networkStation(54, 62, 1), networkStation(55, 63, 1)];
+const clusterAOwner = networkOwner(41, 7, {
+  Factory: [clusterAFactory],
+  City: [clusterACity],
+});
+const clusterBOwner = networkOwner(
+  42,
+  7,
+  {
+    Factory: [clusterBFactory],
+    City: clusterBCities,
+  },
+  false,
+);
+const clusterChoiceBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+const clusterChoiceConfig = {
+  trainStationMaxRange: () => 10,
+  unitInfo: () => ({ constructionDuration: 100 }),
+  trainSpawnRate: () => 100,
+  tradeShipSpawnRate: () => 100,
+  trainGold: (_relation, _citiesVisited, player) => {
+    if (player.ownerId === 41) return 40_000;
+    if (player.ownerId === 42) return 53_333;
+    return 50_000;
+  },
+};
+Object.assign(clusterChoiceBehavior, {
+  player: networkActor,
+  game: {
+    players: () => [networkActor, clusterAOwner, clusterBOwner],
+    units: () => [],
+    sharedWaterComponents: () => new Set(),
+    euclideanDistSquared: (left, right) => (left - right) ** 2,
+    config: () => clusterChoiceConfig,
+  },
+  buildReachableStations: (types, owners) =>
+    owners.flatMap((owner) =>
+      owner
+        .units(...types)
+        .filter((unit) => unit.hasTrainStation())
+        .map((unit) => ({
+          tile: unit.tile(),
+          cluster: owner.smallID() === 41 ? "few-stops" : "many-stops",
+        })),
+    ),
+  portWaterComponents: () => new Set(),
+  legendaryPortSeedWindowOpen: () => false,
+  legendaryPortCandidateTilesForEconomy: () => [],
+  legendaryAllianceTicksRemaining: () => Infinity,
+  trainGoldBase: () => 50_000,
+});
+const chosenTrainCluster = clusterChoiceBehavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 3,
+}).trainSources;
+assert.ok(
+  chosenTrainCluster.length === 1 && chosenTrainCluster[0].teamGoldPerStop > 70_000,
+  "rail-cluster comparison uses the already averaged stop payout without dividing by stop count again",
+);
 const teammatePaidCity = networkStation(33, 30, 1);
-const makePaidStopNetwork = (teammateUnits) => {
-  const actor = networkOwner(40, 7, {});
+const makePaidStopNetwork = (
+  teammateUnits,
+  { actorUnits = {}, constructionDuration = () => 100 } = {},
+) => {
+  const actor = networkOwner(40, 7, actorUnits);
   const teammate = networkOwner(41, 7, teammateUnits);
   const config = {
     trainStationMaxRange: () => 10,
-    unitInfo: () => ({ constructionDuration: 100 }),
+    unitInfo: (type) => ({ constructionDuration: constructionDuration(type) }),
     trainSpawnRate: () => 100,
     tradeShipSpawnRate: () => 100,
     trainGold: () => 50_000n,
@@ -1894,7 +2019,10 @@ const makePaidStopNetwork = (teammateUnits) => {
     },
     buildReachableStations: (types, owners) =>
       owners.flatMap((owner) =>
-        owner.units(...types).map((unit) => ({ tile: unit.tile(), cluster: "rail" })),
+        owner
+          .units(...types)
+          .filter((unit) => unit.hasTrainStation())
+          .map((unit) => ({ tile: unit.tile(), cluster: "rail" })),
       ),
     portWaterComponents: () => new Set(),
     legendaryPortSeedWindowOpen: () => false,
@@ -1955,6 +2083,191 @@ assert.equal(
   })?.refused,
   true,
   "removing every reachable paid stop makes the first Factory unprofitable",
+);
+const pendingRailFactory = networkStation(42, 20, 1);
+const pendingStopNetwork = makePaidStopNetwork(
+  {
+    City: [networkStation(43, 29, 1, true)],
+    Port: [networkStation(44, 30, 1, true)],
+  },
+  {
+    actorUnits: { Factory: [pendingRailFactory] },
+    constructionDuration: (type) => (type === "Port" ? 200 : 25),
+  },
+);
+const pendingStopInputs = pendingStopNetwork.behavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 1,
+});
+assert.equal(
+  pendingStopInputs.trainSources[0].pendingStopDelayTicks,
+  200,
+  "a train pool cannot count all pending stops as paid until its slowest stop completes",
+);
+assert.equal(pendingStopInputs.factoryRouteProfiles[0].teamGoldPerSpawn, 0);
+assert.ok(pendingStopInputs.factoryRouteProfiles[0].teamGoldAfterPendingPerSpawn > 0);
+assert.equal(pendingStopInputs.ownerFactoryClusters[0].clusterId, "rail");
+assert.equal(pendingStopInputs.factoryUpgradeTargets[0].clusterId, "rail");
+const pendingNetworkFactoryValue = plannerSandbox.legendaryEconomyNetGold("Factory", {
+  cost: 10_000,
+  horizonTicks: 1_000,
+  inputs: pendingStopInputs,
+  config: pendingStopNetwork.config,
+});
+const completedStopNetwork = makePaidStopNetwork(
+  {
+    City: [networkStation(45, 30, 1)],
+    Port: [networkStation(46, 40, 1)],
+  },
+  { actorUnits: { Factory: [networkStation(47, 20, 1)] } },
+);
+const completedStopInputs = completedStopNetwork.behavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 1,
+});
+const completedNetworkFactoryValue = plannerSandbox.legendaryEconomyNetGold("Factory", {
+  cost: 10_000,
+  horizonTicks: 1_000,
+  inputs: completedStopInputs,
+  config: completedStopNetwork.config,
+});
+assert.ok(
+  pendingNetworkFactoryValue.netTeamGold > 0 &&
+    pendingNetworkFactoryValue.netTeamGold < completedNetworkFactoryValue.netTeamGold,
+  "Factory income from pending City/Port stops begins only after their construction delay",
+);
+const staggeredFactory = networkStation(60, 60, 1);
+const staggeredEarlyCity = networkStation(61, 61, 1);
+const staggeredLateCity = networkStation(62, 62, 1);
+const staggeredActor = networkOwner(60, 7, { Factory: [staggeredFactory] });
+const staggeredEarlyAlly = networkOwner(61, 8, { City: [staggeredEarlyCity] });
+const staggeredLateAlly = networkOwner(62, 9, { City: [staggeredLateCity] });
+staggeredActor.isAlliedWith = (other) => [61, 62].includes(other?.smallID?.());
+staggeredEarlyAlly.isAlliedWith = (other) => other?.smallID?.() === 60;
+staggeredLateAlly.isAlliedWith = (other) => other?.smallID?.() === 60;
+const staggeredExpiryTicks = new Map([
+  ["60:61", 100],
+  ["61:60", 100],
+  ["60:62", 400],
+  ["62:60", 400],
+]);
+const staggeredAllianceConfig = {
+  trainStationMaxRange: () => 0,
+  unitInfo: () => ({ constructionDuration: 0 }),
+  trainSpawnRate: () => 1,
+  tradeShipSpawnRate: () => 1,
+  trainGold: (relation) => ({ self: 1_500, ally: 1_000, other: 0 })[relation] ?? 0,
+};
+const staggeredAllianceBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+Object.assign(staggeredAllianceBehavior, {
+  player: staggeredActor,
+  game: {
+    players: () => [staggeredActor, staggeredEarlyAlly, staggeredLateAlly],
+    units: () => [],
+    ticks: () => 0,
+    sharedWaterComponents: () => new Set(),
+    euclideanDistSquared: (left, right) => (left - right) ** 2,
+    config: () => staggeredAllianceConfig,
+  },
+  buildReachableStations: (types, owners) =>
+    owners.flatMap((owner) =>
+      owner
+        .units(...types)
+        .filter((unit) => unit.hasTrainStation())
+        .map((unit) => ({ tile: unit.tile(), cluster: "staggered-alliance" })),
+    ),
+  portWaterComponents: () => new Set(),
+  legendaryPortSeedWindowOpen: () => false,
+  legendaryPortCandidateTilesForEconomy: () => [],
+  legendaryAllianceTicksRemaining: (owner, other) =>
+    staggeredExpiryTicks.get(`${owner?.smallID?.()}:${other?.smallID?.()}`) ?? Infinity,
+  trainGoldBase: () => 0,
+  ownedLevels: () => 0,
+});
+const staggeredAllianceInputs = staggeredAllianceBehavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 2,
+});
+const staggeredAllianceSource = staggeredAllianceInputs.trainSources[0];
+assert.deepEqual(
+  Array.from(staggeredAllianceSource.payoutTimeline ?? [], (point) => point.atTicks),
+  [0, 100, 400],
+  "rail valuation keeps a separate payout change at each allied stop expiry",
+);
+const staggeredSourcePayouts = Array.from(
+  staggeredAllianceSource.payoutTimeline ?? [],
+  ({ atTicks, beforeTeamGoldPerSpawn }) => ({
+    atTicks,
+    payout: beforeTeamGoldPerSpawn,
+  }),
+);
+assert.ok(
+  staggeredSourcePayouts[0].payout > staggeredSourcePayouts[1].payout &&
+    staggeredSourcePayouts[1].payout > staggeredSourcePayouts[2].payout,
+  "at tick 100 the later allied stop still pays, so payout stays between initial and final levels",
+);
+const staggeredCityValue = plannerSandbox.legendaryEconomyNetGold("City", {
+  cost: 1,
+  horizonTicks: 500,
+  inputs: staggeredAllianceInputs,
+  config: staggeredAllianceConfig,
+});
+assert.ok(
+  Math.abs(staggeredCityValue.netTeamGold - 16_665.666666666668) < 1e-6,
+  "City value integrates the two stop expiries instead of expiring the entire network at the first one",
+);
+const staggeredFactoryValue = plannerSandbox.legendaryEconomyNetGold("Factory", {
+  cost: 1,
+  horizonTicks: 500,
+  inputs: staggeredAllianceInputs,
+  config: staggeredAllianceConfig,
+});
+assert.ok(
+  Math.abs(staggeredFactoryValue.netTeamGold - 24_999) < 1e-6,
+  "Factory value keeps the later allied stop productive through its own alliance expiry",
+);
+const pendingStopWithoutFactory = makePaidStopNetwork({ City: [networkStation(48, 30, 1, true)] });
+const noFactoryStopInputs = pendingStopWithoutFactory.behavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 1,
+});
+assert.equal(
+  noFactoryStopInputs.factoryRouteProfiles.length,
+  0,
+  "a pending City without a nearby Factory cannot create a future paid rail stop",
+);
+assert.equal(
+  noFactoryStopInputs.trainSources.length,
+  0,
+  "a pending City without a nearby Factory cannot make an existing Factory productive",
+);
+const stationedPendingCityNetwork = makePaidStopNetwork(
+  { City: [networkStation(49, 30, 1, true, true)] },
+  { actorUnits: { Factory: [networkStation(50, 20, 1)] } },
+);
+const stationedPendingInputs = stationedPendingCityNetwork.behavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 1,
+});
+assert.ok(
+  stationedPendingInputs.trainSources[0].teamGoldPerStop > 0 &&
+    stationedPendingInputs.trainSources[0].pendingStopDelayTicks === 0,
+  "an in-progress City with an existing TrainStation pays immediately, before construction completes",
 );
 const factoryRouteBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 const factoryRouteCandidate = { t: 10 };
@@ -3807,6 +4120,76 @@ const dilutedFactoryValue = plannerSandbox.legendaryEconomyNetGold("Factory", {
   inputs: dilutedFactoryInputs,
   config: dilutionConfig,
 });
+const upgradeRouteProfile = {
+  teamGoldPerSpawn: 50_000,
+  postTeamGoldPerSpawn: 50_000,
+  eligibleTicks: Infinity,
+};
+const upgradeComparisonInputs = {
+  factoryPaidStops: 1,
+  factoryTeamGoldPerTrain: 50_000,
+  ownFactoryCount: 1,
+  ownProductiveFactoryLevels: [1],
+  ownPendingFactoryLevels: [],
+  trainCount: 0,
+  ownerFactoryClusters: [
+    {
+      clusterId: "productive",
+      productiveFactoryLevels: [1],
+      pendingFactoryLevels: [],
+      teamGoldPerSpawn: 50_000,
+      postTeamGoldPerSpawn: 50_000,
+      eligibleTicks: Infinity,
+    },
+  ],
+  factoryRouteProfiles: [upgradeRouteProfile],
+};
+const priceFactoryAction = (action, cost, inputs) => {
+  const value = plannerSandbox.legendaryEconomyNetGold("Factory", {
+    cost,
+    horizonTicks: 100,
+    inputs,
+    config: roiConfig,
+  });
+  return {
+    type: "Factory",
+    action,
+    cost: BigInt(cost),
+    netTeamGold: BigInt(Math.round(value.netTeamGold)),
+  };
+};
+const factoryUpgradeAction = priceFactoryAction("upgrade", 5_000, {
+  ...upgradeComparisonInputs,
+  upgradeAction: true,
+  factoryUpgrade: {
+    clusterId: "productive",
+    productiveFactoryLevels: [1],
+    factoryCount: 1,
+    upgradeFactoryIndex: 0,
+    teamGoldPerTrain: 50_000,
+  },
+});
+const rankFactoryRouteChoice = (newRouteValue) =>
+  plannerSandbox.rankLegendaryConstructionActions(
+    [
+      factoryUpgradeAction,
+      priceFactoryAction("build", 40_000, {
+        ...upgradeComparisonInputs,
+        factoryRouteProfiles: [{ ...upgradeRouteProfile, teamGoldPerSpawn: newRouteValue }],
+      }),
+    ],
+    { gold: 1_000_000n },
+  )[0]?.action;
+assert.equal(
+  rankFactoryRouteChoice(50_000),
+  "upgrade",
+  "an upgrade wins when a new Factory would only duplicate the productive route",
+);
+assert.equal(
+  rankFactoryRouteChoice(2_000_000),
+  "build",
+  "a substantially more valuable unused route makes new Factory construction beat the upgrade",
+);
 const naiveFactoryValue = plannerSandbox.legendaryEconomyNetGold("Factory", {
   cost: 1_000,
   horizonTicks: 1_000,
@@ -3817,6 +4200,120 @@ assert.ok(
   dilutedFactoryValue.netTeamGold > 0 &&
     dilutedFactoryValue.netTeamGold < naiveFactoryValue.netTeamGold,
   "a new Factory pays the spawn-rate loss of the owner's other rail clusters",
+);
+const pendingFactoryRouteProfile = {
+  teamGoldPerSpawn: 0,
+  postTeamGoldPerSpawn: 0,
+  teamGoldAfterPendingPerSpawn: 100_000,
+  postTeamGoldAfterPendingPerSpawn: 100_000,
+  pendingStopDelayTicks: 800,
+  eligibleTicks: Infinity,
+};
+const pendingFactoryRouteValue = plannerSandbox.legendaryEconomyNetGold("Factory", {
+  cost: 100,
+  horizonTicks: 500,
+  inputs: {
+    factoryPaidStops: 1,
+    factoryTeamGoldPerTrain: 100_000,
+    factoryRouteProfiles: [pendingFactoryRouteProfile],
+    ownFactoryCount: 0,
+    trainCount: 0,
+  },
+  config: dilutionConfig,
+});
+assert.equal(
+  pendingFactoryRouteValue.netTeamGold,
+  -100,
+  "a pending paid stop beyond the match horizon contributes no Factory income",
+);
+const longerPendingFactoryRouteValue = plannerSandbox.legendaryEconomyNetGold("Factory", {
+  cost: 100,
+  horizonTicks: 1_000,
+  inputs: {
+    factoryPaidStops: 1,
+    factoryTeamGoldPerTrain: 100_000,
+    factoryRouteProfiles: [pendingFactoryRouteProfile],
+    ownFactoryCount: 0,
+    trainCount: 0,
+  },
+  config: dilutionConfig,
+});
+assert.ok(
+  longerPendingFactoryRouteValue.netTeamGold > 0,
+  "a pending paid stop can justify a Factory when enough horizon remains after completion",
+);
+const pendingFactoryPenalty = (constructionTicks) =>
+  plannerSandbox.legendaryEconomyNetGold("Factory", {
+    cost: 1_000,
+    horizonTicks: 1_000,
+    inputs: {
+      ...dilutedFactoryInputs,
+      ownerFactoryClusters: [
+        dilutionCluster,
+        {
+          productiveFactoryLevels: [],
+          pendingFactoryLevels: [1],
+          factoryConstructionDelayTicks: constructionTicks,
+          teamGoldPerSpawn: 100_000,
+          postTeamGoldPerSpawn: 100_000,
+          eligibleTicks: Infinity,
+        },
+      ],
+    },
+    config: dilutionConfig,
+  }).netTeamGold;
+assert.ok(
+  pendingFactoryPenalty(900) > pendingFactoryPenalty(0),
+  "a pending Factory in another cluster affects ROI only after it can start spawning",
+);
+const clusteredUpgradeInputs = {
+  ...dilutedFactoryInputs,
+  upgradeAction: true,
+  factoryUpgrade: {
+    clusterId: "target",
+    productiveFactoryLevels: [1],
+    upgradeFactoryIndex: 0,
+    teamGoldPerTrain: 25_000,
+  },
+  ownerFactoryClusters: [
+    {
+      clusterId: "decoy",
+      productiveFactoryLevels: [1],
+      teamGoldPerSpawn: 500_000,
+      postTeamGoldPerSpawn: 500_000,
+      isTarget: true,
+    },
+    {
+      clusterId: "target",
+      productiveFactoryLevels: [1],
+      teamGoldPerSpawn: 25_000,
+      postTeamGoldPerSpawn: 25_000,
+      isTarget: false,
+    },
+  ],
+};
+const clusteredUpgradeValue = plannerSandbox.legendaryEconomyNetGold("Factory", {
+  cost: 1_000,
+  horizonTicks: 1_000,
+  inputs: clusteredUpgradeInputs,
+  config: dilutionConfig,
+});
+const flippedUpgradeMarkers = plannerSandbox.legendaryEconomyNetGold("Factory", {
+  cost: 1_000,
+  horizonTicks: 1_000,
+  inputs: {
+    ...clusteredUpgradeInputs,
+    ownerFactoryClusters: clusteredUpgradeInputs.ownerFactoryClusters.map((cluster) => ({
+      ...cluster,
+      isTarget: !cluster.isTarget,
+    })),
+  },
+  config: dilutionConfig,
+});
+assert.equal(
+  clusteredUpgradeValue.netTeamGold,
+  flippedUpgradeMarkers.netTeamGold,
+  "a Factory upgrade follows its structure's rail-cluster ID, not a stale best-cluster marker",
 );
 const seedStreamConfig = {
   unitInfo: () => ({ constructionDuration: 50 }),
@@ -3854,14 +4351,8 @@ const uncommittedSeedValue = plannerSandbox.legendaryEconomyNetGold("Port", {
   config: seedStreamConfig,
 });
 assert.ok(
-  committedSeedValue.netTeamGold > uncommittedSeedValue.netTeamGold &&
-    uncommittedSeedValue.netTeamGold > 0 &&
-    Math.abs(
-      committedSeedValue.netTeamGold -
-        uncommittedSeedValue.netTeamGold -
-        (uncommittedSeedValue.netTeamGold + 100),
-    ) < 1e-6,
-  "an uncommitted seed counts only our own trade stream until the partner commits",
+  committedSeedValue.netTeamGold > 0 && uncommittedSeedValue === null,
+  "an uncommitted seed earns nothing: tradingPorts is empty without the partner Port",
 );
 const portSpawnRate = plannerSandbox.legendaryExpectedTradeShipRatePerTick(1, 0, {
   tradeShipSpawnRate: () => 1,
@@ -4051,9 +4542,42 @@ const uncommittedSeedPort = uncommittedSeedRank.candidates.find(
 );
 assert.ok(
   committedSeedPort?.netTeamGold > 0n &&
-    uncommittedSeedPort?.netTeamGold > 0n &&
+    uncommittedSeedPort?.netTeamGold === 0n &&
+    uncommittedSeedPort?.seedPair === true &&
     uncommittedSeedPort.netTeamGold < committedSeedPort.netTeamGold,
-  "without a committed partner Port the full path prices only our own trade stream",
+  "without a committed partner Port the seed prices zero income but survives as a strategic seed",
+);
+const unprofitableCompletedPartner = makeSeedRankBehavior([seedRankStation(90, 20, 1, true)]);
+unprofitableCompletedPartner.game.config = () => ({
+  ...seedRankConfig,
+  tradeShipSpawnRate: () => 1_000_000_000_000_000,
+});
+unprofitableCompletedPartner.hasTradeablePortOnSharedWater = () => true;
+unprofitableCompletedPartner.legendaryPortRouteProfile = () => ({
+  routes: [{ weight: 1, distance: 5, teamGoldPerArrival: 0 }],
+  teamGoldPerArrival: 0,
+  routeDelayTicks: 5,
+});
+const completedPartnerCandidates =
+  await unprofitableCompletedPartner.legendaryConstructionCandidates({
+    config: unprofitableCompletedPartner.game.config(),
+    citiesDisabled: false,
+    cityCount: 3,
+    hasCoastalTiles: false,
+    hasOceanPortTiles: true,
+    missileSilosEnabled: false,
+    nukesEnabled: false,
+  });
+const unprofitableCompletedPartnerPort = completedPartnerCandidates.find(
+  (candidate) => candidate.type === "Port",
+);
+assert.ok(
+  unprofitableCompletedPartnerPort?.netTeamGold <= 0n &&
+    unprofitableCompletedPartnerPort.seedPair !== true &&
+    !unprofitableCompletedPartner
+      .legendaryConstructionActionGroups(completedPartnerCandidates, true)[0]
+      ?.some((candidate) => candidate.type === "Port"),
+  "an already completed trade partner cannot use the seed exception to admit a losing Port",
 );
 const reserveSeedRank = makeSeedRankBehavior([seedRankStation(90, 20, 1, true)]);
 reserveSeedRank.availableGoldAfterReserve = (type) => (type === "Port" ? 0n : 100_000_000n);

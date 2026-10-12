@@ -524,10 +524,23 @@
       if (!this.isValidMirvTargetPlayer(enemy)) return false;
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
+      // SAM coverage may change while the async buildability probe is running.
+      if (
+        state.settings.winFixes === true &&
+        this.isMirvAimCoveredByEnemySam(centerTile)
+      ) return false;
+      if (this.shouldDeferMirvForNukeReserve(bu)) return false;
       if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player, true)) {
         return false;
       }
       return true;
+    }
+
+    shouldDeferMirvForNukeReserve(buildable) {
+      return (
+        state.settings.winFixes === true &&
+        this.structureBehavior?.shouldDeferOffensiveNuke?.(buildable.cost) === true
+      );
     }
 
     countCities(p) {

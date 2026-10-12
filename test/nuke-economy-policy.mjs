@@ -408,6 +408,7 @@ const makeThreatSelector = ({ threatTroops = 1_000_000, targetable = true } = {}
   selector.attackBehavior = {
     findIncomingAttackPlayer: () => null,
     shouldAttack: () => targetable,
+    getPendingOutboundAttackTroops: () => 0,
   };
   selector.structureBehavior = {
     strongestQuietStrategicBorderOpponent: () => ({
@@ -432,6 +433,27 @@ const makeThreatSelector = ({ threatTroops = 1_000_000, targetable = true } = {}
     selector.findBestNukeTarget(),
     borderLeader,
     "Legendary prioritizes a hostile border army at parity over the generic density target",
+  );
+}
+{
+  const { selector, borderLeader } = makeThreatSelector({ threatTroops: 800_000 });
+  selector.attackBehavior.getPendingOutboundAttackTroops = (forceRefresh) => {
+    assert.equal(forceRefresh, true, "border priority refreshes pending debits in the same tick");
+    return 250_000;
+  };
+  assert.equal(
+    selector.findBestNukeTarget(),
+    borderLeader,
+    "a border army above the unreflected garrison preempts density while an attack debit is pending",
+  );
+}
+{
+  const { selector, relationTarget } = makeThreatSelector({ threatTroops: 0 });
+  selector.attackBehavior.getPendingOutboundAttackTroops = () => 1_000_000;
+  assert.equal(
+    selector.findBestNukeTarget(),
+    relationTarget,
+    "an empty border army is not treated as a threat when no garrison troops remain",
   );
 }
 {
@@ -1614,11 +1636,21 @@ sandbox.sendAutoBotBuildOrUpgrade = (_menu, buildable, tile) => {
   scheduledBuilds.push({ tick: scheduledTick, type: buildable.type, tile });
   return true;
 };
+const scheduledSilo = {
+  id: () => "silo-1",
+  tile: () => 0,
+  level: () => 1,
+  isActive: () => true,
+  isUnderConstruction: () => false,
+  ticksLeftInCooldown: () => 0,
+  missileTimerQueue: () => [],
+};
 const scheduledPlayer = {
   smallID: () => 1,
   isOnSameTeam: () => false,
   buildables: async () => [{ type: UNIT.AtomBomb, cost: 1n, canBuild: true, canUpgrade: false }],
   gold: () => 10n,
+  units: (type) => (type === UNIT.MissileSilo ? [scheduledSilo] : []),
 };
 const scheduledTarget = {
   smallID: () => 2,
@@ -1626,12 +1658,15 @@ const scheduledTarget = {
 };
 const scheduledSalvoBehavior = new sandbox.__NukeBehavior(
   { chance: () => false },
-  { ticks: () => scheduledTick },
+  { ticks: () => scheduledTick, manhattanDist: () => 1 },
   scheduledPlayer,
   { shouldAttack: () => true },
   { maybeSendEmoji() {} },
 );
 scheduledSalvoBehavior.cost = async () => 1n;
+scheduledSalvoBehavior.isTrajectoryInterceptableBySam = () => false;
+// This schedule test uses the plan's flight ticks, not a second pathfinding pass.
+scheduledSalvoBehavior.getAvailableSiloEntries = () => [];
 scheduledSalvoBehavior.getSamSalvo = () => ({
   bombsToFire: 2,
   waits: [0, 7],
@@ -1906,6 +1941,16 @@ assert.equal(
   };
   let friendlyStructures = [];
   aimBehavior.player = { smallID: () => 1, units: () => friendlyStructures };
+  const ownPlayer = aimBehavior.player;
+  ownPlayer.isFriendly = (other) => other.smallID?.() === ownPlayer.smallID();
+  aimBehavior.game.players = () => [ownPlayer];
+  aimBehavior.game.ownerID = (tile) =>
+    friendlyStructures.some((unit) => {
+      const unitTile = unit.tile();
+      return unitTile.x === tile.x && unitTile.y === tile.y;
+    })
+      ? ownPlayer.smallID()
+      : 0;
   assert.deepEqual(
     aimBehavior.samSalvoAimTile(sam),
     { x: 4, y: 0 },
@@ -1930,8 +1975,36 @@ assert.equal(
     { x: 0, y: 0 },
     "a salvo prefers destroying the SAM alone over the extra enemy silo plus a more valuable friendly defense cluster",
   );
-  friendlyStructures = [];
+  structures.splice(
+    1,
+    structures.length - 1,
+    ...Array.from({ length: 12 }, () => ({
+      tile: () => ({ x: 8, y: 0 }),
+      type: () => UNIT.MissileSilo,
+      level: () => 1,
+    })),
+  );
+  friendlyStructures = [
+    { type: () => UNIT.MissileSilo, level: () => 1, tile: () => ({ x: 7, y: 0 }) },
+  ];
   aimBehavior.game.ticks = () => 4;
+  assert.deepEqual(
+    aimBehavior.samSalvoAimTile(sam),
+    { x: 0, y: 0 },
+    "a high-value enemy cluster cannot make the salvo aim inside friendly land",
+  );
+  friendlyStructures = [
+    { type: () => UNIT.MissileSilo, level: () => 1, tile: () => ({ x: 0, y: 4 }) },
+    { type: () => UNIT.MissileSilo, level: () => 1, tile: () => ({ x: 4, y: 3 }) },
+  ];
+  aimBehavior.game.ticks = () => 5;
+  assert.equal(
+    aimBehavior.samSalvoAimTile(sam),
+    null,
+    "no aim is returned when every candidate blast reaches friendly land",
+  );
+  friendlyStructures = [];
+  aimBehavior.game.ticks = () => 6;
   aimBehavior.game.config = () => ({ nukeMagnitudes: () => ({ outer: 4 }) });
   assert.deepEqual(
     aimBehavior.samSalvoAimTile(sam),

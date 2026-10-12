@@ -2477,6 +2477,7 @@ const originalReservedSlotMaybeUpgradeHydrogenProtectionSam =
 const originalReservedSlotMaybeOpenLegendaryArsenal = behavior.maybeOpenLegendaryArsenal;
 const originalReservedSlotMaybeSpawnHostileSiloSam = behavior.maybeSpawnHostileSiloSam;
 const originalReservedSlotOwnSamCapacity = behavior.ownSamCapacity;
+const originalReservedSlotOwnProjectedSamCapacity = behavior.ownProjectedSamCapacity;
 const originalReservedSlotShouldBuildHostileSiloSam = behavior.shouldBuildHostileSiloSam;
 const originalReservedSlotHostileSiloSamActionBlocked = behavior.hostileSiloSamActionBlocked;
 const originalReservedSlotMaybeOpenLegendaryFirstSilo = behavior.maybeOpenLegendaryFirstSilo;
@@ -2494,6 +2495,7 @@ behavior.maybeUpgradeHydrogenProtectionSam = async () => false;
 behavior.maybeOpenLegendaryArsenal = async () => false;
 behavior.maybeSpawnHostileSiloSam = async () => false;
 behavior.ownSamCapacity = () => 1;
+behavior.ownProjectedSamCapacity = () => 1;
 behavior.shouldBuildHostileSiloSam = () => true;
 behavior.hostileSiloSamActionBlocked = () => true;
 behavior.legendaryMissileDefenseUrgent = () => false;
@@ -2534,6 +2536,7 @@ behavior.maybeUpgradeHydrogenProtectionSam = originalReservedSlotMaybeUpgradeHyd
 behavior.maybeOpenLegendaryArsenal = originalReservedSlotMaybeOpenLegendaryArsenal;
 behavior.maybeSpawnHostileSiloSam = originalReservedSlotMaybeSpawnHostileSiloSam;
 behavior.ownSamCapacity = originalReservedSlotOwnSamCapacity;
+behavior.ownProjectedSamCapacity = originalReservedSlotOwnProjectedSamCapacity;
 behavior.shouldBuildHostileSiloSam = originalReservedSlotShouldBuildHostileSiloSam;
 behavior.hostileSiloSamActionBlocked = originalReservedSlotHostileSiloSamActionBlocked;
 behavior.maybeOpenLegendaryFirstSilo = originalReservedSlotMaybeOpenLegendaryFirstSilo;
@@ -2562,6 +2565,7 @@ const originalDemandDrivenUpgradeHydrogenSam = behavior.maybeUpgradeHydrogenProt
 const originalDemandDrivenSpawnHostileSam = behavior.maybeSpawnHostileSiloSam;
 const originalDemandDrivenShouldBuildHostileSam = behavior.shouldBuildHostileSiloSam;
 const originalDemandDrivenOwnSamCapacity = behavior.ownSamCapacity;
+const originalDemandDrivenOwnProjectedSamCapacity = behavior.ownProjectedSamCapacity;
 const originalDemandDrivenParityUpgrade = behavior.maybeUpgradeSamForSiloParity;
 const originalDemandDrivenUrgent = behavior.legendaryMissileDefenseUrgent;
 const originalDemandDrivenCandidates = behavior.legendaryConstructionCandidates;
@@ -2577,6 +2581,7 @@ behavior.maybeSpawnHostileSiloSam = async () => {
 };
 behavior.shouldBuildHostileSiloSam = () => true;
 behavior.ownSamCapacity = () => 1;
+behavior.ownProjectedSamCapacity = () => 1;
 behavior.maybeUpgradeSamForSiloParity = async () => {
   demandDrivenActions.push("parity-upgrade");
   return true;
@@ -2614,6 +2619,7 @@ behavior.maybeUpgradeHydrogenProtectionSam = originalDemandDrivenUpgradeHydrogen
 behavior.maybeSpawnHostileSiloSam = originalDemandDrivenSpawnHostileSam;
 behavior.shouldBuildHostileSiloSam = originalDemandDrivenShouldBuildHostileSam;
 behavior.ownSamCapacity = originalDemandDrivenOwnSamCapacity;
+behavior.ownProjectedSamCapacity = originalDemandDrivenOwnProjectedSamCapacity;
 behavior.maybeUpgradeSamForSiloParity = originalDemandDrivenParityUpgrade;
 behavior.legendaryMissileDefenseUrgent = originalDemandDrivenUrgent;
 behavior.legendaryConstructionCandidates = originalDemandDrivenCandidates;
@@ -4260,6 +4266,7 @@ for (const type of [UNIT.Factory, UNIT.Port]) {
 const urgentLegendarySamCostBehavior = Object.create(sandbox.__StructureBehavior.prototype);
 urgentLegendarySamCostBehavior.maybeUpgradeLegendarySam = async () => false;
 urgentLegendarySamCostBehavior.ownSamCapacity = () => 1;
+urgentLegendarySamCostBehavior.ownProjectedSamCapacity = () => 1;
 urgentLegendarySamCostBehavior.legendaryMissileDefenseUrgent = () => true;
 let urgentLegendarySamOptions = null;
 urgentLegendarySamCostBehavior.maybeSpawnStructure = async (type, options) => {
@@ -4307,6 +4314,7 @@ for (const type of [UNIT.City, UNIT.Factory, UNIT.Port]) {
   legendaryLegalBuildBehavior.maybeUpgradeSiloForNuclearSlotPressure = async () => false;
   legendaryLegalBuildBehavior.maybeUpgradeSiloFromSurplus = async () => false;
   legendaryLegalBuildBehavior.ownSamCapacity = () => 1;
+  legendaryLegalBuildBehavior.ownProjectedSamCapacity = () => 1;
   legendaryLegalBuildBehavior.legendaryMissileDefenseUrgent = () => false;
   legendaryLegalBuildBehavior.legendaryConstructionCandidates = () => [{ type }];
   legendaryLegalBuildBehavior.legendaryConstructionActionGroups = () => [[{ type }]];
@@ -5244,6 +5252,32 @@ assert.equal(
   "function",
   "Structure behavior exposes the proactive SAM-vs-Silo level upgrade path",
 );
+const originalPlayersForPendingSamParity = behavior.game.players;
+const originalOwnSamsForPendingSamParity = own.sams;
+behavior.game.players = () => [own, enemySingleLevelOneSilo];
+own.sams = [makeUnit(409, 1, { underConstruction: true })];
+assert.equal(
+  behavior.playerUnitCapacitySummary(own, UNIT.SAMLauncher).capacity,
+  1,
+  "a pending SAM remains part of projected capacity",
+);
+assert.equal(behavior.ownSamCapacity(), 0, "a pending SAM contributes no built active capacity");
+assert.equal(behavior.ownProjectedSamCapacity(), 1, "planning retains pending SAM capacity");
+assert.equal(behavior.samLevelParityGap(), 1, "a pending SAM cannot close immediate SAM parity");
+assert.equal(
+  behavior.legendaryMissileDefenseSatisfiedForNavalEconomy(),
+  false,
+  "a pending SAM is not ready missile defense for naval economy",
+);
+own.sams = [makeUnit(409, 1)];
+assert.equal(behavior.samLevelParityGap(), 0, "built active SAM capacity closes immediate parity");
+assert.equal(
+  behavior.legendaryMissileDefenseSatisfiedForNavalEconomy(),
+  true,
+  "a built active SAM satisfies ready missile defense",
+);
+behavior.game.players = originalPlayersForPendingSamParity;
+own.sams = originalOwnSamsForPendingSamParity;
 assert.equal(
   behavior.ownMaximumSamLevel(),
   1,
@@ -6948,6 +6982,7 @@ process.stdout.write("SAM DEFENSE POLICY TESTS OK\n");
   dumpBehavior.maybeOpenLegendaryArsenal = async () => false;
   dumpBehavior.maybeUpgradeLegendarySam = async () => false;
   dumpBehavior.ownSamCapacity = () => 1;
+  dumpBehavior.ownProjectedSamCapacity = () => 1;
   dumpBehavior.maybeSpawnHostileSiloSam = async () => false;
   dumpBehavior.legendaryMissileDefenseUrgent = () => false;
   dumpBehavior.maybeArmFreezeStrikeSilo = async () => false;

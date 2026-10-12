@@ -68,9 +68,11 @@ tradeable owners is selected per shared-water component by stable owner ID; the
 estimate conservatively delays that seed stream until both Ports are complete.
 Port upgrades use the target Port's actual level and need a completed source
 with a valid route; the destination may still be under construction. Allied City
-income is split at the observed alliance expiry and continues at the
-post-alliance payout. Port routes require a different-owner Port on matching
-shared water, and team income counts the source and destination owners separately.
+income follows a per-source, per-stop timeline: each destination switches to
+its post-alliance payout at its own observed pairwise expiry, while later stops
+retain their allied payout until their respective expiries. Port routes require
+a different-owner Port on matching shared water, and team income counts the
+source and destination owners separately.
 Once the selected seed route is complete, other owners can use it for ordinary
 route valuation.
 
@@ -81,15 +83,20 @@ payout, including arrivals paid to the destination owner, rather than treating
 all existing source traffic as new income. Port build and inbound source
 construction delays are included. Teammate structures count toward team value
 and saturation, never toward the builder's own affordability. Factory values
-apply the owner's global completed-Factory denominator across every rail
-cluster, so a build or upgrade also scores the spawn-rate loss of the owner's
-other clusters; the denominator counts completed levels only, matching
-`PlayerImpl.unitCount`. City values are the pool-mean delta over the cluster's
-uniformly sampled trade stops (new share minus displaced shares), so an own
-City that only dilutes team-paid stops is refused. A two-owner Port seed counts
-the partner's stream only once the partner has an in-progress Port; before
-that, only the builder's own stream is priced. Inbound Port value starts when
-the source Port is ready, because a completed source dispatches to destinations
+apply the owner's global Factory level sum across every rail cluster, so a
+build or upgrade also scores the spawn-rate loss of the owner's other clusters.
+The denominator includes the level-one Factory under construction, matching
+`PlayerImpl.unitCount`; only completed source Factories spawn trains. City
+values are the pool-mean delta over each source owner's eligible, completed,
+uniformly sampled trade stops (new share minus displaced shares); the average is
+not divided by the stop count a second time. Pending Factories join only
+their connected rail cluster and contribute after the conservative construction
+delay. Pending City/Port stops enter the pool after their construction delay
+only when a completed Factory station can create their station within range.
+Only payouts to team-owned train or station owners count. Thus an own City that
+only dilutes team-paid stops is refused. A two-owner Port seed has zero trade income until the partner
+has an in-progress Port on the selected water and both Ports complete. Inbound
+Port value starts when the source Port is ready, because a completed source dispatches to destinations
 still under construction. Factory upgrades require a paid stop in their rail
 cluster; upgrades use the live buildable quote, are repriced and route-checked
 before emission, and compete with construction by net team-gold value. City cap
@@ -585,6 +592,14 @@ that route joins the salvo targets, including when the nuke target also owns
 SAMs; duplicate launchers are removed. Without a blocked candidate, the existing
 structure-route fallback still applies when the target has no SAM coverage.
 
+Legendary's preemptive border-force nuke compares the hostile army with our
+garrison after subtracting only outbound intents not yet reflected in the troop
+view (`AttackBehavior.getPendingOutboundAttackTroops(true)` forces a fresh
+same-tick reconciliation). Visible outgoing armies are already debited from
+`player.troops()` and must not be subtracted a second time. A SAM-overwhelm
+salvo applies the offensive-nuke reserve to the cost of the whole salvo before
+its first launch.
+
 An urgent land-attack Defense Post is evaluated after a concrete incoming-missile
 SAM upgrade but before routine SAM coverage/parity and offensive silo work. A
 meaningful attack starts at 35% of the current army on every non-Easy difficulty;
@@ -620,12 +635,14 @@ second-SAM price 3,000,000; the planner must not reject that legal defense as a
 3,900,000 perceived spend before probing its placement.
 
 The inverse parity guard is also enforced: when a hostile player's projected
-missile-silo level sum exceeds the highest built SAM level on our side, at least
-one own SAM is upgraded toward that level before normal construction. If no own
-SAM can be upgraded, SAM construction is prioritized until an interceptor
-exists. Under-construction own SAMs do not count as immediately available for
-this level comparison; the policy is gated by `winFixes` and respects the
-user/game SAM-disabled settings.
+missile-silo level sum exceeds the total built active friendly SAM capacity, at
+least one own SAM is upgraded toward that level before normal construction.
+Friendly capacity aggregates all built active SAM levels, not just the highest
+single launcher. Under-construction friendly SAM capacity remains projected for
+planning and duplicate-build suppression, but cannot close immediate parity or
+count as ready missile defense for naval economy. If no own SAM can be upgraded,
+SAM construction is prioritized until an interceptor exists. The policy is
+gated by `winFixes` and respects the user/game SAM-disabled settings.
 
 ## What faithfulness means here
 
@@ -656,9 +673,15 @@ before emission (Legendary only, where SAM-overwhelm salvos exist):
   `isTrajectoryInterceptableBySam` with the salvo's planned `coveringSamIds`
   exempted — the SAMs the salvo was sized to overwhelm must not abort their own
   salvo; only new interception sources invalidate the launch.
-- A rejected launch records the salvo id in `_salvoLaunchAbort`;
-  `firePendingNukeLaunch` returns `"drop"` for it and
-  `processPendingNukeLaunches` removes every remaining entry of that salvo.
+- Before deferring queue entries, `getAbortedSalvoIds` checks the whole queued
+  chain for friendly blast land and newly interceptable routes on Hard+
+  difficulties. It drops the complete chain if either becomes unsafe, even
+  when its remaining entries are not due yet.
+- If a friendly tile or route blocker appears during an async launch probe, the
+  failed head marks its salvo id for abort and `processPendingNukeLaunches`
+  drops the future tail too. A stale but otherwise safe probe remains retryable.
+  Friendly land is also excluded from SAM-salvo aim points, so it cannot hold
+  the nuclear lane open.
   If the queue drains entirely, `rearmAbortedSamDemand` re-arms the
   `nukeWantSlots` capacity demand against the live SAM layout (via
   `rememberFailedSamTarget` + `createSamOverwhelmPlan`), or releases it when

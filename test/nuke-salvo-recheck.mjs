@@ -460,7 +460,8 @@ for (const change of [
   if (change === "friendly") friendly = true;
   await behavior.maybeDestroyEnemySam(nukeTarget);
   const structures = new sandbox.__StructureBehavior({}, game, player);
-  structures.nukeDemandScopedSilos = () => [{ level: () => 1 }];
+  const demandSilo = { id: () => 77, level: () => 1 };
+  structures.nukeDemandScopedSilos = () => [demandSilo];
   structures.availableGoldAfterReserve = () => 100n;
   structures.safeStructureCost = () => 1n;
   structures.nukeSiloUpgradeBudgetAvailable = () => true;
@@ -471,7 +472,7 @@ for (const change of [
     if (change === "pending-launches") sandbox.state.nukeWantSlots.pendingLaunches = true;
     return [];
   };
-  structures.rankNukeDemandSiloUpgrades = () => [{}];
+  structures.rankNukeDemandSiloUpgrades = () => [{ silo: demandSilo }];
   let upgrades = 0;
   structures.executeStructureUpgradeCandidate = async () => {
     upgrades++;
@@ -979,6 +980,8 @@ for (const type of [UNIT.AtomBomb, UNIT.HydrogenBomb]) {
 buildMenu = { sendBuildOrUpgrade() {} };
 
 // A covered candidate requires an actual salvo, not merely enough silo levels.
+const previousSalvoDifficulty = sandbox.currentDifficulty;
+sandbox.currentDifficulty = () => "Legendary";
 for (const lane of ["ordinary", "freeze"]) {
   const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
   const sam = world.sam("covered-target", 1);
@@ -1021,6 +1024,7 @@ for (const lane of ["ordinary", "freeze"]) {
   assert.equal(behavior._pendingNukeLaunches[0].salvo.plannedCoveringLevel, 1);
   launchSink = null;
 }
+sandbox.currentDifficulty = previousSalvoDifficulty;
 
 {
   const { game, nukeTarget, behavior, world, player } = makeSalvoWorld();
@@ -2785,6 +2789,33 @@ launchSink = null;
   }
 }
 
+{
+  const { nukeTarget, behavior } = makeSalvoWorld();
+  let friendlyLand = false;
+  behavior.observeHostileNukeThreats = () => {};
+  behavior.isEligibleNukeTarget = () => true;
+  behavior.isValidNukeDestination = () => true;
+  behavior.probeNukeBuildable = async () => {
+    friendlyLand = true;
+    return { type: UNIT.AtomBomb, cost: 1n };
+  };
+  behavior.nukeBuildableCanLaunch = () => true;
+  behavior.shouldHoldCounterforceNuke = async () => false;
+  behavior.blastHitsFriendlyLand = () => friendlyLand;
+  behavior.nukeLaunchRouteViable = () => true;
+  let emitted = 0;
+  behavior.emitNukeWithSalvoFlight = () => {
+    emitted++;
+    return true;
+  };
+  assert.equal(
+    await behavior.sendNuke(20, UNIT.AtomBomb, nukeTarget),
+    false,
+    "ordinary launch rechecks friendly blast ownership after the async probe",
+  );
+  assert.equal(emitted, 0, "an ordinary nuke does not launch through friendly land");
+}
+
 for (const difficulty of ["Hard", "Legendary"]) {
   const { game, player, nukeTarget, behavior } = makeSalvoWorld();
   nukeTarget.isPlayer = () => true;
@@ -2816,4 +2847,222 @@ for (const difficulty of ["Hard", "Legendary"]) {
   }
 }
 
+{
+  const { nukeTarget, behavior } = makeSalvoWorld();
+  sandbox.state.nukeWantSlots = null;
+  behavior.getSamSalvo = () => ({ bombsToFire: 3, waits: [0, 5, 10] });
+  let reservedCost = null;
+  let sendAttempts = 0;
+  behavior.shouldDeferNukeForEconomy = (_target, cost) => {
+    reservedCost = cost;
+    return cost > 1n;
+  };
+  behavior.sendNuke = async () => {
+    sendAttempts++;
+    return true;
+  };
+  assert.equal(
+    await behavior.fireSamSalvo(
+      {
+        targetTile: 20,
+        totalBombs: 3,
+        siloEntries: [],
+        launchSequence: [{ flightTicks: 10 }, { flightTicks: 10 }, { flightTicks: 10 }],
+      },
+      nukeTarget,
+      1n,
+    ),
+    false,
+    "a salvo that would consume the protected gold reserve is deferred as a whole",
+  );
+  assert.equal(reservedCost, 3n, "the reserve policy sees every atom in the salvo");
+  assert.equal(sendAttempts, 0, "a deferred salvo emits no partial strike");
+  assert.equal(behavior._pendingNukeLaunches.length, 0, "a deferred salvo leaves no queued tail");
+}
+
+{
+  const { nukeTarget, behavior } = makeSalvoWorld();
+  sandbox.state.nukeWantSlots = null;
+  behavior.getSamSalvo = () => ({ bombsToFire: 2, waits: [0, 5] });
+  behavior.blastHitsFriendlyLand = () => true;
+  let sendAttempts = 0;
+  behavior.sendNuke = async () => {
+    sendAttempts++;
+    return false;
+  };
+  assert.equal(
+    await behavior.fireSamSalvo({ targetTile: 20, totalBombs: 2 }, nukeTarget, 1n),
+    false,
+    "a salvo whose aim is already unsafe is rejected before launch or queueing",
+  );
+  assert.equal(sendAttempts, 0);
+  assert.equal(behavior._pendingNukeLaunches.length, 0);
+}
+
+{
+  const { nukeTarget, behavior } = makeSalvoWorld();
+  let friendlyLand = false;
+  behavior.getSamSalvo = () => ({ bombsToFire: 2, waits: [0, 5] });
+  behavior.shouldDeferNukeForEconomy = () => false;
+  behavior.blastHitsFriendlyLand = () => friendlyLand;
+  behavior.sendNuke = async () => {
+    friendlyLand = true;
+    return false;
+  };
+  assert.equal(
+    await behavior.fireSamSalvo({ targetTile: 20, totalBombs: 2 }, nukeTarget, 1n),
+    false,
+    "a newly allied blast is not enqueued as a retry after the async launch check",
+  );
+  assert.equal(behavior._pendingNukeLaunches.length, 0);
+}
+
+for (const difficulty of ["Hard", "Impossible"]) {
+  const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
+  nukeTarget.isPlayer = () => true;
+  nukeTarget.type = () => sandbox.PlayerType.Nation;
+  game.owner = () => nukeTarget;
+  const plannedSamId = `${difficulty}-planned-sam`;
+  const newSamId = `${difficulty}-new-sam`;
+  const routeSamIds = new Set([plannedSamId]);
+  let blockDuringProbe = true;
+  behavior.nukeSpawn = () => 11;
+  behavior.isTrajectoryInterceptableBySam = (_spawn, _tile, excludedSamIds) =>
+    [...routeSamIds].some((samId) => !excludedSamIds?.has(samId));
+  behavior.rememberSuccessfulNukeLaunch = async () => {};
+  player.buildables = async () => {
+    if (blockDuringProbe) routeSamIds.add(newSamId);
+    return [{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }];
+  };
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => difficulty;
+  const emitted = [];
+  launchSink = emitted;
+  const salvo = {
+    salvoId: difficulty,
+    targetTile: 20,
+    flightTicks: 20,
+    coveringSamIds: [plannedSamId],
+  };
+  try {
+    assert.equal(behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 0, salvo), true);
+    assert.equal(
+      behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 10, salvo),
+      true,
+      `${difficulty} has a future tail behind the due launch`,
+    );
+    assert.equal(
+      await behavior.processPendingNukeLaunches(),
+      false,
+      `${difficulty} keeps a queued salvo from launching through a route-only SAM`,
+    );
+    assert.equal(
+      emitted.length,
+      0,
+      `${difficulty} has no destination SAM to hide the route blocker`,
+    );
+    assert.equal(
+      behavior._pendingNukeLaunches.length,
+      0,
+      "a route blocker appearing during the probe drops the full salvo including its future tail",
+    );
+    routeSamIds.delete(newSamId);
+    blockDuringProbe = false;
+    assert.equal(
+      behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 0, {
+        ...salvo,
+        salvoId: `${difficulty}-clear`,
+      }),
+      true,
+    );
+    world.tick++;
+    assert.equal(await behavior.processPendingNukeLaunches(), true, "the clear route can retry");
+    assert.equal(emitted.length, 1);
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+    launchSink = null;
+  }
+}
+
+for (const difficulty of ["Hard", "Impossible"]) {
+  const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
+  nukeTarget.isPlayer = () => true;
+  nukeTarget.type = () => sandbox.PlayerType.Nation;
+  const center = { x: 5, y: 5 };
+  let friendlyLand = false;
+  let markFriendlyDuringProbe = true;
+  game.owner = (tile) => (tile.x === center.x && tile.y === center.y ? nukeTarget : null);
+  game.players = () => [player, nukeTarget];
+  player.isFriendly = (other) => other.smallID?.() === player.smallID();
+  game.config = () => ({
+    maxSamRange: () => 150,
+    samRange: () => 150,
+    isUnitDisabled: () => false,
+    nukeMagnitudes: () => ({ outer: 1 }),
+  });
+  Object.assign(game, {
+    x: (tile) => tile.x,
+    y: (tile) => tile.y,
+    ref: (x, y) => ({ x, y }),
+    isValidCoord: () => true,
+    ownerID: (tile) => (friendlyLand && tile.x === 6 && tile.y === 5 ? 1 : 0),
+  });
+  behavior.nukeSpawn = () => 11;
+  behavior.isTrajectoryInterceptableBySam = () => false;
+  behavior.rememberSuccessfulNukeLaunch = async () => {};
+  player.buildables = async () => {
+    if (markFriendlyDuringProbe) friendlyLand = true;
+    return [{ type: UNIT.AtomBomb, cost: 1n, canBuild: true }];
+  };
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => difficulty;
+  sandbox.state.nukeWantSlots = null;
+  const emitted = [];
+  launchSink = emitted;
+  try {
+    assert.equal(
+      behavior.queueDelayedNukeLaunch(center, UNIT.AtomBomb, nukeTarget, 0, {
+        salvoId: `friendly-land-${difficulty}`,
+        targetTile: center,
+        flightTicks: 20,
+        coveringSamIds: [],
+      }),
+      true,
+    );
+    assert.equal(
+      behavior.queueDelayedNukeLaunch(center, UNIT.AtomBomb, nukeTarget, 20, {
+        salvoId: `friendly-land-${difficulty}`,
+        targetTile: center,
+        flightTicks: 20,
+        coveringSamIds: [],
+      }),
+      true,
+    );
+    assert.equal(
+      await behavior.processPendingNukeLaunches(),
+      false,
+      `${difficulty} rechecks blast ownership after the queued launch probe`,
+    );
+    assert.equal(emitted.length, 0, "no queued salvo launches through current friendly land");
+    assert.equal(
+      behavior._pendingNukeLaunches.length,
+      0,
+      "a newly unsafe blast is dropped instead of retrying and blocking the nuclear lane",
+    );
+    friendlyLand = false;
+    markFriendlyDuringProbe = false;
+    world.tick++;
+    assert.equal(
+      await behavior.processPendingNukeLaunches(),
+      false,
+      "the dropped salvo is not retried",
+    );
+    assert.equal(emitted.length, 0);
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+    launchSink = null;
+  }
+}
+
+await import("./nuke-campaign-scenario.mjs");
 process.stdout.write("nuke salvo recheck tests passed\n");

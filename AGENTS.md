@@ -14,11 +14,12 @@ npm run build        # → openfront-helper.user.js (minified)   — the committ
 npm run build:raw    # unminified build (readable engine + console.log); OFH_DEBUG=1 also triggers raw
 npm run check        # tsc --noEmit  (type-checks src/**/*.ts ONLY — engine JS is not type-checked)
 npm run check:i18n   # audit which locale keys are missing vs. engine t()/tr() usage
-npm test             # node test/smoke.mjs — builds the shell IIFE in a mocked DOM and asserts the shims wire up
+node test/smoke.mjs  # quick shell-IIFE smoke test in a mocked DOM
+npm test             # pretest fixtures + the full sequential test chain, including headless simulations
 npm run format       # prettier --write (engine/ and locales/ are prettier-ignored on purpose)
 ```
 
-There is no test runner/framework and no single-test command — `npm test` is one Node smoke script. The auto-bot has its own in-browser smoke check: run `window.__autoBotDiag()` in the page console; a full object back means the bot wiring is intact.
+There is no test runner/framework; individual tests can be run directly with `node test/<name>.mjs` or `npx tsx --tsconfig openfront-engine/tsconfig.json test/<name>.mts`. `npm test` runs the pretest fixture chain and a long sequential suite that includes `test/headless-simulation.mjs`; it is not a quick smoke check and may use substantial CPU and memory. For the shell-only smoke check, run `node test/smoke.mjs`. The auto-bot has its own in-browser smoke check: run `window.__autoBotDiag()` in the page console; a full object back means the bot wiring is intact.
 
 **The build output `openfront-helper.user.js` is committed to the repo** (see `.gitignore`). After changing any source, rebuild and commit the regenerated file along with your changes — the published userscript is this file, not the sources.
 

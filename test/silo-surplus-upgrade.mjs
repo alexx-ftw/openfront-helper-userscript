@@ -162,4 +162,5 @@ function makeWorld({
   assert.equal(emitted[0].cost, 1_000_000n);
 }
 
+await import("./silo-demand-upgrade-preference.mjs");
 process.stdout.write("silo surplus upgrade tests passed\n");

@@ -682,6 +682,7 @@
       this.configureHybridStrategy();
       this.structureBehavior = strategy
         ? strategy.createStructureBehavior(r, g, p) : new StructureBehavior(r, g, p);
+      this.mirvBehavior.structureBehavior = this.structureBehavior;
       this.nukeBehavior.structureBehavior = this.structureBehavior;
       this.structureBehavior.nukeBehavior = this.nukeBehavior;
       this.warshipBehavior.structureBehavior = this.structureBehavior;

@@ -328,6 +328,7 @@
    * async worker probes on every structure decision.
    */
   const HOSTILE_SILO_SAM_RETRY_TICKS = 10;
+  const NUKE_DEMAND_SILO_INTENT_GRACE_TICKS = 10;
 
   /**
    * Minimum time from emergency SAM completion/upgrade to the first incoming
@@ -588,6 +589,8 @@
       this._postSaveUpStartTick = null;
       this._hostileSiloSamAttemptTick = null;
       this._hostileSiloSamRetryNotBeforeTick = null;
+      this._nukeDemandSiloSpawnReservation = null;
+      this._nukeDemandSiloUpgradeReservation = null;
       this._hostilePlayersSnapshotTick = null;
       this._hostilePlayersSnapshot = null;
       this._borderingHostileMaxTroopAdvantageTick = null;
@@ -2680,7 +2683,7 @@
         return true;
       }
 
-      const needsBaselineSam = this.ownSamCapacity() <= 0;
+      const needsBaselineSam = this.ownProjectedSamCapacity() <= 0;
       let baselineSamBlocked = false;
       if (needsBaselineSam) {
         if (await this.maybeSpawnHostileSiloSam()) return true;
@@ -3158,15 +3161,17 @@
 
       let count = 0;
       let capacity = 0;
+      let builtCapacity = 0;
       let builtCount = 0;
       for (const unit of units) {
         const contribution = this.unitCapacityContribution(unit);
         if (contribution === null) continue;
         count += contribution.count;
         capacity += contribution.capacity;
+        builtCapacity += contribution.builtCapacity;
         builtCount += contribution.builtCount;
       }
-      return { count, capacity, builtCount };
+      return { count, capacity, builtCapacity, builtCount };
     }
 
     unitCapacityContribution(unit) {
@@ -3175,19 +3180,28 @@
         const underConstruction =
           typeof unit.isUnderConstruction === "function" &&
           unit.isUnderConstruction();
-        if (underConstruction) return { count: 1, capacity: 1, builtCount: 0 };
+        if (underConstruction) {
+          return { count: 1, capacity: 1, builtCapacity: 0, builtCount: 0 };
+        }
         if (typeof unit.isActive === "function" && !unit.isActive()) return null;
         const rawLevel = typeof unit.level === "function" ? unit.level() : 1;
         const level = Number(rawLevel ?? 1);
+        const builtCapacity = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
         return {
           count: 1,
-          capacity: Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1,
+          capacity: builtCapacity,
+          builtCapacity,
           builtCount: 1,
         };
       }
     }
 
     ownSamCapacity() {
+      return this.playerUnitCapacitySummary(this.player, UNIT.SAMLauncher)
+        ?.builtCapacity ?? 0;
+    }
+
+    ownProjectedSamCapacity() {
       return this.playerUnitCapacitySummary(this.player, UNIT.SAMLauncher)
         ?.capacity ?? 0;
     }
@@ -10037,8 +10051,8 @@
     }
 
     // Team-economy inputs for the marginal expected-gold evaluator. Rail
-    // sources are grouped by the same station clusters used by placement;
-    // pending destinations count as supply but do not pay until complete.
+    // sources use the placement rail clusters; pending Factories join the
+    // connected cluster, while pending stops count only beside a Factory station.
     legendaryEconomyInputs({
       trainCount,
       tradeShipCount,
@@ -10062,7 +10076,6 @@
         (owner) =>
           owner &&
           String(owner?.smallID?.() ?? "") !== String(ownPlayer?.smallID?.() ?? "") &&
-          owner?.isPlayer?.() !== false &&
           owner?.isAlive?.() !== false &&
           shimCanTrade(ownPlayer, owner),
       );
@@ -10097,6 +10110,17 @@
       };
       const allianceTicksRemaining = (owner) =>
         this.legendaryAllianceTicksRemaining(owner, ownPlayer);
+      const eligibleTicksFor = (source, destinations) => {
+        const expirations = [];
+        if (allied(source)) expirations.push(allianceTicksRemaining(source));
+        for (const { owner } of destinations) {
+          if (allied(owner)) expirations.push(allianceTicksRemaining(owner));
+          if (source?.isAlliedWith?.(owner) === true) {
+            expirations.push(this.legendaryAllianceTicksRemaining(source, owner));
+          }
+        }
+        return expirations.length > 0 ? Math.min(...expirations) : Infinity;
+      };
 
       const clusterEntries = this.buildReachableStations(
         [UNIT.City, UNIT.Port, UNIT.Factory],
@@ -10158,19 +10182,70 @@
           data.destinations.push({ owner, type, unit });
         }
       }
-      // Include pending City/Port supply when it lies within station range of
-      // an existing cluster; it is not yet treated as a paying stop.
       const stationRangeSquared =
         Number(config?.trainStationMaxRange?.() ?? 0) ** 2;
+      const pendingFactories = owners.flatMap((owner) =>
+        (owner?.units?.(UNIT.Factory) ?? [])
+          .filter((unit) => unit?.isUnderConstruction?.() === true)
+          .map((unit) => ({ owner, unit, tile: unit?.tile?.() }))
+          .filter(({ tile }) => tile !== null && tile !== undefined),
+      );
+      const railState = this.readRailroadState(this.game);
+      const pendingFactoryClusters = railState
+        ? this.assignRailClusters(
+            pendingFactories.map(({ tile }) => ({ tile })),
+            railState,
+          )
+        : null;
+      for (let index = 0; index < pendingFactories.length; index++) {
+        const { owner, unit, tile } = pendingFactories[index];
+        if (clusterByTile.has(String(tile))) continue;
+        let cluster = pendingFactoryClusters?.[index] ?? null;
+        if (cluster !== null) cluster = String(cluster);
+        if (cluster === null) {
+          let nearest = null;
+          let nearestDistance = Infinity;
+          for (const entry of clusterEntries) {
+            const distance = this.game.euclideanDistSquared(tile, entry.tile);
+            if (distance > stationRangeSquared || distance >= nearestDistance) continue;
+            nearest = clusterFor(entry.tile);
+            nearestDistance = distance;
+          }
+          cluster = nearest;
+        }
+        const data = cluster === null ? null : clusterData.get(cluster);
+        if (!data) continue;
+        let source = data.factories.get(idOf(owner));
+        if (!source) {
+          source = {
+            owner,
+            factoryCount: levelSum(owner?.units?.(UNIT.Factory)),
+            productiveFactoryLevels: [],
+            productiveFactoryUnits: [],
+            pendingFactoryLevels: [],
+            factoryConstructionDelayTicks: Number(
+              config?.unitInfo?.(UNIT.Factory)?.constructionDuration ?? 0,
+            ),
+          };
+          data.factories.set(idOf(owner), source);
+        }
+        source.pendingFactoryLevels.push(levelOf(unit));
+      }
+      // Include pending City/Port supply when it lies within station range of
+      // a completed Factory station; it is not yet treated as a paying stop.
+      const factoryStations = clusterEntries.filter(
+        (entry) => stationByTile.get(String(entry.tile))?.type === UNIT.Factory,
+      );
       for (const owner of owners) {
         for (const type of [UNIT.City, UNIT.Port]) {
           for (const unit of owner?.units?.(type) ?? []) {
             if (unit?.isUnderConstruction?.() !== true) continue;
+            if (unit?.hasTrainStation?.() === true) continue;
             const tile = unit?.tile?.();
             if (tile === null || tile === undefined || stationRangeSquared <= 0) continue;
             let nearest = null;
             let distanceSquared = Infinity;
-            for (const entry of clusterEntries) {
+            for (const entry of factoryStations) {
               const distance = this.game.euclideanDistSquared(tile, entry.tile);
               if (distance > stationRangeSquared || distance >= distanceSquared) continue;
               nearest = clusterFor(entry.tile);
@@ -10193,70 +10268,159 @@
       let bestPendingStopDelayTicks = 0;
       const ownFactoryClusterEntries = [];
       const factoryUpgradeTargets = [];
+      const factoryRouteProfiles = [];
       const globalTrainCount = Math.max(0, Number(trainCount) || 0);
-      for (const data of clusterData.values()) {
+      for (const [cluster, data] of clusterData.entries()) {
         const completedDestinations = data.destinations.filter(
           ({ pending, unit }) =>
-            pending !== true && unit?.isUnderConstruction?.() !== true,
+            pending !== true && (
+              unit?.isUnderConstruction?.() !== true ||
+              unit?.hasTrainStation?.() === true
+            ),
         );
         const pendingDestinations = data.destinations.filter(
           ({ pending, unit }) =>
-            pending === true || unit?.isUnderConstruction?.() === true,
+            pending === true || (
+              unit?.isUnderConstruction?.() === true &&
+              unit?.hasTrainStation?.() !== true
+            ),
         );
         const futureDestinations = completedDestinations.concat(pendingDestinations);
-        const poolMean = (sourceOwner, includeCandidate, postAlliance) => {
+        // Only stations with a completed TrainStation join the cluster's
+        // uniform sampling pool; pending stops never pay until construction.
+        const payingDestinations = completedDestinations;
+        const pendingStopDelayTicks = Math.max(
+          0,
+          ...pendingDestinations.map(({ type }) =>
+            Number(config?.unitInfo?.(type)?.constructionDuration ?? 0),
+          ),
+        );
+        const poolMean = (
+          sourceOwner,
+          includeCandidate,
+          postAlliance,
+          includePending = false,
+          atTicks = null,
+        ) => {
+          const stops = includePending ? futureDestinations : payingDestinations;
           const pool = includeCandidate
-            ? futureDestinations.concat([{ owner: ownPlayer }])
-            : futureDestinations;
-          if (pool.length === 0) return 0;
-          const values = pool.map(({ owner }) => {
-            const alliedPair = sourceOwner?.isAlliedWith?.(owner) === true;
-            const payoutRelation =
-              postAlliance && alliedPair ? "other" : relationship(sourceOwner, owner);
-            const recipients = sameOwner(sourceOwner, owner) ? 1 : 2;
-            return trainGold(payoutRelation, sourceOwner) * recipients;
+            ? stops.concat([{ owner: ownPlayer }])
+            : stops;
+          const eligible = pool.filter(({ owner }) =>
+            sameOwner(sourceOwner, owner) || shimCanTrade(sourceOwner, owner),
+          );
+          if (eligible.length === 0) return 0;
+          const values = eligible.map(({ owner }) => {
+            const same = sameOwner(sourceOwner, owner);
+            const alliedPair = !same && sourceOwner?.isAlliedWith?.(owner) === true;
+            const allianceExpired =
+              atTicks !== null &&
+              alliedPair &&
+              atTicks >= this.legendaryAllianceTicksRemaining(sourceOwner, owner);
+            const payoutRelation = alliedPair && (postAlliance || allianceExpired)
+              ? "other"
+              : relationship(sourceOwner, owner);
+            const teamRecipients =
+              Number(sameTeam(sourceOwner)) + Number(!same && sameTeam(owner));
+            return trainGold(payoutRelation, sourceOwner) * teamRecipients;
           });
           return values.reduce((sum, value) => sum + value, 0) / values.length;
         };
+        const alliancePayoutTicks = (sourceOwner) => {
+          const expirations = new Set([0]);
+          for (const { owner } of futureDestinations.concat([{ owner: ownPlayer }])) {
+            if (
+              sameOwner(sourceOwner, owner) ||
+              sourceOwner?.isAlliedWith?.(owner) !== true
+            ) {
+              continue;
+            }
+            const expiresIn = Number(
+              this.legendaryAllianceTicksRemaining(sourceOwner, owner),
+            );
+            if (Number.isFinite(expiresIn) && expiresIn >= 0) {
+              expirations.add(expiresIn);
+            }
+          }
+          return [...expirations].sort((left, right) => left - right);
+        };
+        const sourcePayoutTimeline = (sourceOwner) =>
+          alliancePayoutTicks(sourceOwner).map((atTicks) => ({
+            atTicks,
+            beforeTeamGoldPerSpawn: poolMean(
+              sourceOwner,
+              false,
+              false,
+              false,
+              atTicks,
+            ),
+            teamGoldPerStop: poolMean(
+              sourceOwner,
+              true,
+              false,
+              false,
+              atTicks,
+            ),
+            beforeTeamGoldAfterPendingPerSpawn: poolMean(
+              sourceOwner,
+              false,
+              false,
+              true,
+              atTicks,
+            ),
+            teamGoldAfterPendingPerSpawn: poolMean(
+              sourceOwner,
+              true,
+              false,
+              true,
+              atTicks,
+            ),
+          }));
         const sources = [...data.factories.values()].map((source) => {
-          const allyTicks = allied(source.owner)
-            ? allianceTicksRemaining(source.owner)
-            : Infinity;
           return {
-            // The engine's unitCount denominator covers completed levels only.
-            factoryCount: (source.owner?.units?.(UNIT.Factory) ?? [])
-              .filter((factory) => factory?.isUnderConstruction?.() !== true)
-              .reduce((total, factory) => total + levelOf(factory), 0),
+            factoryCount: levelSum(source.owner?.units?.(UNIT.Factory)),
             productiveFactoryLevels: source.productiveFactoryLevels,
             pendingFactoryLevels: source.pendingFactoryLevels,
             factoryConstructionDelayTicks: source.factoryConstructionDelayTicks,
-            paidStopsAfterBuild: Math.max(1, futureDestinations.length + 1),
             beforeTeamGoldPerSpawn: poolMean(source.owner, false, false),
             teamGoldPerStop: poolMean(source.owner, true, false),
             beforePostAllianceTeamGoldPerSpawn:
               poolMean(source.owner, false, true),
             postAllianceTeamGoldPerStop: poolMean(source.owner, true, true),
-            eligibleTicks: allyTicks,
-            pendingStopDelayTicks: pendingDestinations.length > 0
-              ? Number(config?.unitInfo?.(pendingDestinations[0].type)?.constructionDuration ?? 0)
-              : 0,
+            beforeTeamGoldAfterPendingPerSpawn:
+              poolMean(source.owner, false, false, true),
+            teamGoldAfterPendingPerSpawn:
+              poolMean(source.owner, true, false, true),
+            beforePostAllianceTeamGoldAfterPendingPerSpawn:
+              poolMean(source.owner, false, true, true),
+            postAllianceTeamGoldAfterPendingPerSpawn:
+              poolMean(source.owner, true, true, true),
+            payoutTimeline: sourcePayoutTimeline(source.owner),
+            eligibleTicks: eligibleTicksFor(source.owner, futureDestinations),
+            pendingStopDelayTicks,
           };
         });
         if (data.factories.has(idOf(ownPlayer))) {
           const ownSource = data.factories.get(idOf(ownPlayer));
-          const alliedDestinations = futureDestinations.filter(
-            ({ owner }) => allied(owner),
-          );
           ownFactoryClusterEntries.push({
+            clusterId: cluster,
             productiveFactoryLevels: ownSource.productiveFactoryLevels,
             pendingFactoryLevels: ownSource.pendingFactoryLevels,
+            factoryConstructionDelayTicks: ownSource.factoryConstructionDelayTicks,
+            pendingStopDelayTicks,
             teamGoldPerSpawn: poolMean(ownPlayer, false, false),
             postTeamGoldPerSpawn: poolMean(ownPlayer, false, true),
-            eligibleTicks: alliedDestinations.length > 0
-              ? Math.min(...alliedDestinations.map(
-                  ({ owner }) => allianceTicksRemaining(owner),
-                ))
-              : Infinity,
+            teamGoldAfterPendingPerSpawn:
+              poolMean(ownPlayer, false, false, true),
+            postTeamGoldAfterPendingPerSpawn:
+              poolMean(ownPlayer, false, true, true),
+            payoutTimeline: sourcePayoutTimeline(ownPlayer).map((point) => ({
+              atTicks: point.atTicks,
+              teamGoldPerSpawn: point.beforeTeamGoldPerSpawn,
+              teamGoldAfterPendingPerSpawn:
+                point.beforeTeamGoldAfterPendingPerSpawn,
+            })),
+            eligibleTicks: eligibleTicksFor(ownPlayer, futureDestinations),
             isTarget: false,
           });
         }
@@ -10272,16 +10436,16 @@
             (sum, level) => sum + legendaryExpectedTrainRatePerTick(level, denominator),
             0,
           );
-          return total + spawns * source.teamGoldPerStop /
-            Math.max(1, source.paidStopsAfterBuild);
+          return total + spawns * source.teamGoldPerStop;
         }, 0);
         if (estimate > bestTrainValue) {
           bestTrainValue = estimate;
           bestTrainSources = sources;
           for (const entry of ownFactoryClusterEntries) entry.isTarget = false;
-          if (ownFactoryClusterEntries.length > 0) {
-            ownFactoryClusterEntries[ownFactoryClusterEntries.length - 1].isTarget = true;
-          }
+          const targetCluster = ownFactoryClusterEntries.find(
+            (entry) => entry.clusterId === cluster,
+          );
+          if (targetCluster) targetCluster.isTarget = true;
           bestOwnProductiveLevels =
             data.factories.get(idOf(ownPlayer))?.productiveFactoryLevels ?? [];
           const ownFactorySource = data.factories.get(idOf(ownPlayer));
@@ -10296,19 +10460,36 @@
           );
         }
         if (futureDestinations.length > 0) {
-          const weighted = futureDestinations.map(({ owner }) => {
-            const relation = relationship(ownPlayer, owner);
-            const teamRecipients = sameOwner(owner, ownPlayer) ? 1 : sameTeam(owner) ? 2 : 1;
-            return {
-              payout: trainGold(relation, ownPlayer) * teamRecipients,
-            };
-          });
-          const average = weighted.length > 0
-            ? weighted.reduce((sum, item) => sum + item.payout, 0) / weighted.length
-            : 0;
-          if (average > bestFactoryGold) {
-            bestFactoryGold = average;
-            bestPaidStops = futureDestinations.length;
+          const eligibleDestinations = futureDestinations.filter(({ owner }) =>
+            sameOwner(ownPlayer, owner) || shimCanTrade(ownPlayer, owner),
+          );
+          const routeProfile = {
+            clusterId: cluster,
+            teamGoldPerSpawn: poolMean(ownPlayer, false, false),
+            postTeamGoldPerSpawn: poolMean(ownPlayer, false, true),
+            teamGoldAfterPendingPerSpawn:
+              poolMean(ownPlayer, false, false, true),
+            postTeamGoldAfterPendingPerSpawn:
+              poolMean(ownPlayer, false, true, true),
+            payoutTimeline: sourcePayoutTimeline(ownPlayer).map((point) => ({
+              atTicks: point.atTicks,
+              teamGoldPerSpawn: point.beforeTeamGoldPerSpawn,
+              teamGoldAfterPendingPerSpawn:
+                point.beforeTeamGoldAfterPendingPerSpawn,
+            })),
+            pendingStopDelayTicks,
+            eligibleTicks: eligibleTicksFor(ownPlayer, eligibleDestinations),
+          };
+          if (eligibleDestinations.length > 0) factoryRouteProfiles.push(routeProfile);
+          const routePotential = Math.max(
+            routeProfile.teamGoldPerSpawn,
+            routeProfile.postTeamGoldPerSpawn,
+            routeProfile.teamGoldAfterPendingPerSpawn,
+            routeProfile.postTeamGoldAfterPendingPerSpawn,
+          );
+          if (routePotential > bestFactoryGold) {
+            bestFactoryGold = routePotential;
+            bestPaidStops = eligibleDestinations.length;
           }
           const ownFactorySource = data.factories.get(idOf(ownPlayer));
           if (ownFactorySource) {
@@ -10317,28 +10498,22 @@
               if (typeof unit?.id !== "function") continue;
               factoryUpgradeTargets.push({
                 structureId: unit.id(),
+                clusterId: cluster,
                 factoryCount: ownFactorySource.factoryCount,
                 productiveFactoryLevels: ownFactorySource.productiveFactoryLevels,
                 pendingFactoryLevels: ownFactorySource.pendingFactoryLevels,
                 factoryConstructionDelayTicks:
                   ownFactorySource.factoryConstructionDelayTicks,
                 upgradeFactoryIndex: index,
-                pendingStopDelayTicks: Math.max(
-                  0,
-                  ...pendingDestinations.map(({ type }) =>
-                    Number(config?.unitInfo?.(type)?.constructionDuration ?? 0),
-                  ),
-                ),
-                teamGoldPerTrain: average,
+                pendingStopDelayTicks,
+                teamGoldPerTrain: routePotential,
               });
             }
           }
         }
       }
 
-      const ownFactoryCount = (ownPlayer?.units?.(UNIT.Factory) ?? [])
-        .filter((factory) => factory?.isUnderConstruction?.() !== true)
-        .reduce((total, factory) => total + levelOf(factory), 0);
+      const ownFactoryCount = levelSum(ownPlayer?.units?.(UNIT.Factory));
       const sharedWater = this.game?.sharedWaterComponents?.(ownPlayer);
       let teamFactoryLevels = 0;
       let teamCityStops = 0;
@@ -10425,7 +10600,6 @@
         }
       }
       let portSeedSources = [];
-      let seedPairDelayTicks = portConstructionTicks;
       let seedPartnerCommitted = false;
       if (portSeedWindowOpen && hasCompletedTradePartner !== true && candidateTiles.length > 0) {
         let bestSeed = null;
@@ -10490,6 +10664,7 @@
                     ...partnerProfile,
                     level: 1,
                     portSeedStream: "partner",
+                    constructionDelayTicks: portConstructionTicks,
                   },
                 ],
                 committed: inProgress.length > 0,
@@ -10513,9 +10688,6 @@
         if (bestSeed) {
           portSeedSources = bestSeed.sources;
           seedPartnerCommitted = bestSeed.committed === true;
-          // The selected seed partner is completing concurrently; unrelated
-          // pending Ports on other shared water must not delay this pair.
-          seedPairDelayTicks = portConstructionTicks;
         }
       }
       const completedFactoryLevels = (this.player?.units?.(UNIT.Factory) ?? [])
@@ -10554,7 +10726,6 @@
         hasPendingTradePartner: hasTradePartner && !hasCompletedTradePartner,
         portSeedWindowOpen,
         pendingPartnerConstructionTicks,
-        seedPairDelayTicks,
         portSeedSources,
         portSeedPartnerCommitted: seedPartnerCommitted,
         routeDelayTicks: Math.max(
@@ -10572,6 +10743,7 @@
         factoryTeamGoldPerTrain: bestFactoryGold,
         trainSources: bestTrainSources,
         ownerFactoryClusters: ownFactoryClusterEntries,
+        factoryRouteProfiles,
         factoryUpgradeTargets,
         portUpgradeTargetIds,
         portUpgradeProfiles,
@@ -11380,6 +11552,17 @@
       if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
         valuesWithPolicy.affordable =
           cost <= this.availableGoldAfterReserve(type, { includeSam: true });
+      }
+      if (
+        type === UNIT.Port &&
+        values.seedPair === undefined &&
+        context.strategicState?.economyInputs?.portSeedWindowOpen === true &&
+        context.strategicState.economyInputs.hasCompletedTradePartner !== true &&
+        context.strategicState.economyInputs.portSeedPartnerCommitted !== true
+      ) {
+        // The deterministic two-owner seed window is the one no-route
+        // exception: commit our half even though neither stream pays yet.
+        valuesWithPolicy.seedPair = true;
       }
       context.candidates.push({
         type,
@@ -12626,6 +12809,82 @@
       return this.nukeBehavior?.getRouteEligibleSilos(request) ?? null;
     }
 
+    nukeDemandSilosForUpgrade(request, planStillMissing, routeEligibleSilos) {
+      if (planStillMissing === false) {
+        // The planner closes the demand with the live layout even when the
+        // static level sum lags (partial levels + route-capable silos).
+        // DIVERGENCE: reload/window flapping across reloads keeps the demand
+        // alive here; only a closing plan releases it.
+        state.nukeWantSlots = null;
+        return null;
+      }
+      const scopedSilos = this.nukeDemandScopedSilos(
+        request,
+        routeEligibleSilos ?? this.routeEligibleSilosForDemand(request),
+      );
+      const currentCapacity = scopedSilos.reduce(
+        (sum, silo) => sum + Math.max(1, Number(silo.level?.() ?? 1)),
+        0,
+      );
+      if (
+        planStillMissing === null &&
+        currentCapacity >= request.requiredCapacity
+      ) {
+        state.nukeWantSlots = null;
+        return null;
+      }
+      return scopedSilos;
+    }
+
+    nukeDemandSiloIntentAge(tick, prior) {
+      return tick === null || prior.tick === null ? 0 : tick - prior.tick;
+    }
+
+    nukeDemandSiloUpgradeWaiting(pendingRequest) {
+      const prior = this._nukeDemandSiloUpgradeReservation;
+      if (prior?.request !== pendingRequest) return false;
+      if (prior.inFlight) return true;
+      const reservedSilo = (this.player.units(UNIT.MissileSilo) || []).find(
+        (silo) => String(silo.id()) === String(prior.siloId),
+      );
+      const currentLevel = Number(reservedSilo?.level?.() ?? 1);
+      const levelAdvanced = !reservedSilo || currentLevel > prior.level;
+      const rawTick = Number(this.game?.ticks?.());
+      const tick = Number.isFinite(rawTick) ? rawTick : null;
+      const age = this.nukeDemandSiloIntentAge(tick, prior);
+      return (
+        !levelAdvanced &&
+        age >= 0 &&
+        age < NUKE_DEMAND_SILO_INTENT_GRACE_TICKS
+      );
+    }
+
+    nukeDemandSiloUpgradeCandidates(request, scopedSilos, planStillMissing) {
+      const canUpgradeForDemand = this.nukeBehavior?.hasUsefulSiloUpgradeCapacity(
+        scopedSilos,
+        { totalBombs: request.requiredCapacity },
+        planStillMissing === true,
+      );
+      const candidates = scopedSilos.filter((silo) =>
+        this.structureBelowUpgradeLimit(silo),
+      );
+      if (candidates.length === 0 || canUpgradeForDemand === false) {
+        // Unsatisfiable demand: every scoped silo is at its level cap and the
+        // nation silo budget is exhausted, so no upgrade or spawn can ever
+        // close the request. Release it to reopen the surplus lane.
+        if (
+          candidates.length === 0 &&
+          canUpgradeForDemand === false &&
+          this.missileSiloPhysicalCapReached()
+        ) {
+          state.nukeWantSlots = null;
+          return null;
+        }
+        return [];
+      }
+      return candidates;
+    }
+
     /**
      * Service the nuke planner's target-specific silo-capacity request. This
      * sits below both H-bomb SAM priorities and above generic hostile-SAM
@@ -12638,73 +12897,94 @@
       if (request === null) return false;
       if (this.legendaryMissileDefenseUrgent()) return false;
       const planStillMissing = this.samOverwhelmPlanStillMissing(request);
-      if (planStillMissing === false) {
-        // The planner closes the demand with the live layout even when the
-        // static level sum lags (partial levels + route-capable silos).
-        // DIVERGENCE: reload/window flapping across reloads keeps the demand
-        // alive here; only a closing plan releases it.
-        state.nukeWantSlots = null;
-        return false;
-      }
-      const scopedSilos = this.nukeDemandScopedSilos(request,
-        routeEligibleSilos ?? this.routeEligibleSilosForDemand(request));
-      const currentCapacity = scopedSilos.reduce(
-        (sum, silo) => sum + Math.max(1, Number(silo.level?.() ?? 1)),
-        0,
+      const scopedSilos = this.nukeDemandSilosForUpgrade(
+        request,
+        planStillMissing,
+        routeEligibleSilos,
       );
-      if (
-        planStillMissing === null &&
-        currentCapacity >= request.requiredCapacity
-      ) {
-        state.nukeWantSlots = null;
-        return false;
-      }
-      const canUpgradeForDemand = this.nukeBehavior?.hasUsefulSiloUpgradeCapacity(
-        scopedSilos, { totalBombs: request.requiredCapacity }, planStillMissing === true,
+      if (scopedSilos === null) return false;
+      if (this.nukeDemandSiloUpgradeWaiting(pendingRequest)) return false;
+      const candidates = this.nukeDemandSiloUpgradeCandidates(
+        request,
+        scopedSilos,
+        planStillMissing,
       );
-      const candidates = scopedSilos.filter((silo) =>
-        this.structureBelowUpgradeLimit(silo),
-      );
-      if (candidates.length === 0 || canUpgradeForDemand === false) {
-        // Unsatisfiable demand: every scoped silo is at its level cap and the
-        // nation silo budget is exhausted, so no upgrade or spawn can ever
-        // close the request. Release it — a pinned nukeWantSlots would keep
-        // the surplus lane suppressed and the nuke lanes anchored to this
-        // SAM owner forever.
-        if (
-          candidates.length === 0 &&
-          canUpgradeForDemand === false &&
-        this.missileSiloPhysicalCapReached()
-        ) {
-          state.nukeWantSlots = null;
-          return false;
-        }
-        return this.maybeSpawnNukeDemandSilo(pendingRequest);
-      }
+      if (candidates === null) return false;
+      if (candidates.length === 0) return this.maybeSpawnNukeDemandSilo(pendingRequest);
       const availableGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
       const minimumCost = this.safeStructureCost(UNIT.MissileSilo);
       if (!this.nukeSiloUpgradeBudgetAvailable(availableGold, minimumCost)) {
         return false;
       }
-      const buildables = await this.buildableForUnits(
-        candidates,
-        UNIT.MissileSilo,
-        {
-          concurrency: DEFENSIVE_SAM_PROBE_CONCURRENCY,
-          timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
-        },
-      );
-      return this.finishNukeDemandSiloUpgrade({
-        pendingRequest, request, candidates, buildables, minimumCost,
-      });
+      const reservation = { request: pendingRequest, inFlight: true };
+      this._nukeDemandSiloUpgradeReservation = reservation;
+      try {
+        const buildables = await this.buildableForUnits(
+          candidates,
+          UNIT.MissileSilo,
+          {
+            concurrency: DEFENSIVE_SAM_PROBE_CONCURRENCY,
+            timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
+          },
+        );
+        return this.finishNukeDemandSiloUpgrade({
+          pendingRequest, request, candidates, buildables, minimumCost, reservation,
+        });
+      } finally {
+        if (
+          this._nukeDemandSiloUpgradeReservation === reservation &&
+          reservation.inFlight
+        ) {
+          this._nukeDemandSiloUpgradeReservation = null;
+        }
+      }
     }
 
-    maybeSpawnNukeDemandSilo(pendingRequest) {
-      return this.maybeSpawnStructure(UNIT.MissileSilo, {
-        forceNewStructure: true,
-        useActualCost: true,
-        nukeDemandRequest: pendingRequest,
-      });
+    nukeDemandSiloSpawnWaiting(pendingRequest, silos, tick) {
+      const prior = this._nukeDemandSiloSpawnReservation;
+      if (prior?.request !== pendingRequest) return false;
+      if (prior.inFlight) return true;
+      const newSiloVisible =
+        silos.length > prior.siloCount || this.hasStructureUnderConstruction(silos);
+      const age = this.nukeDemandSiloIntentAge(tick, prior);
+      return (
+        !newSiloVisible &&
+        age >= 0 &&
+        age < NUKE_DEMAND_SILO_INTENT_GRACE_TICKS
+      );
+    }
+
+    async maybeSpawnNukeDemandSilo(pendingRequest) {
+      const silos = this.player.units(UNIT.MissileSilo) || [];
+      const rawTick = Number(this.game?.ticks?.());
+      const tick = Number.isFinite(rawTick) ? rawTick : null;
+      if (this.nukeDemandSiloSpawnWaiting(pendingRequest, silos, tick)) return false;
+      const reservation = {
+        request: pendingRequest,
+        tick,
+        siloCount: silos.length,
+        inFlight: true,
+      };
+      this._nukeDemandSiloSpawnReservation = reservation;
+      let spawned = false;
+      try {
+        spawned = await this.maybeSpawnStructure(UNIT.MissileSilo, {
+          forceNewStructure: true,
+          useActualCost: true,
+          nukeDemandRequest: pendingRequest,
+        });
+        return spawned;
+      } finally {
+        if (this._nukeDemandSiloSpawnReservation === reservation) {
+          reservation.inFlight = false;
+          if (spawned) {
+            const completedTick = Number(this.game?.ticks?.());
+            if (Number.isFinite(completedTick)) reservation.tick = completedTick;
+          } else {
+            this._nukeDemandSiloSpawnReservation = null;
+          }
+        }
+      }
     }
 
     nukeDemandSiloSpawnAllowed(pendingRequest, tile = null) {
@@ -14728,7 +15008,7 @@
         recoverySam:
           type === UNIT.SAMLauncher &&
           options.allowPreemptiveSam === true &&
-          this.ownSamCapacity() <= 0,
+          this.ownProjectedSamCapacity() <= 0,
         incrementalSamDefense:
           type === UNIT.SAMLauncher && options.activeMissileDefense === true,
         tick,
@@ -15967,7 +16247,7 @@
       const mySid = this.player?.smallID?.();
       for (const other of this.game.players?.() ?? []) {
         if (!other || (mySid !== undefined && other?.smallID?.() === mySid)) continue;
-        if (other?.isPlayer?.() === false || other?.isAlive?.() === false) continue;
+        if (other?.isAlive?.() === false) continue;
         if (!shimCanTrade(this.player, other)) continue;
         owners.push(other);
       }
@@ -16017,7 +16297,7 @@
       for (const owner of [this.player, ...(this.game?.players?.() ?? [])]) {
         const id = owner?.smallID?.();
         if (id === null || id === undefined) continue;
-        if (owner?.isPlayer?.() === false || owner?.isAlive?.() === false) continue;
+        if (owner?.isAlive?.() === false) continue;
         const ownerShared = this.game?.sharedWaterComponents?.(owner);
         if (!ownerShared?.has?.(component)) continue;
         ownersById.set(String(id), owner);
@@ -16401,7 +16681,7 @@
       const stationRangeSquared = this.game.config().trainStationMaxRange() ** 2;
       const reachesPaidStop = (tile, destination) => {
         const distance = this.game.euclideanDistSquared(tile, destination.tile);
-        return distance >= minRangeSquared && distance <= stationRangeSquared;
+        return distance > minRangeSquared && distance <= stationRangeSquared;
       };
       const reachableCandidates = candidates.filter(({ t }) =>
         destinations.some((destination) => reachesPaidStop(t, destination)),
@@ -17110,7 +17390,9 @@
       return true;
     }
 
-    finishNukeDemandSiloUpgrade({ pendingRequest, request, candidates, buildables, minimumCost }) {
+    finishNukeDemandSiloUpgrade({
+      pendingRequest, request, candidates, buildables, minimumCost, reservation,
+    }) {
       if (state.nukeWantSlots !== pendingRequest || this.validNukeSiloUpgradeRequest() === null) return false;
       const currentPlanStillMissing = this.samOverwhelmPlanStillMissing(request);
       if (currentPlanStillMissing === false) {
@@ -17147,7 +17429,18 @@
         if (upgradeStillPossible) return false;
         return this.maybeSpawnNukeDemandSilo(pendingRequest);
       }
-      return this.executeStructureUpgradeCandidate(ranked[0], UNIT.MissileSilo);
+      const selected = ranked[0];
+      const selectedLevel = Number(selected.silo.level?.() ?? 1);
+      const upgraded = this.executeStructureUpgradeCandidate(selected, UNIT.MissileSilo);
+      if (upgraded && reservation) {
+        reservation.siloId = selected.silo.id();
+        reservation.level = selectedLevel;
+        const rawTick = Number(this.game?.ticks?.());
+        const tick = Number.isFinite(rawTick) ? rawTick : null;
+        if (tick !== null) reservation.tick = tick;
+        reservation.inFlight = false;
+      }
+      return upgraded;
     }
 
     nukeSiloRequestTargetInvalid(request) {

@@ -1,7 +1,6 @@
-// MIRV aim selection checks. The carrier's warhead field is huge, so the aim
-// point should sit on the target's structure core (silos/cities weighted
-// heaviest) instead of the territory's geometric centre, and must fall back
-// to the original bounding-box behaviour when nothing is observable.
+// MIRV aim selection and dispatch freshness checks. The carrier's warhead field
+// is huge, so the aim should sit on the target's structure core and avoid SAM
+// coverage that appears while the async buildability probe is running.
 
 import assert from "node:assert/strict";
 import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
@@ -49,6 +48,45 @@ executeClassicScript(
   `${readRepositoryFile("engine/ingame/auto-bot/mirvBehavior.js")}\nglobalThis.__MirvBehavior = MirvBehavior;`,
   sandbox,
   { filename: "mirv-aim.vm.js" },
+);
+
+const reserveDifficulty = {
+  Easy: "Easy",
+  Medium: "Medium",
+  Hard: "Hard",
+  Impossible: "Impossible",
+  Legendary: "Legendary",
+};
+const reserveSandbox = {
+  UNIT,
+  Difficulty: reserveDifficulty,
+  GameMode: { Team: "Team" },
+  PlayerType: { Bot: "Bot", Human: "Human", Nation: "Nation", Tribe: "Tribe" },
+  state: sandbox.state,
+  currentDifficulty: () => reserveDifficulty.Impossible,
+  isLegendaryDifficulty: (difficulty) => difficulty === reserveDifficulty.Legendary,
+  isAtLeastHardDifficulty: (difficulty) =>
+    [reserveDifficulty.Hard, reserveDifficulty.Impossible, reserveDifficulty.Legendary].includes(
+      difficulty,
+    ),
+  getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
+  sendAutoBotBuildOrUpgrade: () => true,
+  autoBotBuildAllowed: () => true,
+  randTerritoryTileArray: () => [],
+  setLastAction() {},
+  tr: (value) => value,
+  captureRuntimeException() {},
+  runtimeDebugLog() {},
+  console,
+};
+reserveSandbox.globalThis = reserveSandbox;
+executeClassicScript(
+  `${readRepositoryFile("engine/ingame/shared-utils.js")}
+${readRepositoryFile("engine/ingame/auto-bot/legendaryPlanner.js")}
+${readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js")}
+globalThis.__StructureBehavior = StructureBehavior;`,
+  reserveSandbox,
+  { filename: "mirv-reserve.vm.js" },
 );
 
 const behavior = Object.create(sandbox.__MirvBehavior.prototype);
@@ -221,6 +259,27 @@ assert.equal(
 let targetAlive = true;
 let currentDispatchTarget;
 let dispatches = 0;
+let dispatchGold = 10n;
+let hostileSiloExists = false;
+let ownedDispatchSams = [];
+const dispatchSamReserve = Object.create(reserveSandbox.__StructureBehavior.prototype);
+dispatchSamReserve.hasActiveMaritimeInvasion = () => false;
+dispatchSamReserve.legendaryAtomWarChest = () => 0n;
+dispatchSamReserve.economicConstructionPressure = () => null;
+dispatchSamReserve.defensiveConstructionReserve = () => 0n;
+dispatchSamReserve.hasBuiltHostileSiloThreat = () => hostileSiloExists;
+dispatchSamReserve.ownedSamUnits = () => ownedDispatchSams;
+dispatchSamReserve.safeConstructionCost = (type) => (type === UNIT.SAMLauncher ? 2n : null);
+dispatchSamReserve.spendableConstructionGold = () => dispatchGold;
+let dispatchSams = [];
+let dispatchSamTile = 21;
+let dispatchSamLevel = 1;
+const dispatchSamOwner = { smallID: () => 88 };
+const dispatchSam = {
+  tile: () => dispatchSamTile,
+  owner: () => dispatchSamOwner,
+  level: () => dispatchSamLevel,
+};
 const dispatchTarget = {
   smallID: () => 99,
   isPlayer: () => true,
@@ -237,14 +296,24 @@ const emitAfterBuildables = async (afterBuildables) => {
   dispatchBehavior.player = {
     smallID: () => 7,
     isFriendly: () => false,
-    gold: () => 10n,
+    gold: () => dispatchGold,
     buildables: async () => {
       afterBuildables();
       return [{ type: UNIT.MIRV, canBuild: true, cost: 1n }];
     },
   };
+  dispatchBehavior.structureBehavior = dispatchSamReserve;
   dispatchBehavior.game = {
     playerBySmallID: (sid) => (sid === 99 ? currentDispatchTarget : null),
+    config: () => ({
+      maxSamRange: () => 100,
+      samRange: (level) => (level >= 2 ? 60 : 30),
+    }),
+    nearbyUnits: (_tile, _range, type) => {
+      assert.equal(type, UNIT.SAMLauncher);
+      return dispatchSams.map((unit) => ({ unit }));
+    },
+    euclideanDistSquared: (a, b) => (Number(a) - Number(b)) ** 2,
   };
   return dispatchBehavior.emitMIRVBuildIntent(dispatchTarget, 1);
 };
@@ -257,6 +326,63 @@ assert.equal(
 );
 assert.equal(dispatches, 1, "the live hostile's MIRV intent is dispatched");
 
+dispatchGold = 1n;
+hostileSiloExists = true;
+ownedDispatchSams = [];
+assert.equal(
+  dispatchSamReserve.offensiveNukeDefenseReserve(),
+  2n,
+  "a hostile Silo with no friendly SAM creates the existing first-SAM reserve",
+);
+assert.equal(
+  await emitAfterBuildables(() => {}),
+  false,
+  "the first-SAM reserve blocks a MIRV when gold exactly covers its price",
+);
+assert.equal(dispatches, 1, "a MIRV cannot spend the first-SAM reserve");
+dispatchGold = 10n;
+hostileSiloExists = false;
+
+currentDispatchTarget = dispatchTarget;
+dispatchSams = [];
+dispatchSamTile = 21;
+dispatchSamLevel = 1;
+assert.equal(
+  await emitAfterBuildables(() => {
+    dispatchSams = [dispatchSam];
+  }),
+  false,
+  "a hostile SAM added during the async buildables probe cancels the covered aim",
+);
+assert.equal(dispatches, 1, "a newly covered aim does not dispatch a MIRV");
+
+currentDispatchTarget = dispatchTarget;
+dispatchSams = [dispatchSam];
+dispatchSamTile = 51;
+dispatchSamLevel = 1;
+assert.equal(
+  await emitAfterBuildables(() => {
+    dispatchSamLevel = 2;
+  }),
+  false,
+  "a hostile SAM upgraded during the async buildables probe cancels the newly covered aim",
+);
+assert.equal(dispatches, 1, "an aim covered by an upgraded SAM does not dispatch");
+
+sandbox.state.settings.winFixes = false;
+currentDispatchTarget = dispatchTarget;
+dispatchSams = [dispatchSam];
+dispatchSamTile = 21;
+dispatchSamLevel = 1;
+assert.equal(
+  await emitAfterBuildables(() => {}),
+  true,
+  "dispatch-time SAM avoidance remains gated by winFixes",
+);
+assert.equal(dispatches, 2, "winFixes off retains dispatch under SAM coverage");
+sandbox.state.settings.winFixes = true;
+dispatchSams = [];
+
 targetAlive = true;
 currentDispatchTarget = dispatchTarget;
 assert.equal(
@@ -266,7 +392,7 @@ assert.equal(
   false,
   "a target that dies during the async buildables probe cancels dispatch",
 );
-assert.equal(dispatches, 1, "a dead target does not dispatch a MIRV");
+assert.equal(dispatches, 2, "a dead target does not dispatch another MIRV");
 
 targetAlive = true;
 currentDispatchTarget = dispatchTarget;
@@ -277,7 +403,7 @@ assert.equal(
   false,
   "a target removed during the async buildables probe cancels dispatch",
 );
-assert.equal(dispatches, 1, "a removed target does not dispatch a MIRV");
+assert.equal(dispatches, 2, "a removed target does not dispatch another MIRV");
 sandbox.sendAutoBotBuildOrUpgrade = previousBuildSender;
 
 process.stdout.write("mirv aim tests passed\n");

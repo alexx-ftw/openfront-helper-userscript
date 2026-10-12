@@ -517,6 +517,84 @@ assert.equal(
   "the acceleration peak is protected before any outgoing troop intent",
 );
 
+const receiptFirstTroopCommitment = (attackType, release) => {
+  let receiptTick = 0;
+  let receiptTroops = 100_000;
+  const receiptAttacks = [];
+  const receiptTransports = [];
+  const receiptPlayer = {
+    smallID: () => 1,
+    troops: () => receiptTroops,
+    outgoingAttacks: () => receiptAttacks,
+    units: (type) => (type === UNIT.TransportShip ? receiptTransports : []),
+  };
+  const receiptGame = {
+    ticks: () => receiptTick,
+    config: () => ({ maxTroops: () => 100_000 }),
+  };
+  const receiptBehavior = new sandbox.AttackBehavior(
+    {},
+    receiptGame,
+    receiptPlayer,
+    0.5,
+    0.3,
+    0.1,
+    {},
+    {},
+  );
+  const destination = 101;
+  receiptBehavior.recordOutboundAttackIntent(target, 8_000, {
+    attackType,
+    ...(attackType === "boat" ? { destination } : {}),
+  });
+  if (attackType === "land") {
+    receiptAttacks.push({
+      id: () => "receipt-first-land",
+      target: () => target,
+      troops: () => 8_000,
+      retreating: () => false,
+    });
+  } else {
+    receiptTransports.push({
+      id: () => "receipt-first-boat",
+      isActive: () => true,
+      targetTile: () => destination,
+      troops: () => 8_000,
+      transportShipState: () => ({ isRetreating: false }),
+    });
+  }
+  receiptTick = 1;
+  const afterReceipt = receiptBehavior.getEarlyGameSpendableTroops(0);
+  if (release === "debit") {
+    receiptTroops -= 8_000;
+    receiptTick++;
+  } else {
+    receiptTick = sandbox.BOT_OUTBOUND_INTENT_GRACE_TICKS;
+  }
+  return {
+    attackType,
+    release,
+    afterReceipt,
+    afterRelease: receiptBehavior.getEarlyGameSpendableTroops(0),
+  };
+};
+
+assert.deepEqual(
+  [
+    receiptFirstTroopCommitment("land", "debit"),
+    receiptFirstTroopCommitment("boat", "debit"),
+    receiptFirstTroopCommitment("land", "expiry"),
+    receiptFirstTroopCommitment("boat", "expiry"),
+  ],
+  [
+    { attackType: "land", release: "debit", afterReceipt: 92_000, afterRelease: 92_000 },
+    { attackType: "boat", release: "debit", afterReceipt: 92_000, afterRelease: 92_000 },
+    { attackType: "land", release: "expiry", afterReceipt: 92_000, afterRelease: 100_000 },
+    { attackType: "boat", release: "expiry", afterReceipt: 92_000, afterRelease: 100_000 },
+  ],
+  "receipt-first land and boat attacks reserve undebited troops until debit or expiry",
+);
+
 behavior.recordOutboundAttackIntent(target, 8000, { attackType: "land" });
 assert.equal(behavior.getPendingOutboundAttackTroops(), 8000);
 assert.equal(
@@ -539,9 +617,17 @@ outgoing.push({
 tick = 1;
 assert.equal(
   behavior.getPendingOutboundAttackTroops(),
-  0,
-  "the local intent is released once the matching outgoing attack is visible",
+  8000,
+  "the visible receipt keeps its troops committed until the home debit is observed",
 );
+ownTroops -= 8000;
+tick = 2;
+assert.equal(
+  behavior.getPendingOutboundAttackTroops(),
+  0,
+  "the acknowledged intent releases its reservation once its troop debit is observed",
+);
+ownTroops += 8000;
 
 outgoing.length = 0;
 behavior.recordOutboundAttackIntent(target, 7000, { attackType: "land" });
@@ -554,9 +640,14 @@ outgoing.push({
   target: () => target,
   troops: () => 7000,
 });
-tick = 2;
+tick = 3;
 assert.equal(
   behavior.getPendingOutboundAttackTroops(),
+  9000,
+  "the acknowledged receipt and remaining intent both stay committed",
+);
+assert.equal(
+  behavior.botAttackPendingIntentCommitments.reduce((total, entry) => total + entry.troops, 0),
   2000,
   "one visible attack only settles one of two stale intents",
 );
@@ -1645,6 +1736,7 @@ assert.equal(
   ownTroops - productionPeakReserve,
   "the final boat boundary preserves the Nation/Human production peak",
 );
+const boatTroopCommitment = troopEmissions.at(-1);
 const boatEmissionCount = troopEmissions.length;
 assert.equal(
   boatBudgetBehavior.emitBoat("boat-destination", 1, "⛵ duplicate boat", humanTarget),
@@ -1678,7 +1770,11 @@ assert.equal(
   50000,
   "a visible transport remains committed to its target after pending reconciliation",
 );
-assert.equal(boatBudgetBehavior.getPendingOutboundAttackTroops(), 0);
+assert.equal(
+  boatBudgetBehavior.getPendingOutboundAttackTroops(),
+  boatTroopCommitment,
+  "a visible boat receipt stays in the shared troop commitment until its debit is observed",
+);
 assert.equal(boatBudgetBehavior.getActiveTribeAttackTargetKeys().has("human-target"), true);
 assert.equal(boatBudgetBehavior.getActiveOutboundPlayerTargets().includes(humanTarget), true);
 assert.equal(
@@ -1723,7 +1819,14 @@ assert.equal(
 );
 outgoing.splice(0, outgoing.length, ...outgoingBeforeTransportAccounting);
 game.owner = ownerBeforeTransportAccounting;
+ownTroops -= boatTroopCommitment;
 tick += 1;
+assert.equal(
+  boatBudgetBehavior.getPendingOutboundAttackTroops(),
+  0,
+  "the boat reservation clears after its troop debit is observed",
+);
+ownTroops = 80000;
 assert.equal(
   boatBudgetBehavior.emitBoat("boat-destination", 1, "⛵ landed boat", humanTarget),
   true,
@@ -2214,6 +2317,14 @@ outgoing.push({
 tick = 42;
 assert.equal(
   pendingPlayerBehavior.getPendingOutboundAttackTroops(),
+  8000,
+  "the visible receipt and still-unseen reinforcement remain in the shared commitment",
+);
+assert.equal(
+  pendingPlayerBehavior.botAttackPendingIntentCommitments.reduce(
+    (total, entry) => total + entry.troops,
+    0,
+  ),
   4000,
   "the visible first attack does not release the still-unseen reinforcement intent",
 );
@@ -2226,9 +2337,10 @@ outgoing.push({
 tick = 43;
 assert.equal(
   pendingPlayerBehavior.getPendingOutboundAttackTroops(),
-  0,
-  "matching engine attacks settle each accepted intent exactly once",
+  8000,
+  "matching receipts acknowledge each accepted intent once while troops remain undebited",
 );
+assert.equal(pendingPlayerBehavior.botAttackPendingIntentCommitments.length, 0);
 assert.equal(
   pendingPlayerBehavior.outboundPlayerAttackCommitments().committedByKey.get("61"),
   10000,
@@ -2284,6 +2396,36 @@ assert.equal(
   forcedNoDebitBehavior.getPendingOutboundAttackTroops(),
   20000,
   "a forced intent without an observed debit keeps the grace reservation",
+);
+
+const sameTickRefreshBehavior = new sandbox.AttackBehavior(
+  {},
+  game,
+  parallelMe,
+  0.5,
+  0.3,
+  0.1,
+  {},
+  {},
+);
+let sameTickOwnTroops = 100000;
+sameTickRefreshBehavior.player = {
+  ...parallelMe,
+  troops: () => sameTickOwnTroops,
+};
+sameTickRefreshBehavior.currentAttackDecisionTick = () => tick;
+sameTickRefreshBehavior.getOutboundAttackSnapshot = () => [];
+sameTickRefreshBehavior.getOutboundTransportSnapshot = () => [];
+tick = 62;
+sameTickRefreshBehavior.recordOutboundAttackIntent(parallelTribeA, 20000, {
+  forcedCounterattack: true,
+});
+assert.equal(sameTickRefreshBehavior.getPendingOutboundAttackTroops(), 20000);
+sameTickOwnTroops = 79000;
+assert.equal(
+  sameTickRefreshBehavior.getPendingOutboundAttackTroops(true),
+  0,
+  "a forced same-tick refresh releases an intent after its troop debit becomes visible",
 );
 
 pendingPlayerBehavior.botAttackPendingIntentCommitments = [
