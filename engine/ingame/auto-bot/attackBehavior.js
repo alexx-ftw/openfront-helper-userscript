@@ -8156,13 +8156,32 @@
       reserveTarget = null,
       requireExactTroops = false,
     ) {
+      if (this.attackAdmissionAttempt) return this.emitAuthorizedBoat(dst, troops, label, reserveTarget, requireExactTroops);
+      const row = this.beginAttackAdmission({ target: this.game.owner?.(dst) ?? {}, force: false });
+      row.destination = dst;
+      this.attackAdmissionAttempt = row;
+      let dispatchError = null;
+      try {
+        const emitted = this.emitAuthorizedBoat(dst, troops, label, reserveTarget, requireExactTroops);
+        row.emitted = row.emitted || emitted;
+        return emitted;
+      // eslint-disable-next-line no-restricted-syntax -- Record dispatch evidence and rethrow the original failure unchanged.
+      } catch (error) {
+        dispatchError = error;
+        row.reason = "dispatch-exception";
+        row.error = String(error);
+        throw error;
+      } finally { this.finishObservedAttack(row, null, null, dispatchError); }
+    }
+
+    emitAuthorizedBoat(dst, troops, label, reserveTarget, requireExactTroops) {
       // Final chokepoint for the "boat" feature toggle: never fire when off.
-      if (!this.canEmitBoatToDestination(dst)) return false;
-      if (this.boatLaunchWarshipDanger(dst)) return false;
-      if (this.boatDestinationReserved(dst)) return false;
+      if (!this.canEmitBoatToDestination(dst)) return this.rejectHybridAttack("boat-destination-authorization-rejected");
+      if (this.boatLaunchWarshipDanger(dst)) return this.rejectHybridAttack("boat-warship-danger");
+      if (this.boatDestinationReserved(dst)) return this.rejectHybridAttack("boat-destination-reserved");
       const requestedTroops = Number(troops);
       if (!Number.isFinite(requestedTroops) || requestedTroops < 1) {
-        return false;
+        return this.rejectHybridAttack(this.landAttackPayloadRejection(requestedTroops));
       }
       const safeTroops = this.resolveBoatTroops(
         requestedTroops,
@@ -8170,14 +8189,10 @@
         requireExactTroops,
       );
       if (!Number.isFinite(safeTroops) || safeTroops < 1) {
-        return false;
+        return this.rejectHybridAttack("boat-reserve-insufficient");
       }
       const ctors = discoverCtors(getEventBus());
-      if (
-        ctors.boat &&
-        hasAttackIntentRateCapacity() &&
-        emitIntent(ctors.boat, dst, safeTroops)
-      ) {
+      if (this.emitObservedAttackOrder(ctors.boat, dst, safeTroops, "boat")) {
         state.stats.attacks++;
         setLastAction(tr(label), "naval");
         let target;
@@ -9481,14 +9496,30 @@
     }
 
     canFundLandAttack(target) {
+      return this.inspectLandAttackFunding(target).allowed;
+    }
+
+    inspectLandAttackFunding(target) {
       // Breaking the alliance marks us as a traitor even if the next attack
       // is unaffordable. Reuse the first-strike reserve and defense checks
       // before paying that diplomatic cost; do not emit a same-tick attack.
       const context = this.createLandAttackContext(target);
-      let troops = this.calculateLandAttackTroops(context);
-      if (!context.attackBlocked) troops = this.adjustLandAttackTroops(context, troops);
-      this.restoreLandAttackReservation(context);
-      return !context.attackBlocked && this.landAttackTroopsAreSafe(context, troops);
+      let troops;
+      try {
+        troops = this.calculateLandAttackTroops(context);
+        if (!context.attackBlocked) troops = this.adjustLandAttackTroops(context, troops);
+        const safe = !context.attackBlocked && Number.isFinite(troops) && this.landAttackTroopsAreSafe(context, troops);
+        let reason = context.rejectionReason ?? "defense-post-floor";
+        if (!Number.isFinite(troops)) reason = "nonfinite-payload";
+        else if (troops < 1 && !context.rejectionReason) reason = "no-spendable-troops";
+        if (safe) reason = "funded";
+        return { allowed: safe, reason,
+          payloadTroops: Number.isFinite(troops) ? troops : null,
+          spendableTroops: context.finalSpendableTroops, reserveTroops: context.targetTroops,
+          targetTroops: Number(target.troops?.()) };
+      } finally {
+        this.restoreLandAttackReservation(context);
+      }
     }
 
     // maybeBetrayAndAttack — AiAttackBehavior (private, now async via sendAttack).
@@ -9848,13 +9879,7 @@
 
     emitForcedAttackIntent(ctors, target, troops) {
       const targetId = target.isPlayer() ? target.id() : null;
-      if (
-        !ctors.attack ||
-        !hasAttackIntentRateCapacity() ||
-        !emitIntent(ctors.attack, targetId, troops)
-      ) {
-        return false;
-      }
+      if (!this.emitObservedAttackOrder(ctors.attack, targetId, troops, "forced-land")) return false;
       state.stats.attacks++;
       setLastAction(tr("⚔️ Attack"), "combat");
       this.recordOutboundAttackIntent(target, troops, { attackType: "land" });
@@ -9864,6 +9889,10 @@
     // forceSendAttack — AiAttackBehavior (now async only by signature; nationExecution
     // awaits it. No worker calls — a land/TN attack at half troops).
     async forceSendAttack(target, fraction = 0.5, options = null) {
+      return this.observeAttackAdmission({ target, force: true }, () => this.sendForcedAttack(target, fraction, options));
+    }
+
+    async sendForcedAttack(target, fraction, options) {
       // src: game.addExecution(new AttackExecution(troops/2, player,
       //   target.isPlayer() ? target.id() : terraNullius().id())).
       // Client: emitIntent(ctors.attack, target.id()|null, troops). In win-fix
@@ -9873,14 +9902,14 @@
       this.reconcileOutboundAttackIntentCommitments();
       const ctors = discoverCtors(getEventBus());
       const isTerraNullius = target?.isPlayer?.() !== true;
-      if (!this.canForceAttackTarget(target)) return false;
+      if (!this.canForceAttackTarget(target)) return this.rejectHybridAttack("forced-terrain-unavailable");
       const troops = this.getForceAttackTroops(
         target,
         fraction,
         isTerraNullius,
         options,
       );
-      if (troops < 1) return false;
+      if (troops < 1) return this.rejectHybridAttack("no-spendable-troops");
       return this.emitForcedAttackIntent(ctors, target, troops);
     }
 
@@ -10270,18 +10299,94 @@
     async sendAttack(...args) {
       const options = this.normalizeSendAttackArgs(args);
       const attempt = this.beginHybridSafetyAttempt(options);
+      const previousAdmission = this.attackAdmissionAttempt;
+      const admission = this.beginAttackAdmission(options);
+      this.attackAdmissionAttempt = admission;
+      let dispatchError = null;
       try {
         const emitted = await this.sendAuthorizedAttack(options);
+        admission.emitted = admission.emitted || emitted;
         if (attempt) attempt.emitted = emitted;
         if (!emitted && attempt?.reason && typeof hybridCombatPolicy !== "undefined") {
           const dispatch = hybridCombatPolicy.dispatch;
           if (dispatch?.id === attempt.attemptId && dispatch.generation === attempt.generation) dispatch.reason = attempt.reason;
         }
         return emitted;
+      // eslint-disable-next-line no-restricted-syntax -- Record dispatch evidence and rethrow the original failure unchanged.
+      } catch (error) {
+        dispatchError = error;
+        admission.reason = "dispatch-exception";
+        admission.error = String(error);
+        throw error;
       } finally {
-        if (attempt) window.__OFH_hybridSafety?.({ ...attempt });
-        if (this.hybridSafetyAttempt === attempt) this.hybridSafetyAttempt = null;
+        this.finishObservedAttack(admission, previousAdmission, attempt, dispatchError);
       }
+    }
+
+    finishObservedAttack(row, previous, attempt, originalError) {
+      try {
+        try { this.finishHybridSafetyAttempt(attempt); }
+        finally { this.finishAttackAdmission(row, previous); }
+      // eslint-disable-next-line no-restricted-syntax -- Preserve the original dispatch failure when diagnostic publication also fails.
+      } catch (error) {
+        throw originalError ?? error;
+      }
+    }
+
+    finishHybridSafetyAttempt(attempt) {
+      try { if (attempt) window.__OFH_hybridSafety?.({ ...attempt }); }
+      finally { if (this.hybridSafetyAttempt === attempt) this.hybridSafetyAttempt = null; }
+    }
+
+    beginAttackAdmission(options) {
+      return { tick: this.currentAttackDecisionTick(), actorSmallID: this.player.smallID?.() ?? null,
+        targetSmallID: options.target.smallID?.() ?? null, forced: options.force,
+        phase: "dispatch", emitted: false, reason: null };
+    }
+
+    async observeAttackAdmission(options, operation) {
+      if (this.attackAdmissionAttempt) return operation();
+      const row = this.beginAttackAdmission(options);
+      this.attackAdmissionAttempt = row;
+      let dispatchError = null;
+      try {
+        const emitted = await operation();
+        row.emitted = row.emitted || emitted;
+        return emitted;
+      // eslint-disable-next-line no-restricted-syntax -- Record dispatch evidence and rethrow the original failure unchanged.
+      } catch (error) {
+        dispatchError = error;
+        row.reason = "dispatch-exception";
+        row.error = String(error);
+        throw error;
+      } finally { this.finishObservedAttack(row, null, null, dispatchError); }
+    }
+
+    recordAttackEmission(troops, path) {
+      if (this.attackAdmissionAttempt) Object.assign(this.attackAdmissionAttempt, { emitted: true, payloadTroops: troops, path });
+      if (this.hybridSafetyAttempt) this.hybridSafetyAttempt.emitted = true;
+      if (typeof hybridCombatPolicy !== "undefined") hybridCombatPolicy.cancelCollectorWait?.(this);
+    }
+
+    emitObservedAttackOrder(ctor, target, troops, path) {
+      if (!ctor) return this.rejectHybridAttack("intent-constructor-unavailable");
+      if (!hasAttackIntentRateCapacity()) return this.rejectHybridAttack("intent-rate-capacity-exhausted");
+      if (!emitIntent(ctor, target, troops)) return this.rejectHybridAttack("intent-emission-rejected");
+      this.recordAttackEmission(troops, path);
+      return true;
+    }
+
+    finishAttackAdmission(admission, previous) {
+      if (!admission.emitted && !admission.reason) admission.reason = "unobserved-emission-rejection";
+      if (this.attackAdmissionAttempt === admission) this.attackAdmissionAttempt = previous;
+      globalThis.window?.__OFH_attackAdmission?.(admission);
+    }
+
+    recordLandAttackAdmission(context, troops) {
+      if (!this.attackAdmissionAttempt) return;
+      Object.assign(this.attackAdmissionAttempt, { path: "land", payloadTroops: troops,
+        spendableTroops: context.finalSpendableTroops, reserveTroops: context.targetTroops,
+        targetTroops: Number(context.target.troops?.()) });
     }
 
     beginHybridSafetyAttempt(options) {
@@ -10322,7 +10427,8 @@
     }
 
     rejectHybridAttack(reason) {
-      if (this.hybridSafetyAttempt) this.hybridSafetyAttempt.reason = reason;
+      if (this.hybridSafetyAttempt) this.hybridSafetyAttempt.reason ??= reason;
+      if (this.attackAdmissionAttempt) this.attackAdmissionAttempt.reason ??= reason;
       return false;
     }
 
@@ -10493,7 +10599,12 @@
     }
 
     async sendBoatAttackToNearbyTerraNullius(radioactiveTerraNullius = false) {
-      if (!this.canSendNearbyTerraNulliusBoat()) return false;
+      return this.observeAttackAdmission({ target: this.game.terraNullius?.() ?? {}, force: false }, () =>
+        this.sendNearbyTerraNulliusBoat(radioactiveTerraNullius));
+    }
+
+    async sendNearbyTerraNulliusBoat(radioactiveTerraNullius) {
+      if (!this.canSendNearbyTerraNulliusBoat()) return this.rejectHybridAttack("nearby-boat-policy-rejected");
       const candidates = this.nearbyTerraNulliusBoatCandidates(
         radioactiveTerraNullius,
       );
@@ -10503,19 +10614,26 @@
           WORKER_TIMEOUT_MS,
           false,
         );
-        if (spawn === false || !(await this.allowEarlyGameBoat(tile))) continue;
-        if (!this.isFreshTerraNulliusBoatTarget(tile)) continue;
+        if (spawn === false) { this.recordBoatProbeRejection(tile, "transport-spawn-unavailable-or-timeout"); continue; }
+        if (!(await this.allowEarlyGameBoat(tile))) { this.recordBoatProbeRejection(tile, "boat-authorization-rejected"); continue; }
+        if (!this.isFreshTerraNulliusBoatTarget(tile)) { this.recordBoatProbeRejection(tile, "boat-destination-stale"); continue; }
         const troops = this.nearbyTerraNulliusBoatTroops(
           radioactiveTerraNullius,
         );
-        if (troops < 1) return false;
+        if (troops < 1) return this.rejectHybridAttack("no-spendable-troops");
         return this.emitNearbyTerraNulliusBoat(
           tile,
           troops,
           radioactiveTerraNullius,
         );
       }
-      return false;
+      return this.rejectHybridAttack("no-authorized-nearby-boat-destination");
+    }
+
+    recordBoatProbeRejection(destination, reason) {
+      if (!this.attackAdmissionAttempt) return;
+      this.attackAdmissionAttempt.probeRejections ??= [];
+      this.attackAdmissionAttempt.probeRejections.push({ destination, reason });
     }
 
     // shouldAttack — AiAttackBehavior.
@@ -10740,10 +10858,12 @@
     ) {
       const warAppetiteCap = this.proactiveWarArmyCommitmentCap(context);
       if (existing + context.targetSpendableTroops < minimum) {
+        context.rejectionReason = "reinforcement-capture-insufficient";
         context.attackBlocked = true;
         return 0;
       }
       if (warAppetiteCap !== null && existing >= warAppetiteCap) {
+        context.rejectionReason = "war-appetite-exceeded";
         context.attackBlocked = true;
         return 0;
       }
@@ -10787,6 +10907,7 @@
         const insufficientReserve = context.targetSpendableTroops < minimum;
         this.recordHybridReserveAdmission(context, minimum, !insufficientReserve);
         if (insufficientReserve || this.proactiveWarExceedsAppetite(context, minimum)) {
+          context.rejectionReason = insufficientReserve ? "capture-reserve-insufficient" : "war-appetite-exceeded";
           context.attackBlocked = true;
           return 0;
         }
@@ -10877,6 +10998,7 @@
     }
 
     landAttackTroopsAreSafe(context, troops) {
+      if (!Number.isFinite(troops)) return false;
       if (
         context.requiredTribeAttackTroops !== null &&
         troops < context.requiredTribeAttackTroops
@@ -10913,13 +11035,7 @@
       }
       const ctors = discoverCtors(getEventBus());
       const targetId = context.target.isPlayer() ? context.target.id() : null;
-      if (
-        !ctors.attack ||
-        !hasAttackIntentRateCapacity() ||
-        !emitIntent(ctors.attack, targetId, troops)
-      ) {
-        return false;
-      }
+      if (!this.emitObservedAttackOrder(ctors.attack, targetId, troops, "land")) return false;
       state.stats.attacks++;
       setLastAction(tr("⚔️ Attack"), "combat");
       if (context.force === true && context.incomingCounterattackTroops > 0) {
@@ -10938,19 +11054,21 @@
         target?.isPlayer?.() !== true &&
         this.hasSameClanNukeTerrainHazard()
       ) {
-        return false;
+        return this.rejectHybridAttack("same-clan-nuke-terrain");
       }
       this.reconcileOutboundAttackIntentCommitments();
       const context = this.createLandAttackContext(target, options);
       let troops = this.calculateLandAttackTroops(context);
+      this.recordLandAttackAdmission(context, troops);
       if (
         context.attackBlocked ||
         (context.requiredTribeAttackTroops !== null && troops < 1)
       ) {
         this.restoreLandAttackReservation(context);
-        return false;
+        return this.rejectHybridAttack(context.rejectionReason ?? "no-spendable-troops");
       }
       troops = this.adjustLandAttackTroops(context, troops);
+      this.recordLandAttackAdmission(context, troops);
       if (this.hybridSafetyAttempt) {
         this.hybridSafetyAttempt.payloadTroops = troops;
         this.hybridSafetyAttempt.spendableTroops = context.finalSpendableTroops;
@@ -10959,11 +11077,20 @@
       }
       if (!this.landAttackTroopsAreSafe(context, troops)) {
         this.restoreLandAttackReservation(context);
-        return false;
+        return this.rejectHybridAttack(this.landAttackPayloadRejection(troops));
       }
       const emitted = this.emitLandAttackIntent(context, troops);
-      if (!emitted) this.restoreLandAttackReservation(context);
+      if (!emitted) {
+        this.restoreLandAttackReservation(context);
+        this.rejectHybridAttack("intent-emission-rejected");
+      }
       return emitted;
+    }
+
+    landAttackPayloadRejection(troops) {
+      if (!Number.isFinite(troops)) return "nonfinite-payload";
+      if (troops < 1) return "no-spendable-troops";
+      return "defense-post-floor";
     }
 
     // sendBoatAttack — AiAttackBehavior (private, now async).
@@ -11005,22 +11132,27 @@
       reinforcementPlan = null,
       capStrike,
     ) {
+      return this.observeAttackAdmission({ target, force: false }, () =>
+        this.sendAuthorizedBoatAttack(target, earlyGameCandidate, reinforcementPlan, capStrike));
+    }
+
+    async sendAuthorizedBoatAttack(target, earlyGameCandidate, reinforcementPlan, capStrike) {
       this.reconcileOutboundAttackIntentCommitments();
       // Honour the panel's "boat" feature toggle (faithful boat attacks must obey
       // it too, not just the win-fix landings).
       if (!(state.settings.features && state.settings.features.boat)) {
-        return false;
+        return this.rejectHybridAttack("boat-disabled");
       }
       if (this.game.config().isUnitDisabled(UNIT.TransportShip)) {
-        return false;
+        return this.rejectHybridAttack("transport-disabled");
       }
 
       const targetKey = this.getOutboundAttackTargetKey(target);
-      if (!this.boatPlayerTargetStillValid(target, targetKey)) return false;
+      if (!this.boatPlayerTargetStillValid(target, targetKey)) return this.rejectHybridAttack("boat-target-invalid");
 
       // Ensure the target's border snapshot before reading it synchronously.
       await this.game.ensureBorderTiles(target);
-      if (!this.boatPlayerTargetStillValid(target, targetKey)) return false;
+      if (!this.boatPlayerTargetStillValid(target, targetKey)) return this.rejectHybridAttack("boat-target-stale");
 
       const closest = closestTwoTiles(
         this.game,
@@ -11028,7 +11160,7 @@
         Array.from(target.borderTiles()).filter((t) => this.game.isShore(t)),
       );
       if (closest === null) {
-        return false;
+        return this.rejectHybridAttack("shore-pair-unavailable");
       }
 
       const destination =
@@ -11041,10 +11173,10 @@
         false,
       );
       if (spawn === false) {
-        return false;
+        return this.rejectHybridAttack("transport-spawn-unavailable-or-timeout");
       }
       if (!this.boatPlayerTargetStillValid(target, targetKey, destination)) {
-        return false;
+        return this.rejectHybridAttack("boat-destination-stale");
       }
 
       const troops = this.getBoatAttackTroopsForSend(
@@ -11054,7 +11186,7 @@
         capStrike,
       );
       if (troops < 1) {
-        return false;
+        return this.rejectHybridAttack("no-spendable-troops");
       }
 
       // DIVERGENCE (inert branch — kept VERBATIM): emoji gated on player type Nation;
@@ -11070,7 +11202,7 @@
           capStrike,
         ))
       ) {
-        return false;
+        return this.rejectHybridAttack("boat-final-authorization-rejected");
       }
       const emitted = this.emitBoat(
         destination,

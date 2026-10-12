@@ -262,6 +262,10 @@
         type: m("type", null),
         tile: m("tile", null),
         level: m("level", 1),
+        trajectory: () =>
+          typeof u.trajectory === "function"
+            ? u.trajectory()
+            : u.nukeState?.()?.trajectory ?? [],
         id: m("id", null),
         isActive: m("isActive", false),
         isUnderConstruction: m("isUnderConstruction", false),

@@ -1166,6 +1166,49 @@ function stripHybridTrainingColdStartBoundary(source) {
   );
 }
 
+function stripAttackAdmissionFailureBoundaries(source) {
+  const dispatchPattern =
+    /catch\s*\(error\)\s*\{\s*dispatchError = error;\s*(row|admission)\.reason = "dispatch-exception";\s*\1\.error = String\(error\);\s*throw error;\s*\}/g;
+  const boundaries = [
+    ["    emitBoat(", "\n    emitAuthorizedBoat(", dispatchPattern],
+    ["    async sendAttack(", "\n    finishObservedAttack(", dispatchPattern],
+    [
+      "    finishObservedAttack(",
+      "\n    finishHybridSafetyAttempt(",
+      /catch\s*\(error\)\s*\{\s*throw originalError \?\? error;\s*\}/g,
+    ],
+    ["    async observeAttackAdmission(", "\n    recordAttackEmission(", dispatchPattern],
+  ];
+  return boundaries.reduce(
+    (checked, [start, end, pattern]) =>
+      stripAuditedFunctionBoundary(
+        checked,
+        start,
+        end,
+        pattern,
+        "attack diagnostics must rethrow the original failure",
+      ),
+    source,
+  );
+}
+
+const attackAdmissionSource = fs.readFileSync(
+  path.join(root, "engine/ingame/auto-bot/attackBehavior.js"),
+  "utf8",
+);
+for (const handler of attackAdmissionSource.matchAll(
+  /catch\s*\(error\)\s*\{[^}]*throw (?:originalError \?\? )?error;\s*\}/g,
+)) {
+  const swallowed =
+    attackAdmissionSource.slice(0, handler.index) +
+    handler[0].replace(/throw (?:originalError \?\? )?error;/, "return false;") +
+    attackAdmissionSource.slice(handler.index + handler[0].length);
+  assert.throws(
+    () => stripAttackAdmissionFailureBoundaries(swallowed),
+    /attack diagnostics must rethrow the original failure/,
+  );
+}
+
 const productionSources = [
   path.join(root, "build.mjs"),
   ...productionJavaScriptFiles(path.join(root, "engine")),
@@ -1194,6 +1237,9 @@ for (const sourcePath of productionSources) {
   }
   if (sourcePath === path.join(root, "scripts/headless/train-hybrid-combat.mjs")) {
     checkedSource = stripHybridTrainingColdStartBoundary(checkedSource);
+  }
+  if (sourcePath === path.join(root, "engine/ingame/auto-bot/attackBehavior.js")) {
+    checkedSource = stripAttackAdmissionFailureBoundaries(checkedSource);
   }
   assert.equal(
     catchTokens(checkedSource).length,

@@ -326,6 +326,17 @@ scenario("f: horizon gates refuse short-horizon builds; long horizon invests", (
     true,
     "an imminent elimination deadline consumes the investment horizon",
   );
+  const almostFinishedGame = {
+    ...doomsdayGame(0),
+    ticksSinceStart: () => 170 * 60 * 10 - 1,
+  };
+  const remainingMatchTicks = plannerSandbox.legendaryStructureHorizonTicks(almostFinishedGame, 0);
+  assert.equal(remainingMatchTicks, 1, "elapsed match time leaves one live match tick");
+  assert.equal(
+    payback(remainingMatchTicks)?.refused,
+    true,
+    "a long investment is refused near the normal match end too",
+  );
   // Reserve intact: the paid-stop Factory wins a treasury that clears both
   // cost and reserve, and the identical candidate at gold 999n below cost is
   // dropped from the portfolio (the reserve never pays for anything).
@@ -931,6 +942,23 @@ scenario("b: paid-stop Factory beats City; loses without the stop; City wins und
     priced("Factory", 40_000, noStopInputs)?.refused,
     true,
     "removing the paid stop makes the first Factory unprofitable",
+  );
+  const embargoedNetwork = makePaidStopNetwork({
+    City: [networkStation(33, 30, 1)],
+  });
+  const [embargoedActor, embargoedTeammate] = embargoedNetwork.game.players();
+  embargoedActor.hasEmbargoAgainst = (other) => other === embargoedTeammate;
+  embargoedTeammate.hasEmbargoAgainst = (other) => other === embargoedActor;
+  const embargoedInputs = railEconomyInputs(embargoedNetwork);
+  assert.equal(
+    embargoedInputs.factoryPaidStops,
+    0,
+    "an in-range teammate City under mutual embargo is not a paid stop",
+  );
+  assert.equal(
+    priced("Factory", 40_000, embargoedInputs)?.refused,
+    true,
+    "the embargoed City cannot create a profitable Factory route",
   );
 
   // Binding cap: the same portfolio, but the City carries the capacity

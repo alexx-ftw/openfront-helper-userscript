@@ -13,6 +13,13 @@ const HYBRID_COMBAT_REASONS = Object.freeze([
   "forced-action", "tribe-target", "non-strategic-target", "ambiguous-commitment",
   "observation-identity-invalid", "observation-pending", "observation-stale",
   "controlled-wait", "controlled-attack", "action-accepted", "native-receipt",
+  "capture-reserve-insufficient", "war-appetite-exceeded", "reinforcement-capture-insufficient",
+  "nonfinite-payload", "no-spendable-troops", "defense-post-floor", "intent-emission-rejected",
+  "intent-constructor-unavailable", "intent-rate-capacity-exhausted", "same-clan-nuke-terrain",
+  "boat-disabled", "transport-disabled", "boat-target-invalid", "boat-target-stale", "shore-pair-unavailable",
+  "transport-spawn-unavailable-or-timeout", "boat-destination-stale", "boat-final-authorization-rejected",
+  "boat-destination-authorization-rejected", "boat-warship-danger", "boat-destination-reserved", "boat-reserve-insufficient",
+  "zero-duration-collector-wait", "competing-attack-emission",
 ]);
 const HYBRID_COMBAT_FEATURES = {
   gate: ["bias", "ownTroopRatio", "ownLandShare", "incomingTroopRatio"],
@@ -74,6 +81,8 @@ class HybridCombatPolicy {
     this.storage = storage;
     this.mode = "shadow";
     this.learning = true;
+    this.collectionPolicy = null;
+    this.collection = { opportunities: 0, controlledWaits: 0, completedWaits: 0 };
     this.models = { wait: hybridCombatModel(4), act: hybridCombatModel(4), target: hybridCombatModel(9) };
     this.backend = "ridge-v1";
     this.compactContract = null;
@@ -103,7 +112,7 @@ class HybridCombatPolicy {
         const saved = JSON.parse(raw);
         if (saved.model?.schema !== HYBRID_COMBAT_SCHEMA) throw new Error("Invalid saved Ridge schema");
         this.importModel(saved.model);
-        this.configure(saved.config);
+        this.configure(saved.config && { ...saved.config, collectionPolicy: null });
       }
     // eslint-disable-next-line no-restricted-syntax -- only untrusted local model storage; error remains in diagnostics
     } catch (error) { this.error = String(error.message); }
@@ -112,7 +121,8 @@ class HybridCombatPolicy {
 
   configure(config) {
     if (!config || (config.mode !== undefined && !["baseline", "shadow", "learned"].includes(config.mode)) ||
-        (config.learning !== undefined && typeof config.learning !== "boolean")) {
+        (config.learning !== undefined && typeof config.learning !== "boolean") ||
+        (config.collectionPolicy !== undefined && config.collectionPolicy !== null && config.collectionPolicy !== "coverage-wait-v1")) {
       throw new Error("Invalid hybrid combat configuration");
     }
     if (config.learning === true && this.offlineReward()) {
@@ -120,6 +130,11 @@ class HybridCombatPolicy {
     }
     if (config.mode !== undefined) this.mode = config.mode;
     if (config.learning !== undefined) this.learning = config.learning;
+    const collectionPolicy = config.collectionPolicy ?? null;
+    if (collectionPolicy !== this.collectionPolicy) {
+      this.collectionPolicy = collectionPolicy;
+      this.collection = { opportunities: 0, controlledWaits: 0, completedWaits: 0 };
+    }
     // Switching mode never credits a previous policy's unfinished decision.
     this.pending = null;
     this.proposal = null;
@@ -149,6 +164,8 @@ class HybridCombatPolicy {
       this.models = candidate.models;
       delete candidate.models;
       this.compactContract = Object.freeze(candidate);
+      this.collectionPolicy = null;
+      this.collection = { opportunities: 0, controlledWaits: 0, completedWaits: 0 };
       if (this.offlineReward(candidate.reward)) this.learning = false;
       this.numericalError = null;
       this.pending = null;
@@ -171,6 +188,8 @@ class HybridCombatPolicy {
     this.models = JSON.parse(JSON.stringify(snapshot.models));
     this.backend = "ridge-v1";
     this.compactContract = null;
+    this.collectionPolicy = null;
+    this.collection = { opportunities: 0, controlledWaits: 0, completedWaits: 0 };
     this.numericalError = null;
     this.pending = null;
     this.proposal = null;
@@ -385,7 +404,7 @@ class HybridCombatPolicy {
   }
 
   recordDecision(controlledAction, fallback = false, reason = null) {
-    if (controlledAction !== null) this.control.candidateDecisions++;
+    if (controlledAction !== null && !this.proposal?.collectorControl) this.control.candidateDecisions++;
     this.proposal = { ...this.proposal, controlledAction, fallback, reason };
     this.recordLedger("decision", this.proposal);
   }
@@ -404,7 +423,7 @@ class HybridCombatPolicy {
     const troops = Number(player.troops());
     const maximum = Number(behavior.game.config().maxTroops(player));
     const land = Number(behavior.game.numLandTiles());
-    const incoming = Number(behavior.incomingHostileAttackPressure());
+    const incoming = Number(behavior.incomingHostileAttackPressure?.());
     if (this.backend === "compact-tanh-v1" &&
         (![troops, maximum, land, incoming, Number(player.numTilesOwned())].every(Number.isFinite) ||
          maximum <= 0 || land <= 0 || troops < 0 || incoming < 0 || Number(player.numTilesOwned()) < 0)) return null;
@@ -462,6 +481,10 @@ class HybridCombatPolicy {
       this.confirmReceipt(pending, receipt, tick);
     }
     if (!terminal && this.observationStillPending(behavior, pending, tick)) return;
+    if (pending.collectorControl === true && tick <= pending.tick) {
+      this.censorCollectorWait(behavior, "zero-duration-collector-wait", terminal);
+      return;
+    }
     const gate = this.gateFeatures(behavior);
     if (!gate) { this.recordOutcome(pending, tick, null, null, terminal); this.pending = null; return; }
     if (pending.target && !pending.confirmed) {
@@ -471,9 +494,29 @@ class HybridCombatPolicy {
       return;
     }
     const reward = gate[2] - pending.share;
+    const waitSamples = this.models.wait.samples;
     this.learnOutcome(pending, reward);
+    this.recordCollectorCompletion(pending, tick, reward, waitSamples);
     this.recordOutcome(pending, tick, reward, gate, terminal);
     this.pending = null;
+  }
+
+  recordCollectorCompletion(pending, tick, reward, waitSamples) {
+    if (pending.collectorControl === true && tick > pending.tick && Number.isFinite(reward) &&
+        this.models.wait.samples === waitSamples + 1 && !this.numericalError) this.collection.completedWaits++;
+  }
+
+  cancelCollectorWait(behavior) {
+    return this.censorCollectorWait(behavior, "competing-attack-emission");
+  }
+
+  censorCollectorWait(behavior, reason, terminal = false) {
+    const pending = this.pending;
+    if (pending?.collectorControl !== true || pending.target || pending.controlledAction !== "wait") return false;
+    // An evidence writer failure must not leave an emitted attack labelled WAIT.
+    this.pending = null;
+    this.recordOutcome({ ...pending, censorReason: reason }, behavior.currentAttackDecisionTick(), null, null, terminal);
+    return true;
   }
 
   confirmReceipt(pending, receipt, tick) {
@@ -493,6 +536,7 @@ class HybridCombatPolicy {
       generation: pending.generation ?? this.generation, receiptID: pending.receiptID ?? null,
       reward, gate: pending.gate, nextGate, ...this.outcomeFeatures(pending), terminal, truncated: false,
       learned: pending.learned === true };
+    if (pending.censorReason) Object.assign(this.lastOutcome, { reason: pending.censorReason, cancelled: true, truncated: true });
     this.recordLedger("outcome", this.lastOutcome);
   }
 
@@ -500,7 +544,8 @@ class HybridCombatPolicy {
     return { actorSmallID: pending.actorSmallID ?? null, decisionStep: pending.decisionStep ?? null,
       acceptedSequence: pending.acceptedSequence ?? null, decisionSequence: pending.decisionSequence ?? null,
       controlledAction: pending.controlledAction ?? null, behaviorProbability: null, logProbability: null,
-      behaviorPolicy: pending.behaviorPolicy ?? "legendary-unknown" };
+      behaviorPolicy: pending.behaviorPolicy ?? "legendary-unknown",
+      ...(pending.collectorControl === true ? { collectorControl: true } : {}) };
   }
 
   outcomeFeatures(pending) {
@@ -673,8 +718,12 @@ class HybridCombatPolicy {
     this.funnel.suppliedTargets += enemies.length;
     this.observe(behavior);
     const gate = this.gateFeatures(behavior);
-    if (!gate || this.numericalError) { this.proposal.eligible = false; return this.fallback(
-      this.numericalError ? "numerical-failure" : "gate-features-unavailable"); }
+    if (!gate || this.numericalError) {
+      const reason = this.numericalError ? "numerical-failure" : "gate-features-unavailable";
+      this.proposal.targetChecks = enemies.map(target => ({ targetSmallID: target.smallID(), stage: "unevaluated", reason, funding: null }));
+      this.proposal.eligible = false;
+      return this.fallback(reason);
+    }
     // Target identity is carried by the live player, never by its array slot.
     const candidates = this.legalCandidates(behavior, enemies, gate);
     const own = Number(behavior.player.troops());
@@ -699,31 +748,90 @@ class HybridCombatPolicy {
       this.numericalFailure("Nonfinite hybrid utility margin");
       return this.fallback("numerical-failure");
     }
-    this.scoredProposal(behavior, ranked, { wait, act, utilityMargin, gate });
+    const collectorControl = this.admitCollectorWait(behavior);
+    this.scoredProposal(behavior, ranked, { wait, act, utilityMargin, gate, collectorControl });
     // A pending attack owns its complete observation interval.
     this.pendingWait(behavior, gate);
+    if (collectorControl) {
+      Object.assign(this.pending, { decisionStep: this.proposal.step, decisionSequence: this.proposal.decisionSequence,
+        controlledAction: "wait", collectorControl: true, learned: false,
+        behaviorPolicy: this.proposal.behaviorPolicy });
+      this.collection.controlledWaits++;
+      this.recordDecision("wait", false, "controlled-wait");
+      return true;
+    }
     return this.controlProposal(behavior, ranked, act <= wait);
   }
 
+  admitCollectorWait(behavior) {
+    if (this.collectionPolicy !== "coverage-wait-v1" || this.mode !== "shadow" || !this.learning ||
+        this.offlineReward() || this.numericalError || this.pending) return false;
+    if (this.collectorCoverageComplete()) return false;
+    const source = behavior.player.__src ?? behavior.player;
+    if (typeof source.incomingAttacks !== "function") return false;
+    const incoming = source.incomingAttacks();
+    if (!Array.isArray(incoming) || incoming.some(attack => {
+      if (typeof attack?.troops !== "function") return true;
+      const troops = attack.troops();
+      return !Number.isFinite(troops) || troops !== 0;
+    })) return false;
+    const pressure = behavior.incomingHostileAttackPressure?.();
+    if (!Number.isFinite(pressure) || pressure !== 0) return false;
+    return this.collection.opportunities++ % 2 === 0;
+  }
+
+  collectorCoverageComplete() {
+    const head = this.models.wait;
+    const values = this.backend === "ridge-v1" ? head.weights : [head.outputBias, ...head.output];
+    return this.collection.completedWaits >= this.readiness().wait.requiredSamples &&
+      values.every(Number.isFinite) && this.hasLearnedSignal("wait");
+  }
+
   legalCandidates(behavior, enemies, gate) {
-    const eligible = enemies.filter((target) => target.type?.() !== PlayerType.Bot && target.isAlive() &&
-      !behavior.player.isFriendly(target) && behavior.player.sharesBorderWith(target) && behavior.canAttackPlayerNow(target));
+    const checks = enemies.map(target => ({ target, reason: this.candidateRejection(behavior, target) }));
+    const eligible = checks.filter(check => check.reason === null).map(check => check.target);
     this.funnel.nativeEligibleTargets += eligible.length;
     if (this.proposal) this.proposal.funnel.nativeEligibleTargets = eligible.length;
-    const funded = eligible.filter((target) => behavior.canFundLandAttack?.(target) === true);
+    const funded = eligible.filter((target) => {
+      const check = checks.find(entry => entry.target === target);
+      if (behavior.sendAttackIsPendingDuplicate?.(target, false, false, null)) {
+        check.reason = "pending-duplicate";
+        return false;
+      }
+      const quote = behavior.inspectLandAttackFunding?.(target);
+      check.funding = quote ?? null;
+      const allowed = quote ? quote.allowed === true : behavior.canFundLandAttack?.(target) === true;
+      check.reason = allowed ? null : quote?.reason ?? "funding-unavailable";
+      return allowed;
+    });
+    if (this.proposal) this.proposal.targetChecks = checks.map(check => ({ targetSmallID: check.target.smallID(),
+      stage: check.reason === null ? "funded" : "rejected", reason: check.reason, funding: check.funding ?? null }));
     this.funnel.fundedTargets += funded.length;
     if (this.proposal) this.proposal.funnel.fundedTargets = funded.length;
     const candidates = funded.map((target) => {
       const evidence = { geometry: null };
       const features = this.targetFeatures(behavior, target, gate, undefined, { evidence, onUnavailable: (reason) => {
+        const check = this.proposal?.targetChecks.find(entry => entry.targetSmallID === target.smallID());
+        if (check) { check.stage = "features"; check.reason = reason; }
         this.funnel.featureFailures[reason] = (this.funnel.featureFailures[reason] || 0) + 1;
         if (this.proposal) this.proposal.funnel.featureFailures[reason] = (this.proposal.funnel.featureFailures[reason] || 0) + 1;
       } });
+      const check = this.proposal?.targetChecks.find(entry => entry.targetSmallID === target.smallID());
+      if (check && features !== null) check.stage = "feature-valid";
       return { target, features, geometry: evidence.geometry };
     }).filter((candidate) => candidate.features !== null);
     this.funnel.featureValidTargets += candidates.length;
     if (this.proposal) this.proposal.funnel.featureValidTargets = candidates.length;
     return candidates;
+  }
+
+  candidateRejection(behavior, target) {
+    if (target.type?.() === PlayerType.Bot) return "tribe-target";
+    if (!target.isAlive()) return "target-dead";
+    if (behavior.player.isFriendly(target)) return "friendly-target";
+    if (!behavior.player.sharesBorderWith(target)) return "no-land-border";
+    if (!behavior.canAttackPlayerNow(target)) return "native-legality-rejected";
+    return null;
   }
 
   reserveRatio(own, reserve) {
@@ -732,7 +840,7 @@ class HybridCombatPolicy {
     return Number.isFinite(ratio) ? ratio : null;
   }
 
-  scoredProposal(behavior, ranked, { wait, act, utilityMargin, gate }) {
+  scoredProposal(behavior, ranked, { wait, act, utilityMargin, gate, collectorControl = false }) {
     this.proposal = { ...this.proposal, tick: behavior.currentAttackDecisionTick(), ready: this.ready(),
       episodeId: this.episodeId, generation: this.generation,
       action: act > wait && ranked.length ? "attack" : "wait",
@@ -745,6 +853,8 @@ class HybridCombatPolicy {
         sourceTick: this.proposal.tick, legal: typeof (behavior.player.__src ?? behavior.player).canAttackPlayer === "function" ? true : null,
         legalitySource: "existing-canAttackPlayerNow-filter" })),
       candidateCoverage: { complete: true, truncated: false, count: ranked.length, scope: "feature-valid-native-eligible-targets" } };
+    if (collectorControl) Object.assign(this.proposal, { action: "wait", targetSmallID: null,
+      collectorControl: true, behaviorPolicy: "coverage-driven-safe-wait-collection-v1" });
     this.proposal.decisionSequence = this.sequence;
     this.proposal.decisionReferenceKind = "proposal";
     this.recordLedger("proposal", { ...this.proposal, featureVersion: this.compactContract?.schema ?? HYBRID_COMBAT_SCHEMA });
@@ -847,6 +957,7 @@ class HybridCombatPolicy {
 
   diagnostics() {
     return { mode: this.mode, learning: this.learning, backend: this.backend, episodeId: this.episodeId,
+      collectionPolicy: this.collectionPolicy, collection: { ...this.collection },
       generation: this.generation, ready: this.ready(), eligible: this.eligible(),
       control: { ...this.control }, ledger: { retained: this.ledger.length, dropped: this.dropped, capacity: this.ledgerCapacity }, decisions: this.decisions,
       funnel: JSON.parse(JSON.stringify(this.funnel)), observations: JSON.parse(JSON.stringify(this.observations)),

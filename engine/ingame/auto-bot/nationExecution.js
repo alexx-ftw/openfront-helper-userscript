@@ -236,6 +236,7 @@
     async initializeTick(ticks, profile, tickGeneration) {
       if (this.behaviorsInitialized) return false;
       this.initializeBehaviors();
+      this.nukeBehavior.observeHostileNukeThreats();
       this.structureBehavior.observeHostileMissileLaunch?.();
       if (this.feat("expand")) {
         const openingWinFix = state.settings.winFixes === true;
@@ -501,8 +502,22 @@
         // tick ~5800 while the freeze ran to 11383). The lane's own gates
         // are O(1), and the double call from handleWinFixStructurePriorities
         // is idempotent (one City at a time).
+        // DIVERGENCE: one successful structure action must not build again later in this tick.
+        let earlyStructureLaneClaimed = false;
         if (!(await this.runOptionalAsyncPhase(this.feat("build"), profile, "plateau-city",
-          () => this.structureBehavior.maybeSpawnPlateauCity?.(), tickGeneration))) return;
+          async () => {
+            const structure = this.structureBehavior;
+            if (structure.legendaryMissileDefenseUrgent?.() === true) return;
+            if (
+              state.settings.winFixes &&
+              (await structure.maybeSpawnPeaceWindowSam?.()) === true
+            ) {
+              earlyStructureLaneClaimed = true;
+              return;
+            }
+            earlyStructureLaneClaimed =
+              (await structure.maybeSpawnPlateauCity?.()) === true;
+          }, tickGeneration))) return;
         if (!(await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "mirv",
           () => this.mirvBehavior.considerMIRV(), tickGeneration))) return;
         const warship = this.feat("warship") && state.settings.warshipAutoSpawn !== false;
@@ -518,8 +533,9 @@
         // while that probe is in flight; do not let the stale-generation guard
         // suppress the independent construction lane.  The warship phase above
         // re-reads live state and has its own pending-build/rate guards.
-        if (!(await this.runOptionalAsyncPhase(this.feat("build"), profile, "structures",
-          () => this.structureBehavior.handleStructures(profile), tickGeneration))) return;
+        if (!earlyStructureLaneClaimed && !(await this.runOptionalAsyncPhase(this.feat("build"),
+          profile, "structures", () => this.structureBehavior.handleStructures(profile),
+          tickGeneration))) return;
         if (!(await this.runOptionalAsyncPhase(this.feat("expand") || this.feat("boat"),
           profile, "attack", () => this.attackBehavior.maybeAttack(profile), tickGeneration))) return;
         if (this.feat("embargo")) {
@@ -588,6 +604,7 @@
       this.observeHybridCombat(me);
       if (this.handleEliminatedPlayer(me)) return;
       if (await this.initializeTick(ticks, profile, tickGeneration)) return;
+      this.nukeBehavior.observeHostileNukeThreats();
       if (!(await this.processPendingNukeSalvo(profile, tickGeneration))) return;
       // Beachhead clearance sweep: must run on EVERY tick, including the
       // handleIncomingDefense take-over window — hostile sea-invasion attacks

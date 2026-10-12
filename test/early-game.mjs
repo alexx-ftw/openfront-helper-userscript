@@ -333,7 +333,9 @@ const openingSandbox = {
   MirvBehavior: NoopBehavior,
   AllianceBehavior: NoopBehavior,
   WarshipBehavior: NoopBehavior,
-  NukeBehavior: NoopBehavior,
+  NukeBehavior: class extends NoopBehavior {
+    observeHostileNukeThreats() {}
+  },
   StructureBehavior: OpeningStructureBehavior,
   AttackBehavior: class {
     constructor() {
@@ -913,7 +915,9 @@ const cadenceSandbox = {
   MirvBehavior: CadenceNoopBehavior,
   AllianceBehavior: CadenceNoopBehavior,
   WarshipBehavior: CadenceNoopBehavior,
-  NukeBehavior: CadenceNoopBehavior,
+  NukeBehavior: class extends CadenceNoopBehavior {
+    observeHostileNukeThreats() {}
+  },
   StructureBehavior: CadenceNoopBehavior,
   AttackBehavior: class {
     forceSendAttack() {

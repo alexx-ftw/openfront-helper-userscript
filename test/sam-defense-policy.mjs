@@ -4300,10 +4300,13 @@ sandbox.isLegendaryDifficulty = () => true;
 for (const type of [UNIT.City, UNIT.Factory, UNIT.Port]) {
   const legendaryLegalBuildBehavior = Object.create(sandbox.__StructureBehavior.prototype);
   let upgradeProbeCount = 0;
-  const candidate = {
-    type,
-    ...(type === UNIT.Port ? { portPlacementTile: 1 } : {}),
-  };
+  const candidate = { type };
+  if (type === UNIT.Port) candidate.portPlacementTile = 1;
+  else if (type === UNIT.Factory) {
+    candidate.factoryPlacementTile = `${type}-legendary-site`;
+  } else {
+    candidate.cityPlacementTile = `${type}-legendary-site`;
+  }
   const legalBuildable = {
     type,
     canBuild: type === UNIT.Port ? 1 : `${type}-legendary-site`,

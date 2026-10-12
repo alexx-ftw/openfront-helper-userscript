@@ -178,7 +178,9 @@ behavior.player = { smallID: () => 1, units: () => [] };
   ];
   const interceptors = new Set();
   assert.equal(
-    behavior.hasReachableSamAtTrajectoryIndex({ x: 0, y: 0 }, route, 0, undefined, interceptors),
+    behavior.hasReachableSamAtTrajectoryIndex({ x: 0, y: 0 }, route, 0, undefined, {
+      interceptingSams: interceptors,
+    }),
     true,
     "the real reachability probe reports overlapping SAM coverage",
   );
@@ -289,9 +291,9 @@ behavior.player = { smallID: () => 1, units: () => [] };
   };
   const routeCandidate = { tile: { x: 77, y: 0 }, value: 8 };
   behavior.nukeSpawn = (_type, tile) => (tile.x === 77 ? { x: 0, y: 0 } : false);
-  behavior.isTrajectoryInterceptableBySam = (_spawn, tile, _excluded, intercepting) => {
+  behavior.isTrajectoryInterceptableBySam = (_spawn, tile, _excluded, options = {}) => {
     if (tile.x !== 77) return false;
-    for (const sam of routeSams) intercepting?.add(sam);
+    for (const sam of routeSams) options.interceptingSams?.add(sam);
     return true;
   };
   const partition = behavior.partitionCandidatesBySamCoverage(

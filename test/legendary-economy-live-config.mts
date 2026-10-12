@@ -99,7 +99,7 @@ for (const factories of [0, 1, 3, 10, 40]) {
 
 // Net gold under the live curves: the same Factory/Port priced at a saturated
 // global fleet must earn less than at an open fleet (same cost, same routes).
-const teamTrainGold = Number(config.trainGold("team", 1, player)) * 2;
+const teamTrainGold = Number(config.trainGold("team", 10, player)) * 2;
 const factoryCost = Number(config.unitInfo(LiveUnitType.Factory).cost({} as never, costPlayer));
 const factoryValueAt = (trainCount: number) =>
   legendaryEconomyNetGold("Factory", {

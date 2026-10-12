@@ -2103,16 +2103,22 @@ Object.assign(clusterChoiceBehavior, {
   legendaryAllianceTicksRemaining: () => Infinity,
   trainGoldBase: () => 50_000,
 });
-const chosenTrainCluster = clusterChoiceBehavior.legendaryEconomyInputs({
+const clusterChoiceInputs = clusterChoiceBehavior.legendaryEconomyInputs({
   trainCount: 0,
   tradeShipCount: 0,
   hasTradePartner: false,
   hasCompletedTradePartner: false,
   connectedStops: 3,
-}).trainSources;
+});
+const chosenTrainCluster = clusterChoiceInputs.trainSources;
 assert.ok(
   chosenTrainCluster.length === 1 && chosenTrainCluster[0].teamGoldPerStop > 70_000,
   "rail-cluster comparison uses the already averaged stop payout without dividing by stop count again",
+);
+assert.deepEqual(
+  Array.from(clusterChoiceInputs.cityRouteProfiles, (profile) => profile.clusterId).sort(),
+  ["few-stops", "many-stops"],
+  "City valuation retains the source payout profile for every separate rail cluster",
 );
 const teammatePaidCity = networkStation(33, 30, 1);
 const makePaidStopNetwork = (
@@ -4927,6 +4933,116 @@ for (const type of [structureSandbox.UNIT.City, structureSandbox.UNIT.Factory]) 
   }
 }
 
+let economicBuildAttempts = 0;
+const multiCandidateDispatch = Object.create(structureSandbox.StructureBehavior.prototype);
+multiCandidateDispatch.maybeSpawnStructure = async () => {
+  economicBuildAttempts++;
+  return true;
+};
+assert.equal(
+  await multiCandidateDispatch.legendaryConstructionActionGroupResult(
+    [
+      { type: structureSandbox.UNIT.City, cityPlacementTile: "city-A" },
+      { type: structureSandbox.UNIT.Factory, factoryPlacementTile: "factory-B" },
+    ],
+    [],
+    0,
+  ),
+  "built",
+);
+assert.equal(
+  economicBuildAttempts,
+  1,
+  "several legal economic candidates emit at most one structure build per decision",
+);
+
+const cityRouteSource = (teamGoldPerStop) => ({
+  factoryCount: 1,
+  productiveFactoryLevels: [1],
+  pendingFactoryLevels: [],
+  factoryConstructionDelayTicks: 0,
+  beforeTeamGoldPerSpawn: 0,
+  teamGoldPerStop,
+  beforePostAllianceTeamGoldPerSpawn: 0,
+  postAllianceTeamGoldPerStop: teamGoldPerStop,
+  beforeTeamGoldAfterPendingPerSpawn: 0,
+  teamGoldAfterPendingPerSpawn: teamGoldPerStop,
+  beforePostAllianceTeamGoldAfterPendingPerSpawn: 0,
+  postAllianceTeamGoldAfterPendingPerSpawn: teamGoldPerStop,
+  payoutTimeline: [],
+  eligibleTicks: Infinity,
+  pendingStopDelayTicks: 0,
+});
+const cityRouteInputs = {
+  cityRouteProfiles: [
+    { clusterId: "rail#A", trainSources: [cityRouteSource(5_000)] },
+    { clusterId: "rail#B", trainSources: [cityRouteSource(30_000)] },
+  ],
+  factoryStationEntries: [{ tile: "station-A" }, { tile: "station-B" }],
+  factoryRailState: [{}],
+  trainCount: 0,
+  routeDelayTicks: 0,
+};
+const cityRouteConfig = {
+  trainSpawnRate: () => 1,
+  unitInfo: () => ({ constructionDuration: 0 }),
+};
+const boundCityCandidate = {
+  type: structureSandbox.UNIT.City,
+  cost: 100n,
+  netTeamGold: 999_999n,
+};
+const cityRouteBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+Object.assign(cityRouteBehavior, {
+  structureCandidateTiles: () => ["city-A", "city-B"],
+  assignRailClusters: (entries) =>
+    entries.map(({ tile }) => (tile === "station-A" || tile === "city-A" ? "rail#A" : "rail#B")),
+});
+cityRouteBehavior.addLegendaryCityRouteCandidates({
+  candidates: [boundCityCandidate],
+  config: cityRouteConfig,
+  strategicState: {
+    economyHorizonTicks: 100,
+    economyInputs: cityRouteInputs,
+  },
+});
+const expectedCityRouteValue = plannerSandbox.legendaryEconomyNetGold("City", {
+  cost: 100,
+  horizonTicks: 100,
+  inputs: { ...cityRouteInputs, trainSources: cityRouteInputs.cityRouteProfiles[1].trainSources },
+  config: cityRouteConfig,
+});
+assert.equal(boundCityCandidate.cityPlacementTile, "city-B");
+assert.equal(
+  boundCityCandidate.netTeamGold,
+  BigInt(Math.round(expectedCityRouteValue.netTeamGold)),
+  "City ROI uses the same rail cluster as its selected placement tile",
+);
+let boundCitySpawnRequest;
+cityRouteBehavior.maybeSpawnStructure = async (...args) => {
+  boundCitySpawnRequest = args;
+  return true;
+};
+assert.equal(
+  await cityRouteBehavior.legendaryConstructionActionGroupResult([boundCityCandidate], [], 0),
+  "built",
+);
+assert.equal(boundCitySpawnRequest[1]?.legendaryEconomyCityTile, "city-B");
+const profiledCityPlacement = Object.create(structureSandbox.StructureBehavior.prototype);
+const priorCityTestWinFixes = structureSandbox.state.settings.winFixes;
+structureSandbox.state.settings.winFixes = false;
+const cityCandidateTiles = profiledCityPlacement.structureCandidateTiles(
+  structureSandbox.UNIT.City,
+  { legendaryEconomyCityTile: "city-B" },
+  25,
+);
+structureSandbox.state.settings.winFixes = priorCityTestWinFixes;
+assert.deepEqual(
+  Array.from(cityCandidateTiles),
+  ["city-B"],
+  "a Legendary City build probes the ROI-ranked rail-connected tile",
+);
+
 let profiledPortTilesProbed;
 let profiledPortFallbackCalls = 0;
 const profiledPortBuildBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
@@ -4988,6 +5104,25 @@ assert.equal(
   "a snapped buildable on another tile cannot spend a Port ROI priced for tile 27",
 );
 assert.equal(mismatchedPortEmissions, 0);
+assert.equal(
+  await mismatchedPortBehavior.maybeSpawnStructure(structureSandbox.UNIT.City, {
+    useActualCost: true,
+    legendaryEconomyCityTile: "city-A",
+  }),
+  false,
+  "a snapped City buildable on another rail cluster cannot spend ROI priced for city-A",
+);
+assert.equal(mismatchedPortEmissions, 0);
+const rejectedBuildableProbe = Object.create(structureSandbox.StructureBehavior.prototype);
+const rejectedBuildableError = new Error("worker rejected buildability probe");
+rejectedBuildableProbe.player = {
+  buildables: () => Promise.reject(rejectedBuildableError),
+};
+await assert.rejects(
+  () => rejectedBuildableProbe.buildableFor(structureSandbox.UNIT.City, "city-A"),
+  (error) => error === rejectedBuildableError,
+  "a rejected legality probe stays visible and never authorizes construction",
+);
 
 const actualPricePortBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
 Object.assign(actualPricePortBehavior, {

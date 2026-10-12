@@ -13,6 +13,17 @@ import { expectedRailIncomePerTick } from "./helpers/construction-simulator.mjs"
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const config = new Config({ maxTimerValue: 120 }, null, false);
 const player = { isLobbyCreator: () => false } as Parameters<Config["trainGold"]>[2];
+const observedTrainGoldCalls: Array<{
+  relation: string;
+  citiesVisited: number;
+  gold: number;
+}> = [];
+const liveTrainGold = config.trainGold.bind(config);
+config.trainGold = ((relation, citiesVisited, owner) => {
+  const gold = liveTrainGold(relation, citiesVisited, owner);
+  observedTrainGoldCalls.push({ relation, citiesVisited, gold: Number(gold) });
+  return gold;
+}) as Config["trainGold"];
 const planner = {};
 executeClassicScript(
   fs.readFileSync(path.join(ROOT, "engine/ingame/auto-bot/legendaryPlanner.js"), "utf8"),
@@ -396,8 +407,12 @@ Object.assign(cityFlipBehavior, {
   player: cityFlipOwnOwner,
   buildReachableStations: (types: string[], owners: ReturnType<typeof makeOwner>[]) =>
     owners.flatMap((owner) =>
-      owner.units(...types).map((unit) => ({ tile: unit.tile(), cluster: "rail" })),
+      owner.units(...types).map((unit) => ({ tile: unit.tile(), cluster: "rail#team" })),
     ),
+  readRailroadState: () => ({}),
+  assignRailClusters: (entries: { tile: unknown }[]) => entries.map(() => "rail#team"),
+  structureCandidateTiles: (type: string) =>
+    type === LiveUnitType.City ? ["city-route-candidate"] : [],
   legendaryRailMetrics: () => ({
     connectedCities: 1,
     cityRailConnection: 1,
@@ -443,6 +458,23 @@ const rankCityFlipAt = async (trainCount: number, routeActive = true) => {
 };
 const saturatedCityWithTeammateRoute = await rankCityFlipAt(300);
 const saturatedCityWithoutTeammateRoute = await rankCityFlipAt(300, false);
+assert.equal(
+  Number(liveTrainGold("team", 9, player)),
+  25_000,
+  "a known 9-stop train still receives the full live Config payout",
+);
+assert.equal(
+  Number(liveTrainGold("team", 10, player)),
+  20_000,
+  "live Config supplies the decayed per-stop payout for a mature train",
+);
+assert.ok(
+  observedTrainGoldCalls.some(
+    ({ relation, citiesVisited, gold }) =>
+      relation === "team" && citiesVisited === 10 && gold === 20_000,
+  ),
+  "the Legendary economy helper prices an unknown train using Config's 10-stop rate",
+);
 assert.ok(
   saturatedCityWithTeammateRoute.city?.mandatory === 0 &&
     (saturatedCityWithTeammateRoute.city?.netTeamGold ?? 0n) > 0n &&

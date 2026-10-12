@@ -513,10 +513,19 @@
           if (coverage === -1) return null;
           const value = this.nukeTileScore(tile, silos, structures, type);
           if (difficulty === Difficulty.Impossible ? value <= 0 : value < 0) return null;
-          return { tile, value, score: value + coverage * FULL_BLAST_COVERAGE_VALUE };
+          return {
+            tile,
+            value,
+            score: value + coverage * FULL_BLAST_COVERAGE_VALUE,
+            counterforce: this.isCounterforceSiloTarget(tile, type, target),
+          };
         })
         .filter((candidate) => candidate !== null)
-        .sort((a, b) => b.score - a.score);
+        .sort(
+          (a, b) =>
+            Number(b.counterforce) - Number(a.counterforce) ||
+            b.score - a.score,
+        );
     }
 
     async selectBuildableNukeCandidate(candidates, type) {
@@ -579,6 +588,7 @@
       tel.runs += 1;
       const silos = this.player.units(UNIT.MissileSilo);
       if (this.nukeLaneBlockedByCapacity(silos, tel)) return;
+      this.observeHostileNukeThreats();
       const demandTarget = this.samDemandStrikeTarget();
       const priority = this.priorityNukeTarget(demandTarget);
       const target = priority.target;
@@ -597,7 +607,7 @@
       }
       const difficulty = currentDifficulty();
       const candidates = await this.collectCandidatesWithRetry(
-        target, selectedNuke, silos, difficulty,
+        target, selectedNuke, silos, difficulty, !priority.incoming,
       );
       if ((candidates.list?.length ?? 0) === 0) {
         tel.noCandidates += 1;
@@ -612,9 +622,76 @@
         difficulty,
       );
       if (ordinaryAction) return;
+      if (
+        await this.retryIncomingNukeFallback(
+          {
+            incoming: priority.incoming,
+            target,
+            selectedNuke,
+            silos,
+            difficulty,
+            candidates: candidates.list,
+          },
+        )
+      ) return;
       // FFA endgame survival lane — additive-only: reached only when every
       // ordinary lane declined to fire. See maybeFreezeGiantStrike.
       await this.maybeFreezeGiantStrike(silos, difficulty);
+    }
+
+    async retryIncomingNukeFallback({
+      incoming,
+      target,
+      selectedNuke,
+      silos,
+      difficulty,
+      candidates,
+    }) {
+      if (!incoming) return false;
+      const liveDemandTarget = this.samDemandStrikeTarget();
+      if (
+        liveDemandTarget &&
+        this.isEligibleNukeTarget(liveDemandTarget) &&
+        liveDemandTarget.smallID() !== target.smallID()
+      ) {
+        const demandCandidates = (
+          await this.collectCandidatesWithRetry(
+            liveDemandTarget,
+            selectedNuke,
+            silos,
+            difficulty,
+            false,
+          )
+        ).list;
+        if (
+          await this.fireNukeFromCandidates(
+            demandCandidates,
+            liveDemandTarget,
+            selectedNuke,
+            silos,
+            difficulty,
+          )
+        ) return true;
+      }
+      if (!isLegendaryDifficulty(difficulty)) return false;
+      const valueFallback = await this.retryWithHigherValueTarget(
+        target,
+        selectedNuke,
+        silos,
+        difficulty,
+        candidates,
+      );
+      if (
+        !valueFallback ||
+        valueFallback.target.smallID() === liveDemandTarget?.smallID()
+      ) return false;
+      return this.fireNukeFromCandidates(
+        valueFallback.candidates,
+        valueFallback.target,
+        selectedNuke,
+        silos,
+        difficulty,
+      );
     }
 
     // A live survival threat cannot wait behind a long-term Silo-capacity demand.
@@ -800,11 +877,17 @@
 
     // Candidate collection with the Legendary value-directed retry folded
     // in: returns { list, retargeted }.
-    async collectCandidatesWithRetry(target, selectedNuke, silos, difficulty) {
+    async collectCandidatesWithRetry(
+      target,
+      selectedNuke,
+      silos,
+      difficulty,
+      allowValueRetarget = true,
+    ) {
       const list = await this.collectNukeCandidates(
         target, selectedNuke.type, silos, difficulty,
       );
-      if (!isLegendaryDifficulty(difficulty)) {
+      if (!isLegendaryDifficulty(difficulty) || !allowValueRetarget) {
         return { list, retargeted: null };
       }
       if (
@@ -1191,8 +1274,8 @@
       }
       const now = Number(this.game?.ticks?.());
       if (!Number.isFinite(now)) return;
-      for (const [ownerId, observedAt] of this._hostileNukeThreats) {
-        if (now - observedAt > COUNTERFORCE_THREAT_TTL_TICKS) {
+      for (const [ownerId, threat] of this._hostileNukeThreats) {
+        if (now - threat.observedAt > COUNTERFORCE_THREAT_TTL_TICKS) {
           this._hostileNukeThreats.delete(ownerId);
         }
       }
@@ -1200,28 +1283,77 @@
       const selfId = this.player.smallID();
       const context = { friendlyStructures: null };
       for (const missile of this.game.units(UNIT.AtomBomb, UNIT.HydrogenBomb) || []) {
-        const threat = this.hostileMissileTarget(missile, selfId);
-        if (threat === null) continue;
-        const { ownerId, targetTile } = threat;
-        if (!this.missileThreatensFriendlyTarget(missile, targetTile, selfId, context)) continue;
-        this._hostileNukeThreats.set(ownerId, now);
+        this.observeHostileNukeThreat(missile, selfId, now, context);
       }
+    }
+
+    observeHostileNukeThreat(missile, selfId, now, context) {
+      const threat = this.hostileMissileTarget(missile, selfId);
+      if (
+        threat === null ||
+        !this.missileThreatensFriendlyTarget(missile, threat.targetTile, selfId, context)
+      ) return;
+      const { owner, ownerId, launchTile } = threat;
+      const sourceSilo =
+        launchTile === null || launchTile === undefined
+          ? null
+          : (owner?.units?.(UNIT.MissileSilo) ?? []).find(
+              (silo) =>
+                silo?.tile?.() === launchTile && silo?.isActive?.() !== false,
+            );
+      const previous = this._hostileNukeThreats.get(ownerId);
+      const sourceSiloIds = new Set(previous?.sourceSiloIds ?? []);
+      const sourceSiloId = sourceSilo?.id?.();
+      if (sourceSiloId !== null && sourceSiloId !== undefined) {
+        sourceSiloIds.add(String(sourceSiloId));
+      }
+      this._hostileNukeThreats.set(ownerId, { observedAt: now, sourceSiloIds });
     }
 
     isCounterforceSiloTarget(tile, nukeType, targetPlayer) {
       const ownerId = targetPlayer?.smallID?.();
       if (!this._hostileNukeThreats?.has(ownerId)) return false;
       const silos = targetPlayer.units?.(UNIT.MissileSilo) ?? [];
+      const sourceSiloIds = this._hostileNukeThreats.get(ownerId)?.sourceSiloIds;
+      const liveLaunchSilos = sourceSiloIds?.size
+        ? silos.filter(
+            (silo) =>
+              sourceSiloIds.has(String(silo?.id?.() ?? "")) &&
+              silo?.isActive?.() !== false,
+          )
+        : [];
+      const counterforceSilos = sourceSiloIds?.size ? liveLaunchSilos : silos;
       const radius = Number(this.game.config().nukeMagnitudes(nukeType).outer);
       if (!Number.isFinite(radius) || typeof this.game.euclideanDistSquared !== "function") {
         return false;
       }
       const withinBlast = euclDistFN(tile, radius, false);
-      return silos.some(
+      return counterforceSilos.some(
         (silo) =>
           silo?.isActive?.() !== false &&
           withinBlast(this.game, silo.tile()),
       );
+    }
+
+    hasLiveCounterforceNukeSource() {
+      const players = this.game?.players?.() ?? [];
+      for (const [ownerId, threat] of this._hostileNukeThreats ?? []) {
+        const sourceSiloIds = threat?.sourceSiloIds;
+        if (!sourceSiloIds?.size) return true;
+        const owner = players.find(
+          (player) => String(player?.smallID?.()) === String(ownerId),
+        );
+        if (
+          (owner?.units?.(UNIT.MissileSilo) ?? []).some(
+            (silo) =>
+              sourceSiloIds.has(String(silo?.id?.() ?? "")) &&
+              silo?.isActive?.() !== false,
+          )
+        ) {
+          return true;
+        }
+      }
+      return false;
     }
 
     // DIVERGENCE (winFixes, Legendary): preserve one live Atom cost after an
@@ -1237,6 +1369,7 @@
       ) {
         return false;
       }
+      if (!this.hasLiveCounterforceNukeSource()) return false;
       if (this.isCounterforceSiloTarget(tile, nukeType, targetPlayer)) return false;
       const atomCost = await this.getPerceivedNukeCost(UNIT.AtomBomb);
       if (typeof atomCost !== "bigint" || atomCost <= 0n) return false;
@@ -1271,12 +1404,12 @@
         if (playersArePermanentTeammates(this.player, other)) continue;
         if (this.attackBehavior.shouldAttack(other) === false) continue;
         const structures = unitsOfTypes(other);
-        const levelSum = structures.reduce(
-          (total, structure) => total + Number(structure.level?.() || 1),
+        const replacementValue = structures.reduce(
+          (total, structure) => total + this.nukeStructureValue(structure),
           0,
         );
-        const density = levelSum / Math.max(1, other.numTilesOwned?.() || 1);
-        if (levelSum > 0 && density > bestScore) {
+        const density = replacementValue / Math.max(1, other.numTilesOwned?.() || 1);
+        if (replacementValue > 0 && density > bestScore) {
           best = other;
           bestScore = density;
         }
@@ -3468,8 +3601,8 @@
 
       // Legendary fallback: an affordable silo must not remain idle merely
       // because the ordinary relation/crown ladder found no target. Select the
-      // densest enemy structure owner, but never a permanent teammate or our
-      // own player; nukeTileScore still rejects friendly-fire geometry.
+      // enemy with the most replacement value per tile, but never a permanent
+      // teammate or our own player; nukeTileScore still rejects friendly-fire geometry.
       if (isLegendaryDifficulty(difficulty)) {
         return this.findLegendaryStructureTarget();
       }
@@ -3516,7 +3649,16 @@
       ) {
         return null;
       }
-      return { ownerId, targetTile };
+      return {
+        owner,
+        ownerId,
+        launchTile: this.hostileMissileLaunchTile(missile),
+        targetTile,
+      };
+    }
+
+    hostileMissileLaunchTile(missile) {
+      return missile?.trajectory?.()?.[0]?.tile;
     }
 
     missileThreatensFriendlyStructures(missile, targetTile, context) {

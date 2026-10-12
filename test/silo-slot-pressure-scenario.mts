@@ -2,9 +2,11 @@ import {
   attachNativeBot,
   setupNativeDuel,
   createNativeLoop,
+  nativeMissileImpactTicks,
 } from "./helpers/native-bot-fixture.mts";
 import assert from "node:assert/strict";
 import { MissileSiloExecution } from "../openfront-engine/src/core/execution/MissileSiloExecution";
+import { SAMLauncherExecution } from "../openfront-engine/src/core/execution/SAMLauncherExecution";
 import { UnitType } from "../openfront-engine/src/core/game/Game";
 import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
@@ -227,7 +229,121 @@ try {
     atomIntents.length,
     "the native engine accepts the emitted Atom prefix",
   );
+
+  const firstSalvoId = queuedSalvo[0]?.salvo?.salvoId;
+  assert.ok(firstSalvoId, "the initial Atom prefix has a queued salvo tail");
+  const lateSam = defender.buildUnit(UnitType.SAMLauncher, target, {});
+  lateSam.increaseLevel();
+  step();
+  assert.equal(
+    nuke.isTrajectoryInterceptableBySam(
+      newSilo.tile(),
+      launchPlan.targetTile,
+      new Set([targetSam.id()]),
+    ),
+    true,
+    "new hostile SAM coverage makes the in-flight salvo route unsafe",
+  );
+  assert.equal(
+    await nuke.processPendingNukeLaunches(),
+    false,
+    "unsafe new SAM coverage stops the queued salvo from firing",
+  );
+  assert.equal(
+    nuke._pendingNukeLaunches.some((launch) => launch.salvo?.salvoId === firstSalvoId),
+    false,
+    "the unsafe salvo tail is discarded as one chain",
+  );
+  assert.equal(
+    bot.intentBuffer.some(
+      (intent) => intent.type === "build_unit" && intent.unit === UnitType.AtomBomb,
+    ),
+    false,
+    "the unsafe route emits no additional Atom intent",
+  );
+  assert.equal(state.nukeWantSlots?.targetTile, launchPlan.targetTile);
+  assert.equal(state.nukeWantSlots?.targetSamId, lateSam.id());
+  assert.equal(
+    state.nukeWantSlots?.need,
+    9,
+    "the re-armed capacity request includes the new level-2 SAM coverage",
+  );
+  assert.notEqual(
+    state.nukeWantSlots?.pendingLaunches,
+    true,
+    "the recalculated capacity request is available to the Silo upgrade lane",
+  );
+
+  game.addExecution(new SAMLauncherExecution(defender, targetSam.tile(), targetSam));
+  game.addExecution(new SAMLauncherExecution(defender, lateSam.tile(), lateSam));
+  assert.equal(
+    await structures.maybeUpgradeSiloForNukeDemand(),
+    true,
+    "the recalculated SAM demand emits a real Silo upgrade",
+  );
+  const rearmUpgrade = bot.intentBuffer.filter(
+    (intent) => intent.type === "upgrade_structure" && intent.unit === UnitType.MissileSilo,
+  );
+  assert.equal(rearmUpgrade.length, 1, "the re-armed demand upgrades one Silo level");
+  step(bot.intentBuffer);
+  bot.intentBuffer.length = 0;
+  assert.equal(newSilo.level(), 4, "the native upgrade restores the ninth launch slot");
+
+  const prefixMissiles = attacker.units(UnitType.AtomBomb);
+  const prefixImpactTick = Math.max(...nativeMissileImpactTicks(bot, prefixMissiles));
+  while (attacker.units(UnitType.AtomBomb).length > 0 && game.ticks() <= prefixImpactTick) {
+    step();
+  }
+  assert.equal(
+    attacker.units(UnitType.AtomBomb).length,
+    0,
+    "the native SAMs clear the already-fired prefix before re-arming",
+  );
+  assert.ok(
+    defender.units(UnitType.SAMLauncher).some((candidate) => candidate.id() === targetSam.id()),
+    "the original SAM target survives the intercepted prefix",
+  );
+
+  const rearmReloadTicks =
+    game.config().SiloCooldown() +
+    Math.max(...launchSilos.map((candidate) => candidate.missileTimerQueue().length));
+  for (let tick = 0; tick < rearmReloadTicks; tick++) step();
+  assert.ok(
+    launchSilos.every((candidate) => candidate.missileTimerQueue().length === 0),
+    "the upgraded native Silo capacity is reloaded before the replacement salvo",
+  );
+  const rearmedSam = rival
+    .units(UnitType.SAMLauncher)
+    .find((candidate) => candidate.id() === state.nukeWantSlots?.targetSamId);
+  assert.ok(rearmedSam, "the recalculated demand still targets live SAM coverage");
+  const rearmedPlan = nuke.createSamOverwhelmPlan(rearmedSam, launchSilos);
+  assert.equal(rearmedPlan.targetTile, launchPlan.targetTile);
+  assert.equal(rearmedPlan.totalBombs, 9);
+  assert.equal(rearmedPlan.capacityMissing, false, "the Silo upgrade restores live salvo capacity");
+  assert.equal(
+    await nuke.maybeDestroyEnemySam(rival),
+    true,
+    "the capacity-ready salvo rearms against the same defender and destination",
+  );
+  assert.equal(state.nukeWantSlots?.pendingLaunches, true);
+  const rearmedAtomIntents = bot.intentBuffer.filter(
+    (intent) => intent.type === "build_unit" && intent.unit === UnitType.AtomBomb,
+  );
+  const rearmedQueue = nuke._pendingNukeLaunches.filter(
+    (launch) => launch.salvo?.targetSamId === rearmedSam.id(),
+  );
+  assert.ok(rearmedAtomIntents.length + rearmedQueue.length > 0);
+  assert.ok(rearmedAtomIntents.every((intent) => intent.tile === launchPlan.targetTile));
+  assert.ok(
+    rearmedQueue.every(
+      (launch) =>
+        launch.targetPlayer.smallID() === rival.smallID() &&
+        launch.tile === launchPlan.targetTile &&
+        launch.salvo.targetTile === launchPlan.targetTile,
+    ),
+    "the re-armed salvo retains the original defender and destination",
+  );
 } finally {
   bot.harness.window.close();
 }
-console.log("SAM-demand Silo-upgrade end-to-end scenario passed");
+console.log("SAM-demand Silo-upgrade and mid-salvo rearm scenario passed");

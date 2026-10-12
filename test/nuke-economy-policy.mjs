@@ -17,6 +17,10 @@ const sharedUtilsSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/shared-utils.js"),
   "utf8",
 );
+const gameApiSource = fs.readFileSync(
+  path.join(repoRoot, "engine/ingame/auto-bot/gameApi.js"),
+  "utf8",
+);
 
 const UNIT = {
   City: "City",
@@ -86,6 +90,14 @@ executeClassicScript(`${mirvSource}\nglobalThis.__MirvBehavior = MirvBehavior;`,
 
 const behavior = Object.create(sandbox.__NukeBehavior.prototype);
 const target = { smallID: () => 42 };
+
+const gameApiSandbox = {};
+executeClassicScript(
+  `${gameApiSource}\nglobalThis.__createGameApi = createGameApi;`,
+  gameApiSandbox,
+  { filename: "nuke-economy-game-api.vm.js" },
+);
+const wrappedGame = gameApiSandbox.__createGameApi({}).game;
 
 // Production-shape value retarget: the UI's Legendary tier normalizes to the
 // Impossible raw value, so the higher-value retry must run through the policy
@@ -262,6 +274,30 @@ const target = { smallID: () => 42 };
     ladderBehavior.findBestNukeTarget(),
     denseOwner,
     "the structure-density fallback stays alive under the normalized tier",
+  );
+  const manySmallCities = Array.from({ length: 6 }, () => ({
+    type: () => UNIT.City,
+    level: () => 1,
+  }));
+  const lowTotalValueOwner = {
+    smallID: () => 4,
+    isAlive: () => true,
+    numTilesOwned: () => 10,
+    units: (type) => (type === UNIT.City ? manySmallCities : []),
+  };
+  const highTotalValueOwner = {
+    smallID: () => 5,
+    isAlive: () => true,
+    numTilesOwned: () => 10,
+    units: (type) => (type === UNIT.City ? [{ type: () => UNIT.City, level: () => 5 }] : []),
+  };
+  ladderBehavior.game = {
+    players: () => [lowTotalValueOwner, highTotalValueOwner],
+  };
+  assert.equal(
+    ladderBehavior.findLegendaryStructureTarget(),
+    highTotalValueOwner,
+    "the Legendary structure fallback ranks replacement value per tile, not raw levels",
   );
   sandbox.isLegendaryDifficulty = previousUnion;
   sandbox.closestTwoTiles = previousClosest;
@@ -551,7 +587,7 @@ assert.equal(
   "an incoming nuke without a live attacker silo leaves the ordinary target selected",
 );
 assert.equal(
-  threatObserver._hostileNukeThreats.get(3),
+  threatObserver._hostileNukeThreats.get(3)?.observedAt,
   8205,
   "the bot remembers the owner of a hostile nuke aimed at its territory",
 );
@@ -561,7 +597,7 @@ assert.equal(
   "a nuke aimed at a different opponent does not create a counterforce threat",
 );
 assert.equal(
-  threatObserver._hostileNukeThreats.get(5),
+  threatObserver._hostileNukeThreats.get(5)?.observedAt,
   8205,
   "a hostile nuke centered on neutral land is remembered when its blast reaches a permanent teammate structure",
 );
@@ -609,7 +645,9 @@ counterforceSender.attackBehavior = {
   findIncomingAttackPlayer: () => null,
   shouldAttack: () => true,
 };
-counterforceSender._hostileNukeThreats = new Map([[3, 8205]]);
+counterforceSender._hostileNukeThreats = new Map([
+  [3, { observedAt: 8205, sourceSiloIds: new Set() }],
+]);
 counterforceSender._pendingNukeLaunches = [];
 counterforceSender.isValidNukeTarget = () => true;
 counterforceSender.isValidNukeDestination = () => true;
@@ -2049,6 +2087,144 @@ assert.equal(
     () => readyBehavior.maybeSendNuke(),
     /target ladder must not run/,
     "ready tubes still reach the target ladder",
+  );
+
+  const demandObserved = [];
+  const demandTarget = { smallID: () => 45 };
+  const samDemandBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  samDemandBehavior.player = { gold: () => 10_000_000n, units: () => [] };
+  samDemandBehavior.hasPendingNukeLaunches = () => false;
+  samDemandBehavior.nukeLaneBlockedByCapacity = () => false;
+  samDemandBehavior.samDemandStrikeTarget = () => demandTarget;
+  samDemandBehavior.priorityNukeTarget = () => ({ target: demandTarget, incoming: false });
+  samDemandBehavior.observeHostileNukeThreats = () => demandObserved.push("observe");
+  samDemandBehavior.isEligibleNukeTarget = () => true;
+  samDemandBehavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
+  samDemandBehavior.shouldDeferNukeForEconomy = () => false;
+  samDemandBehavior.collectCandidatesWithRetry = async () => {
+    demandObserved.push("rank");
+    return { list: [{ tile: 10 }], retargeted: null };
+  };
+  samDemandBehavior.fireNukeFromCandidates = async () => true;
+  await samDemandBehavior.maybeSendNuke();
+  assert.deepEqual(
+    demandObserved,
+    ["observe", "rank"],
+    "hostile missiles are observed before ranking even when an active SAM demand is the priority",
+  );
+}
+
+// A live launch trajectory identifies the exact hostile Silo to counterstrike;
+// a decoy Silo must not release the held shot or outrank ordinary value.
+{
+  const launchSilo = {
+    id: () => 11,
+    type: () => UNIT.MissileSilo,
+    level: () => 1,
+    tile: () => 100,
+    isActive: () => true,
+  };
+  const decoySilo = {
+    id: () => 12,
+    type: () => UNIT.MissileSilo,
+    level: () => 1,
+    tile: () => 200,
+    isActive: () => true,
+  };
+  let launchSiloIsLive = true;
+  const sourceOwner = {
+    isPlayer: () => true,
+    smallID: () => 3,
+    id: () => 3,
+    units: (type) =>
+      type === UNIT.MissileSilo ? [...(launchSiloIsLive ? [launchSilo] : []), decoySilo] : [],
+  };
+  const wrappedMissile = wrappedGame._wrapUnit({
+    owner: () => sourceOwner,
+    targetTile: () => 20,
+    type: () => UNIT.AtomBomb,
+    nukeState: () => ({ trajectory: [{ tile: 100 }, { tile: 20 }] }),
+  });
+  assert.equal(
+    wrappedMissile.trajectory()[0]?.tile,
+    100,
+    "the game API wrapper forwards the UnitView nuke trajectory",
+  );
+  assert.equal(
+    wrappedGame._wrapUnit({ trajectory: () => [{ tile: 101 }] }).trajectory()[0]?.tile,
+    101,
+    "the game API wrapper preserves the core Unit trajectory",
+  );
+
+  const sourceTracker = Object.create(sandbox.__NukeBehavior.prototype);
+  sourceTracker.player = observedSelf;
+  sourceTracker.game = {
+    ticks: () => 9200,
+    units: () => [wrappedMissile],
+    owner: (tile) => (tile === 20 ? observedSelf : null),
+    config: () => ({ nukeMagnitudes: () => ({ outer: 15 }) }),
+    euclideanDistSquared: (from, to) => (from - to) ** 2,
+  };
+  sourceTracker.missileThreatensFriendlyTarget = () => true;
+  sourceTracker._hostileNukeThreats = new Map();
+  sourceTracker.observeHostileNukeThreats();
+  const sourceThreat = sourceTracker._hostileNukeThreats.get(3);
+  const wrappedOwner = wrappedMissile.owner();
+  assert.ok(sourceThreat.sourceSiloIds.has("11"));
+  assert.equal(
+    sourceTracker.isCounterforceSiloTarget(100, UNIT.AtomBomb, wrappedOwner),
+    true,
+    "a blast covering the actual launch Silo is a valid counterforce shot",
+  );
+  assert.equal(
+    sourceTracker.isCounterforceSiloTarget(200, UNIT.AtomBomb, wrappedOwner),
+    false,
+    "a blast covering only the attacker's decoy Silo cannot release the reserve",
+  );
+  launchSiloIsLive = false;
+  assert.equal(
+    sourceTracker.isCounterforceSiloTarget(200, UNIT.AtomBomb, wrappedOwner),
+    false,
+    "a decoy Silo is not promoted after the recorded launch Silo is destroyed",
+  );
+  const previousDifficulty = testDifficulty;
+  testDifficulty = sandbox.Difficulty.Legendary;
+  sourceTracker.game.players = () => [wrappedOwner];
+  sourceTracker.player = { gold: () => 1n };
+  sourceTracker.isUnderHeavyAttack = () => false;
+  sourceTracker.isRetaliationNukeTarget = () => false;
+  sourceTracker.getPerceivedNukeCost = async () => 750_000n;
+  assert.equal(
+    await sourceTracker.shouldHoldCounterforceNuke(500, UNIT.AtomBomb, wrappedOwner, 750_000n),
+    false,
+    "the counterforce reserve is released when every recorded launch Silo is gone",
+  );
+  testDifficulty = previousDifficulty;
+  launchSiloIsLive = true;
+
+  const priorityBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  priorityBehavior.game = {
+    ...sourceTracker.game,
+    ensureBorderTiles: async () => {},
+  };
+  priorityBehavior.random = {};
+  priorityBehavior._hostileNukeThreats = sourceTracker._hostileNukeThreats;
+  priorityBehavior.removeOldNukeEvents = () => {};
+  priorityBehavior.isScorableNukeTile = () => 1;
+  priorityBehavior.nukeTileScore = (tile) => (tile === 100 ? 10 : 1000);
+  const previousRandomTiles = sandbox.randTerritoryTileArray;
+  sandbox.randTerritoryTileArray = () => [];
+  const candidates = await priorityBehavior.collectNukeCandidates(
+    wrappedOwner,
+    UNIT.AtomBomb,
+    [],
+    sandbox.Difficulty.Legendary,
+  );
+  sandbox.randTerritoryTileArray = previousRandomTiles;
+  assert.equal(
+    candidates[0]?.tile,
+    100,
+    "the observed launch Silo ranks before a higher-value decoy target",
   );
 }
 

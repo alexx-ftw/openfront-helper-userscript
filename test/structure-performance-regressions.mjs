@@ -2116,6 +2116,50 @@ assert.ok(
   );
 }
 
+{
+  const behavior = Object.create(sandbox.StructureBehavior.prototype);
+  const failure = new Error("unexpected buildability failure");
+  behavior.player = {
+    buildables: () => Promise.reject(failure),
+  };
+  await assert.rejects(
+    () => behavior.buildableFor(UNIT.Factory, 7),
+    (error) => error === failure,
+    "a failed worker probe must remain visible rather than look unbuildable",
+  );
+  behavior.player.buildables = () => {
+    throw failure;
+  };
+  await assert.rejects(
+    () => behavior.buildableFor(UNIT.Factory, 7),
+    (error) => error === failure,
+  );
+  behavior.player.buildables = () => Promise.resolve(null);
+  assert.equal(await behavior.buildableFor(UNIT.Factory, 7), null);
+  const quote = { type: UNIT.Factory, canBuild: 7, cost: 1n };
+  behavior.player.buildables = () => Promise.resolve([quote]);
+  assert.equal(await behavior.buildableFor(UNIT.Factory, 7), quote);
+
+  behavior.structureCandidateTiles = () => [7];
+  behavior.assignRailClusters = () => {
+    throw failure;
+  };
+  assert.throws(
+    () =>
+      behavior.addLegendaryFactoryRouteCandidates({
+        strategicState: {
+          economyInputs: {
+            factoryRouteProfiles: [{ clusterId: "rail#0", factorySourceCount: 0, paidStops: 1 }],
+            factoryStationEntries: [{ tile: 1 }],
+            factoryRailState: [1],
+          },
+        },
+      }),
+    (error) => error === failure,
+    "rail-component failures must propagate rather than silently erase Factory candidates",
+  );
+}
+
 process.stdout.write(
   `structure performance regression tests passed (Factory cache ${factoryCacheDurationMs.toFixed(1)}ms; fingerprints ${fingerprintDurationMs.toFixed(1)}ms; SAM coverage ${coverageDurationMs.toFixed(1)}ms; launches ${launchDurationMs.toFixed(1)}ms; ally support ${supportDurationMs.toFixed(1)}ms)\n`,
 );

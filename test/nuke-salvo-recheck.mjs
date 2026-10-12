@@ -3247,6 +3247,117 @@ for (const difficulty of ["Hard", "Impossible"]) {
   );
 }
 
+function makeIncomingNukePriorityCase(hasDemand = false) {
+  const { player, nukeTarget, behavior } = makeSalvoWorld();
+  const incomingTarget = { smallID: () => 3, isAlive: () => true };
+  const richerTarget = { smallID: () => 4, isAlive: () => true };
+  const collectedTargets = [];
+  const fireAttempts = [];
+  player.units = () => [];
+  behavior.nukeLaneBlockedByCapacity = () => false;
+  behavior.samDemandStrikeTarget = () => (hasDemand ? nukeTarget : null);
+  behavior.attackBehavior.findIncomingAttackPlayer = () => incomingTarget;
+  behavior.isEligibleNukeTarget = (target) => target !== null;
+  behavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
+  behavior.shouldDeferNukeForEconomy = () => false;
+  behavior.findHighestValueNukeTarget = () => richerTarget;
+  behavior.playerStructureValue = (target) => (target === richerTarget ? 5_000_000 : 1_000_000);
+  behavior.collectNukeCandidates = async (target) => {
+    collectedTargets.push(target);
+    let tile = "demand-tile";
+    if (target === incomingTarget) {
+      tile = "attacker-tile";
+    } else if (target === richerTarget) {
+      tile = "richer-rival-tile";
+    }
+    return [
+      {
+        tile,
+        value: 100,
+        score: target === richerTarget ? 200 : 100,
+      },
+    ];
+  };
+  behavior.fireNukeFromCandidates = async (candidates, target) => {
+    fireAttempts.push({ target, tile: candidates[0]?.tile });
+    return false;
+  };
+  return { behavior, incomingTarget, richerTarget, nukeTarget, collectedTargets, fireAttempts };
+}
+
+{
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => "Legendary";
+  const test = makeIncomingNukePriorityCase(true);
+  test.behavior.fireNukeFromCandidates = async (candidates, target) => {
+    test.fireAttempts.push({ target, tile: candidates[0]?.tile });
+    return true;
+  };
+  try {
+    await test.behavior.maybeSendNuke();
+    assert.deepEqual(test.collectedTargets, [test.incomingTarget]);
+    assert.deepEqual(
+      test.fireAttempts,
+      [{ target: test.incomingTarget, tile: "attacker-tile" }],
+      "a fireable attacker candidate keeps its own target and tile without pivoting",
+    );
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+  }
+}
+
+for (const fallbackKind of ["sam-demand", "higher-value"]) {
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => "Legendary";
+  const test = makeIncomingNukePriorityCase(fallbackKind === "sam-demand");
+  const fallbackTarget = fallbackKind === "sam-demand" ? test.nukeTarget : test.richerTarget;
+  test.behavior.fireNukeFromCandidates = async (candidates, target) => {
+    test.fireAttempts.push({ target, tile: candidates[0]?.tile });
+    return target === fallbackTarget;
+  };
+  try {
+    await test.behavior.maybeSendNuke();
+    assert.deepEqual(test.collectedTargets, [test.incomingTarget, fallbackTarget]);
+    assert.deepEqual(
+      test.fireAttempts,
+      [
+        { target: test.incomingTarget, tile: "attacker-tile" },
+        {
+          target: fallbackTarget,
+          tile: fallbackKind === "sam-demand" ? "demand-tile" : "richer-rival-tile",
+        },
+      ],
+      `${fallbackKind} fallback fires its own collected target and tile after attacker rejection`,
+    );
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+  }
+}
+
+{
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => "Legendary";
+  const test = makeIncomingNukePriorityCase(true);
+  test.behavior.fireNukeFromCandidates = async (candidates, target) => {
+    test.fireAttempts.push({ target, tile: candidates[0]?.tile });
+    return target === test.richerTarget;
+  };
+  try {
+    await test.behavior.maybeSendNuke();
+    assert.deepEqual(
+      test.collectedTargets,
+      [test.incomingTarget, test.nukeTarget, test.richerTarget],
+      "Legendary tries its higher-value target after the SAM-demand fallback cannot fire",
+    );
+    assert.deepEqual(
+      test.fireAttempts.map(({ target }) => target),
+      [test.incomingTarget, test.nukeTarget, test.richerTarget],
+    );
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+  }
+}
+
 {
   const { game, behavior } = makeSalvoWorld();
   let includedUnderConstruction = false;

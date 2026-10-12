@@ -40,7 +40,10 @@ export class HybridRuntimeEvidence {
     this.file = file;
     this.eventCount = 0;
     this.latestClosure = null;
+    this.attackAdmissions = { attempts: 0, accepted: 0, rejected: 0, errors: 0, reasons: {} };
+    this.attackAdmissionFile = file ? `${file}.attacks.jsonl` : null;
     if (file) fs.writeFileSync(file, "", { flag: "wx" });
+    if (this.attackAdmissionFile) fs.writeFileSync(this.attackAdmissionFile, "", { flag: "wx" });
     this.rows = { entries: [], decisionRows: [], safetyRows: [], latencyMs: [], transitions: [] };
     this.dropped = Object.fromEntries(Object.keys(this.rows).map((key) => [key, 0]));
     this.counters = {
@@ -60,6 +63,23 @@ export class HybridRuntimeEvidence {
       this.dropped[key]++;
     }
     this.rows[key].push(value);
+  }
+
+  admission(row) {
+    const event = {
+      ...row,
+      runIdentity: this.runIdentity,
+      sequence: this.attackAdmissions.attempts++,
+    };
+    if (row.error) this.attackAdmissions.errors++;
+    if (row.emitted === true) this.attackAdmissions.accepted++;
+    else if (!row.error) {
+      this.attackAdmissions.rejected++;
+      this.attackAdmissions.reasons[row.reason] =
+        (this.attackAdmissions.reasons[row.reason] ?? 0) + 1;
+    }
+    if (this.attackAdmissionFile)
+      fs.appendFileSync(this.attackAdmissionFile, `${JSON.stringify(event)}\n`);
   }
 
   record(value) {
@@ -153,6 +173,8 @@ export class HybridRuntimeEvidence {
     const entries = this.rows.entries;
     return structuredClone({
       ...this.rows,
+      attackAdmissions: this.attackAdmissions,
+      attackAdmissionFile: this.attackAdmissionFile,
       decisionRows: this.dropped.decisionRows ? undefined : this.rows.decisionRows,
       retainedDecisionRows: this.rows.decisionRows,
       decisionCoverage: {
@@ -452,6 +474,7 @@ function installHybridRuntimeEvidence(window, internals, options) {
   window.__OFH_hybridRuntimeEvent = (row) => evidence.record(row);
   window.__OFH_hybridDecisionTiming = (row) => evidence.latency(row);
   window.__OFH_hybridSafety = (row) => evidence.safety(row);
+  window.__OFH_attackAdmission = (row) => evidence.admission(row);
   window.__OFH_hybridBoatRisk = (row) => evidence.record({ ...row, kind: "hybrid-boat-risk" });
   const policy = internals.hybridCombatPolicy;
   for (const method of ["configure", "importModel", "resetEpisode"]) {
@@ -522,10 +545,22 @@ function cancelledHybridFeatures(pending) {
     acceptedSequence: pending.acceptedSequence ?? null,
     controlledAction: pending.controlledAction ?? null,
     learned: pending.learned === true,
+    ...(pending.collectorControl === true ? { collectorControl: true } : {}),
     behaviorPolicy: pending.behaviorPolicy ?? "legendary-unknown",
     behaviorProbability: pending.behaviorProbability ?? null,
     logProbability: pending.logProbability ?? null,
   };
+}
+
+function hybridCollectionPolicy(config) {
+  const policy =
+    config.collectionPolicy === undefined
+      ? process.env.OFH_HYBRID_COLLECTION_POLICY
+      : config.collectionPolicy;
+  if (policy !== undefined && policy !== null && policy !== "coverage-wait-v1") {
+    throw new Error("Unsupported hybrid collection policy");
+  }
+  return policy ?? null;
 }
 
 function configureHybridCombat(window, mode, config = {}) {
@@ -552,8 +587,14 @@ function configureHybridCombat(window, mode, config = {}) {
     throw new Error("OFH_HYBRID_COMBAT_LEARNING must be 0 or 1");
   }
   const learning = mode === "shadow" && learningFlag !== "0";
-  api.configure({ mode, learning });
-  window.__OFH_hybridCombatRun = { mode, learning, modelImported: Boolean(modelPath) };
+  const collectionPolicy = hybridCollectionPolicy(config);
+  api.configure({ mode, learning, collectionPolicy });
+  window.__OFH_hybridCombatRun = {
+    mode,
+    learning,
+    modelImported: Boolean(modelPath),
+    collectionPolicy,
+  };
 }
 
 function createBundledHarnessSource(bundlePath = BUNDLE_PATH) {
@@ -1188,12 +1229,12 @@ export class BundledOpponentBot {
         this.structureTrace.push({
           kind: "sam-plan",
           tick: this.game.ticks(),
-          targetSamId: plan.targetSamId,
-          aimTile: plan.targetTile,
-          coveringSamLevels: plan.coveringSamLevels,
-          totalBombs: plan.totalBombs,
-          capacityMissing: plan.capacityMissing,
-          windowBombs: plan.window?.length ?? 0,
+          targetSamId: plan?.targetSamId ?? null,
+          aimTile: plan?.targetTile ?? null,
+          coveringSamLevels: plan?.coveringSamLevels ?? null,
+          totalBombs: plan?.totalBombs ?? null,
+          capacityMissing: plan?.capacityMissing ?? null,
+          windowBombs: plan?.window?.length ?? 0,
         });
         return plan;
       };

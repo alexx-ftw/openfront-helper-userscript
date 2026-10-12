@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { createAttackBehaviorSandbox } from "./helpers/attack-behavior-sandbox.mjs";
 // Only repository classic scripts run in isolated fixture realms.
 /* eslint-disable sonarjs/code-eval */
 
@@ -80,6 +81,8 @@ assert.equal(p.exportLedger().entries.at(-1).actorSmallID, 1);
 assert.equal(p.exportLedger().entries.at(-1).modelIdentity, JSON.stringify(p.exportModel()));
 await p.decide({ ...behavior, player: { ...behavior.player, troops: () => NaN } }, [a]);
 assert.equal(p.exportLedger().entries.at(-1).reason, "gate-features-unavailable");
+assert.equal(p.exportLedger().entries.at(-1).targetChecks.length, 1);
+assert.equal(p.exportLedger().entries.at(-1).targetChecks[0].stage, "unevaluated");
 assert.equal(p.exportLedger().entries.at(-1).actorSmallID, 1);
 assert.equal(p.exportLedger().entries.at(-1).modelIdentity, JSON.stringify(p.exportModel()));
 assert.equal(p.diagnostics().control.controlledWaits, 0);
@@ -102,6 +105,35 @@ assert.equal(unfunded.diagnostics().funnel.scoredTargets, 0);
 assert.equal(unfunded.pending, null, "unfundable choices do not start WAIT observations");
 assert.equal(JSON.stringify(unfunded.exportModel()), unfundedModel);
 assert.equal(sends, sendsBeforeUnfunded);
+const duplicate = new Policy({ storage: null });
+ready(duplicate);
+const beforeDuplicate = sends;
+assert.equal(
+  await duplicate.decide({ ...behavior, sendAttackIsPendingDuplicate: () => true }, [a]),
+  false,
+);
+assert.equal(sends, beforeDuplicate);
+assert.equal(duplicate.exportLedger().entries.at(-1).targetChecks[0].reason, "pending-duplicate");
+assert.equal(duplicate.diagnostics().funnel.fundedTargets, 0);
+const quoted = new Policy({ storage: null });
+ready(quoted);
+await quoted.decide(
+  {
+    ...behavior,
+    inspectLandAttackFunding: () => ({
+      allowed: false,
+      reason: "capture-reserve-insufficient",
+      spendableTroops: 39,
+      payloadTroops: 0,
+    }),
+  },
+  [a],
+);
+assert.equal(
+  quoted.exportLedger().entries.at(-1).targetChecks[0].reason,
+  "capture-reserve-insufficient",
+);
+assert.equal(quoted.exportLedger().entries.at(-1).targetChecks[0].funding.spendableTroops, 39);
 
 const compact = new Policy({ storage: null });
 compact.importModel(compact.createCompactModel());
@@ -544,4 +576,432 @@ assert.equal(
   true,
   "two attack-ingress ticks observe real drops without Companion or boss access",
 );
+{
+  let collectorTick = 1000,
+    land = 20,
+    collectorSends = 0;
+  const collectorBehavior = {
+    ...behavior,
+    player: { ...behavior.player, numTilesOwned: () => land, incomingAttacks: () => [] },
+    currentAttackDecisionTick: () => collectorTick,
+    getOutboundAttackSnapshot: () => [],
+    getOutboundTransportSnapshot: () => [],
+    sendAttack: async () => {
+      collectorSends++;
+      return true;
+    },
+  };
+  const createCollector = (options = {}) => {
+    const policy = new Policy({ storage: null });
+    policy.configure({
+      mode: "shadow",
+      learning: true,
+      collectionPolicy: "coverage-wait-v1",
+      ...options,
+    });
+    return policy;
+  };
+  const collector = createCollector();
+  assert.equal(collector.ready(), false);
+  assert.equal(await collector.decide(collectorBehavior, [a]), true);
+  const firstProposal = collector.exportLedger().entries.find((row) => row.kind === "proposal");
+  const firstDecision = collector.exportLedger().entries.at(-1);
+  assert.equal(firstProposal.action, "wait");
+  assert.equal(firstProposal.targetSmallID, null);
+  assert.equal(firstProposal.collectorControl, true);
+  assert.equal(firstDecision.controlledAction, "wait");
+  assert.equal(firstDecision.behaviorPolicy, "coverage-driven-safe-wait-collection-v1");
+  assert.equal(collector.pending.learned, false);
+  assert.equal(collector.diagnostics().collection.completedWaits, 0, "proposal is not coverage");
+  assert.equal(
+    await collector.decide(collectorBehavior, [a]),
+    false,
+    "same-tick pending slot is not reused",
+  );
+  assert.equal(collector.collection.opportunities, 1);
+  for (let completed = 1; completed <= 4; completed++) {
+    collectorTick++;
+    land++;
+    collector.observe(collectorBehavior);
+    assert.equal(collector.collection.completedWaits, completed);
+    const outcome = collector.exportLedger().entries.at(-1);
+    assert.equal(outcome.kind, "outcome");
+    assert.equal(outcome.collectorControl, true);
+    assert.equal(outcome.learned, false);
+    assert.equal(outcome.controlledAction, "wait");
+    assert.equal(
+      outcome.outcomeTick - outcome.actionTick,
+      1,
+      "collector keeps the native WAIT window",
+    );
+    assert.equal(outcome.behaviorPolicy, "coverage-driven-safe-wait-collection-v1");
+    assert.ok(Number.isInteger(outcome.decisionStep));
+    assert.ok(Number.isInteger(outcome.decisionSequence));
+    if (completed === 1) {
+      assert.equal(outcome.decisionStep, firstDecision.step);
+      assert.equal(outcome.decisionSequence, firstProposal.sequence);
+    }
+    assert.equal(
+      await collector.decide(collectorBehavior, [a]),
+      false,
+      "alternate delegates to Legendary",
+    );
+    if (completed < 4) {
+      collectorTick++;
+      assert.equal(await collector.decide(collectorBehavior, [a]), true);
+    }
+  }
+  collectorTick++;
+  assert.equal(
+    await collector.decide(collectorBehavior, [a]),
+    false,
+    "coverage plus native signal ends collection",
+  );
+  assert.equal(collector.collection.controlledWaits, 4);
+  assert.equal(collector.collection.completedWaits, 4);
+  assert.equal(collector.readiness().wait.signalPresent, true);
+  assert.equal(collector.ready(), false, "cold ACT/target readiness is never bypassed");
+  assert.equal(collectorSends, 0);
+  assert.deepEqual(JSON.parse(JSON.stringify(collector.diagnostics().control)), {
+    candidateDecisions: 0,
+    controlledWaits: 0,
+    acceptedLearnedAttacks: 0,
+    confirmedLearnedAttacks: 0,
+    fallbacks: 0,
+  });
+  collector.resetEpisode();
+  assert.equal(
+    collector.collection.completedWaits,
+    4,
+    "genuine coverage survives an episode boundary",
+  );
+  collector.importModel(collector.exportModel());
+  assert.equal(collector.collection.completedWaits, 0, "imports cannot supply collector coverage");
+  assert.equal(
+    collector.collectionPolicy,
+    null,
+    "import requires explicit collector configuration",
+  );
+  collector.configure({ collectionPolicy: "coverage-wait-v1" });
+  assert.equal(
+    await collector.decide(collectorBehavior, [a]),
+    true,
+    "imported signal alone does not stop collection",
+  );
+
+  for (const pressure of [undefined, null, NaN, Infinity, -1, 1]) {
+    const blocked = createCollector();
+    assert.equal(
+      await blocked.decide(
+        { ...collectorBehavior, incomingHostileAttackPressure: () => pressure },
+        [a],
+      ),
+      false,
+    );
+    assert.equal(blocked.collection.opportunities, 0);
+  }
+  const unreadable = createCollector();
+  assert.equal(
+    await unreadable.decide({ ...collectorBehavior, incomingHostileAttackPressure: undefined }, [
+      a,
+    ]),
+    false,
+  );
+  for (const incomingPlayer of [
+    { incomingAttacks: undefined },
+    { incomingAttacks: 0 },
+    { incomingAttacks: () => undefined },
+    { incomingAttacks: () => [{ troops: 0 }] },
+    { incomingAttacks: () => [{ troops: 30 }] },
+    { incomingAttacks: () => [{}] },
+    { incomingAttacks: () => [null] },
+    { incomingAttacks: () => [{ troops: () => NaN }] },
+    { incomingAttacks: () => [{ troops: () => -1 }] },
+    { __src: {}, incomingAttacks: () => [] },
+  ]) {
+    const blocked = createCollector();
+    assert.equal(
+      await blocked.decide(
+        { ...collectorBehavior, player: { ...collectorBehavior.player, ...incomingPlayer } },
+        [a],
+      ),
+      false,
+      "a zero pressure fallback without readable native attacks is not safe",
+    );
+    assert.equal(blocked.collection.opportunities, 0);
+  }
+  for (const badBehavior of [
+    { ...collectorBehavior, canFundLandAttack: () => false },
+    { ...collectorBehavior, sendAttackIsPendingDuplicate: () => true },
+    { ...collectorBehavior, getPlayerAttackPreferredTroopFloor: () => NaN },
+  ]) {
+    const blocked = createCollector();
+    assert.equal(await blocked.decide(badBehavior, [a]), false);
+    assert.equal(blocked.collection.opportunities, 0);
+  }
+  const occupied = createCollector();
+  occupied.pending = {
+    target: a,
+    targetSmallID: 2,
+    tick: collectorTick,
+    attackIds: [],
+    gate: [1, 0.5, 0.2, 0],
+  };
+  const originalPending = occupied.pending;
+  assert.equal(await occupied.decide(collectorBehavior, [a]), false);
+  assert.equal(occupied.pending, originalPending);
+  assert.equal(occupied.collection.opportunities, 0);
+  const cancelled = createCollector();
+  assert.equal(await cancelled.decide(collectorBehavior, [a]), true);
+  cancelled.resetEpisode();
+  collectorTick++;
+  cancelled.observe(collectorBehavior);
+  assert.equal(cancelled.collection.completedWaits, 0);
+  const sameTickTerminal = createCollector();
+  assert.equal(await sameTickTerminal.decide(collectorBehavior, [a]), true);
+  const sameTickModel = JSON.stringify(sameTickTerminal.exportModel());
+  sameTickTerminal.observe(collectorBehavior, true);
+  assert.equal(
+    sameTickTerminal.collection.completedWaits,
+    0,
+    "zero-duration terminal is not coverage",
+  );
+  assert.equal(
+    JSON.stringify(sameTickTerminal.exportModel()),
+    sameTickModel,
+    "censor precedes all model updates",
+  );
+  assert.equal(sameTickTerminal.pending, null);
+  assert.equal(sameTickTerminal.lastOutcome.reason, "zero-duration-collector-wait");
+  assert.equal(sameTickTerminal.lastOutcome.truncated, true);
+  assert.equal(sameTickTerminal.lastOutcome.reward, null);
+  assert.equal(sameTickTerminal.lastOutcome.collectorControl, true);
+  const ordinaryTerminal = new Policy({ storage: null });
+  await ordinaryTerminal.decide(collectorBehavior, [a]);
+  ordinaryTerminal.observe(collectorBehavior, true);
+  assert.equal(
+    ordinaryTerminal.models.wait.samples,
+    1,
+    "ordinary zero-duration behavior is unchanged",
+  );
+
+  const competing = createCollector();
+  assert.equal(await competing.decide(collectorBehavior, [a]), true);
+  const waitReference = { ...competing.pending };
+  const competingModel = JSON.stringify(competing.exportModel());
+  collectorTick++;
+  assert.equal(competing.cancelCollectorWait(collectorBehavior), true);
+  const cancelledWait = competing.exportLedger().entries.at(-1);
+  assert.equal(cancelledWait.reason, "competing-attack-emission");
+  assert.equal(cancelledWait.kind, "outcome");
+  assert.equal(cancelledWait.cancelled, true);
+  assert.equal(cancelledWait.truncated, true);
+  assert.equal(cancelledWait.reward, null);
+  assert.equal(cancelledWait.action, "wait");
+  assert.equal(cancelledWait.outcomeTick, collectorTick);
+  for (const key of [
+    "actionTick",
+    "decisionStep",
+    "decisionSequence",
+    "actorSmallID",
+    "modelIdentity",
+    "collectorControl",
+    "behaviorPolicy",
+    "controlledAction",
+  ]) {
+    assert.equal(
+      cancelledWait[key],
+      key === "actionTick" ? waitReference.tick : waitReference[key],
+    );
+  }
+  assert.equal(competing.pending, null);
+  competing.observe(collectorBehavior);
+  assert.equal(JSON.stringify(competing.exportModel()), competingModel);
+  assert.equal(competing.collection.completedWaits, 0);
+  assert.equal(
+    competing.cancelCollectorWait(collectorBehavior),
+    false,
+    "repeated cancellation is a no-op",
+  );
+  for (const pending of [
+    { target: a, controlledAction: "attack", collectorControl: true },
+    { target: null, controlledAction: "wait" },
+    { target: null, controlledAction: "wait", learned: true },
+  ]) {
+    competing.pending = pending;
+    const ledgerCount = competing.exportLedger().entries.length;
+    assert.equal(competing.cancelCollectorWait(collectorBehavior), false);
+    assert.equal(competing.pending, pending);
+    assert.equal(competing.exportLedger().entries.length, ledgerCount);
+  }
+  const writerFailure = createCollector();
+  assert.equal(await writerFailure.decide(collectorBehavior, [a]), true);
+  const writerModel = JSON.stringify(writerFailure.exportModel());
+  const originalWriter = sandbox.roundLogRecord;
+  sandbox.roundLogRecord = () => {
+    throw new Error("censor writer failure");
+  };
+  try {
+    assert.throws(
+      () => writerFailure.cancelCollectorWait(collectorBehavior),
+      /censor writer failure/,
+    );
+  } finally {
+    sandbox.roundLogRecord = originalWriter;
+  }
+  assert.equal(writerFailure.pending, null, "collector invalidates before evidence publication");
+  assert.equal(JSON.stringify(writerFailure.exportModel()), writerModel);
+  assert.equal(writerFailure.lastOutcome.truncated, true);
+  assert.equal(writerFailure.lastOutcome.reward, null);
+
+  const AttackBehavior = createAttackBehaviorSandbox().AttackBehavior;
+  for (const shape of [
+    "unknown",
+    "friendly",
+    "hostile",
+    "numeric",
+    "missing-troops",
+    "nonfinite",
+  ]) {
+    const actual = Object.create(AttackBehavior.prototype);
+    const attacker = { smallID: () => 99, isAlive: () => true };
+    const own = {
+      ...collectorBehavior.player,
+      isFriendly: (other) => shape === "friendly" && other === attacker,
+    };
+    let incoming;
+    if (shape === "numeric") incoming = { troops: 30 };
+    else if (shape === "missing-troops") incoming = {};
+    else if (shape === "nonfinite") incoming = { troops: () => NaN };
+    else incoming = { troops: () => 30 };
+    if (["friendly", "hostile"].includes(shape))
+      Object.assign(incoming, {
+        attacker: () => attacker,
+        target: () => own,
+        retreating: () => false,
+      });
+    own.incomingAttacks = () => [incoming];
+    Object.assign(actual, collectorBehavior, {
+      player: own,
+      game: { ...collectorBehavior.game, ticks: () => collectorTick },
+      botAttackPendingIntentCommitments: [],
+      inspectLandAttackFunding: () => ({ allowed: true, reason: "funded" }),
+    });
+    delete actual.incomingHostileAttackPressure;
+    assert.equal(
+      actual.incomingHostileAttackPressure(),
+      shape === "hostile" ? 0.3 : 0,
+      "real native pressure filters ambiguous or friendly identities to zero",
+    );
+    const blocked = createCollector();
+    assert.equal(
+      await blocked.decide(actual, [a]),
+      false,
+      "any positive or unreadable raw attack prevents collector WAIT",
+    );
+    assert.equal(blocked.collection.opportunities, 0);
+  }
+  const invalidOutcome = createCollector();
+  assert.equal(await invalidOutcome.decide(collectorBehavior, [a]), true);
+  collectorTick++;
+  invalidOutcome.observe({
+    ...collectorBehavior,
+    player: { ...collectorBehavior.player, troops: () => NaN },
+  });
+  assert.equal(invalidOutcome.collection.completedWaits, 0);
+  assert.equal(invalidOutcome.lastOutcome.collectorControl, true);
+  assert.equal(invalidOutcome.lastOutcome.reward, null);
+
+  const noSignal = createCollector();
+  for (let i = 0; i < 4; i++) {
+    assert.equal(await noSignal.decide(collectorBehavior, [a]), true);
+    collectorTick++;
+    noSignal.observe(collectorBehavior);
+    assert.equal(await noSignal.decide(collectorBehavior, [a]), false);
+    collectorTick++;
+  }
+  assert.equal(noSignal.collection.completedWaits, 4);
+  assert.equal(noSignal.readiness().wait.signalPresent, false);
+  assert.equal(
+    await noSignal.decide(collectorBehavior, [a]),
+    true,
+    "coverage without signal must keep collecting",
+  );
+  for (const options of [
+    { mode: "baseline" },
+    { mode: "learned" },
+    { learning: false },
+    { collectionPolicy: null },
+  ]) {
+    const blocked = createCollector(options);
+    assert.equal(await blocked.decide(collectorBehavior, [a]), false);
+    assert.equal(blocked.collection.controlledWaits, 0);
+  }
+  const defaultShadow = new Policy({ storage: null });
+  assert.equal(await defaultShadow.decide(collectorBehavior, [a]), false);
+  assert.equal(defaultShadow.pending.collectorControl, undefined);
+  assert.equal(defaultShadow.exportLedger().entries.at(-1).collectorControl, undefined);
+  collectorTick++;
+  defaultShadow.observe(collectorBehavior);
+  assert.equal(
+    defaultShadow.lastOutcome.collectorControl,
+    undefined,
+    "old shadow waits stay unclassified",
+  );
+  assert.throws(() => defaultShadow.configure({ collectionPolicy: "unknown" }), /configuration/);
+  assert.equal(defaultShadow.collectionPolicy, null);
+  const omitted = createCollector();
+  omitted.configure({ mode: "shadow", learning: true });
+  assert.equal(omitted.collectionPolicy, null, "omitted option clears old headless collector");
+  assert.equal(await omitted.decide(collectorBehavior, [a]), false);
+  const saved = new Map();
+  const storage = {
+    getItem: (key) => saved.get(key),
+    setItem: (key, value) => saved.set(key, value),
+  };
+  const persistent = new Policy({ storage });
+  persistent.configure({ mode: "shadow", learning: true, collectionPolicy: "coverage-wait-v1" });
+  assert.equal(await persistent.decide(collectorBehavior, [a]), true);
+  collectorTick++;
+  land++;
+  persistent.observe(collectorBehavior);
+  const serialized = JSON.parse([...saved.values()][0]);
+  assert.deepEqual(serialized.config, { mode: "shadow", learning: true });
+  assert.equal(serialized.model.collection, undefined);
+  assert.equal(serialized.model.collectionPolicy, undefined);
+  serialized.config.collectionPolicy = "coverage-wait-v1";
+  saved.set("openfront-helper-hybrid-combat-v1", JSON.stringify(serialized));
+  const reloaded = new Policy({ storage });
+  assert.equal(reloaded.collectionPolicy, null, "browser reload cannot rehydrate headless control");
+  assert.equal(reloaded.collection.completedWaits, 0);
+  assert.equal(await reloaded.decide(collectorBehavior, [a]), false);
+  const compactCollector = createCollector();
+  compactCollector.importModel(compactCollector.createCompactModel());
+  compactCollector.configure({
+    mode: "shadow",
+    learning: true,
+    collectionPolicy: "coverage-wait-v1",
+  });
+  assert.equal(
+    await compactCollector.decide(
+      {
+        ...geometryBehavior,
+        ...collectorBehavior,
+        hybridCombatGeometry: (enemy) => ({
+          targetSmallID: enemy.smallID(),
+          tick: collectorTick,
+          source: "native-border-centroid-v1",
+          own: { x: 0, y: 0 },
+          target: { x: 5, y: 5 },
+          width: 100,
+          height: 100,
+        }),
+      },
+      [a],
+    ),
+    true,
+  );
+  assert.equal(compactCollector.pending.collectorControl, true);
+  assert.equal(compactCollector.readiness().wait.requiredSamples, 4);
+}
 process.stdout.write("hybrid combat funnel tests passed\n");

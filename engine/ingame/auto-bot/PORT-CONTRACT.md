@@ -1,5 +1,27 @@
 # Auto-Bot Port Contract — how to faithfully translate a src Nation behavior into a page-bridge JS module
 
+Optional hybrid diagnostics retain each supplied target's native eligibility,
+funding quote and feature rejection, and record actual attack dispatch outcomes
+in a separate headless admission JSONL. These observations do not certify native
+server admission. The learned candidate filter also rejects pending duplicate
+orders that the unchanged sender already rejects; it never removes reserve,
+capture-floor, Defense Post, legality or rate checks. Nonfinite payloads fail
+closed. Diagnostic exceptions propagate and cannot skip safety cleanup.
+
+The explicit headless `coverage-wait-v1` collector is a separate training policy,
+not production shadow ranking or cold learned control. In shadow learning mode
+it may choose a real WAIT at a funded, feature-valid opportunity only with
+readable zero incoming troops and zero hostile pressure, plus a fresh observation
+slot. It alternates these
+choices with unchanged Legendary delegation until genuine completed collector
+WAIT coverage and model signal are available. Collector decisions and outcomes
+retain their distinct provenance; intervening accepted actions invalidate the
+WAIT observation at the actual emission chokepoint, including forced attacks and
+boats. A zero-duration terminal WAIT is censored before model updates. Frozen
+learning-disabled evaluation and ordinary browser
+defaults cannot use the collector. Native readiness and every attack guard
+remain unchanged; minimum coverage does not demonstrate stronger play.
+
 This is the single source of truth for porting `src/core/execution/.../Nation*Behavior.ts`
 (and `utils/AiAttackBehavior.ts`) into the extension auto-bot. The goal is a
 **1:1 faithful translation** — preserve every branch, constant, probability,
@@ -125,10 +147,10 @@ The horizon baseline is elapsed match time: the client GameView
 ticksSinceStart() when available (it already subtracts the spawn-phase start
 tick), falling back to the raw tick for fixtures without the method.
 
-// DIVERGENCE: rail stop pricing uses the full trainGold base. The engine
-decays each train's payout after its tenth cumulative stop (floor 5k) via the
-train-internal tradeStopsVisited counter, which the client does not expose;
-global saturation is still modeled through the live spawn-rate denominators.
+// DIVERGENCE: the engine's per-train tradeStopsVisited counter is not exposed
+by the client. Economy pricing forwards a known count and defaults unknown
+trains to Config's 10-stop rate; payouts remain sourced from live Config.
+Global saturation is modeled through live spawn-rate denominators.
 
 Economic construction cost reproduces the costWrapper exactly at the client
 surface: recordUnitConstructed fires on every build AND upgrade

@@ -6,6 +6,110 @@ import { executeClassicScript, readRepositoryFile } from "./helpers/repository-f
 // geometry bridge or final purchase veto must fail these assertions.
 const sandbox = createAttackBehaviorSandbox();
 sandbox.window = {};
+{
+  const source = readRepositoryFile("scripts/headless/opponent-adapter.js");
+  const start = source.indexOf("function cancelledHybridOutcome(");
+  const end = source.indexOf("function hybridCollectionPolicy(", start);
+  assert.ok(start >= 0 && end > start);
+  const cancel = executeClassicScript(source.slice(start, end) + "\ncancelledHybridOutcome", {});
+  const pending = {
+    target: null,
+    tick: 10,
+    episodeId: 1,
+    generation: 2,
+    collectorControl: true,
+    controlledAction: "wait",
+    decisionStep: 3,
+    decisionSequence: 7,
+    learned: false,
+    behaviorPolicy: "coverage-driven-safe-wait-collection-v1",
+  };
+  const outcome = cancel(pending, "env_error", { tick: 11 }, 8);
+  assert.equal(outcome.collectorControl, true, "censor preserves actual collector provenance");
+  assert.equal(outcome.behaviorPolicy, pending.behaviorPolicy);
+  assert.equal(outcome.decisionSequence, 7);
+  assert.equal(outcome.learned, false);
+  assert.equal(outcome.reward, null);
+  assert.equal(outcome.envError, true);
+  assert.equal(
+    cancel({ ...pending, collectorControl: false }, "reset", null, 9).collectorControl,
+    undefined,
+  );
+}
+{
+  const source = readRepositoryFile("scripts/headless/opponent-adapter.js");
+  const start = source.indexOf("function hybridCollectionPolicy(");
+  const end = source.indexOf("function createBundledHarnessSource(", start);
+  assert.ok(start >= 0 && end > start);
+  const processFixture = { env: {} };
+  const configure = executeClassicScript(source.slice(start, end) + "\nconfigureHybridCombat", {
+    process: processFixture,
+  });
+  let configured;
+  const window = {
+    __OFH_hybridCombat: {
+      configure: (value) => {
+        configured = value;
+      },
+      importModel() {},
+      exportModel() {},
+      diagnostics() {},
+    },
+  };
+  configure(window, "shadow");
+  assert.equal(configured.collectionPolicy, null, "default shadow stays observational");
+  processFixture.env.OFH_HYBRID_COLLECTION_POLICY = "unknown";
+  assert.throws(() => configure(window, "shadow"), /Unsupported hybrid collection policy/);
+  processFixture.env.OFH_HYBRID_COLLECTION_POLICY = "coverage-wait-v1";
+  configure(window, "shadow", { learning: true });
+  assert.equal(configured.collectionPolicy, "coverage-wait-v1");
+  assert.equal(configured.learning, true);
+  assert.equal(window.__OFH_hybridCombatRun.collectionPolicy, "coverage-wait-v1");
+  configure(window, "shadow", { collectionPolicy: null });
+  assert.equal(configured.collectionPolicy, null, "explicit clearing overrides environment opt-in");
+  delete processFixture.env.OFH_HYBRID_COLLECTION_POLICY;
+  configure(window, "shadow");
+  assert.equal(
+    configured.collectionPolicy,
+    null,
+    "reconfiguration without opt-in clears collector",
+  );
+  configure(window, "learned", { learning: true });
+  assert.equal(configured.learning, false, "frozen learned mode cannot collect");
+  configure(window, "baseline", { learning: true });
+  assert.equal(configured.learning, false, "baseline cannot collect");
+}
+{
+  const adapterSource = readRepositoryFile("scripts/headless/opponent-adapter.js");
+  const start = adapterSource.indexOf("export class HybridRuntimeEvidence");
+  const end = adapterSource.indexOf("// Experimental headless transport only.", start);
+  assert.ok(start >= 0 && end > start);
+  const Evidence = executeClassicScript(
+    adapterSource.slice(start, end).replace("export class", "class") + "\nHybridRuntimeEvidence",
+    { structuredClone },
+  );
+  const evidence = new Evidence({ runIdentity: "attack-admission-test" });
+  evidence.admission({
+    tick: 10,
+    actorSmallID: 1,
+    targetSmallID: 2,
+    emitted: false,
+    reason: "capture-reserve-insufficient",
+  });
+  evidence.admission({ tick: 11, actorSmallID: 1, targetSmallID: 2, emitted: true, reason: null });
+  assert.deepEqual(evidence.snapshot().attackAdmissions, {
+    attempts: 2,
+    accepted: 1,
+    rejected: 1,
+    errors: 0,
+    reasons: { "capture-reserve-insufficient": 1 },
+  });
+  assert.equal(
+    evidence.snapshot().ledger.entries.length,
+    0,
+    "dispatch diagnostics do not forge policy events",
+  );
+}
 sandbox.withTimeout = async (promise) => promise;
 sandbox.WORKER_TIMEOUT_MS = 100;
 const attack = Object.create(sandbox.AttackBehavior.prototype);
@@ -276,6 +380,70 @@ assert.equal(links.enabled, true);
 adaptive = false;
 nation.initializeBehaviors();
 assert.equal(links.enabled, false, "faithful controls deactivate optional strategy");
+{
+  nationRealm.autoBotProfileSyncPhase = (_profile, _phase, operation) => operation();
+  nationRealm.autoBotProfileAsyncPhase = async (_profile, _phase, operation) => operation();
+  nationRealm.EARLY_EXPAND_COMMIT = 0.5;
+  for (const earlyReturn of ["initialize", "pending", "defense", "eliminated"]) {
+    const calls = [];
+    const scheduled = Object.create(nationRealm.NationBot.prototype);
+    Object.assign(scheduled, {
+      mg: { myPlayer: () => player, terraNullius: () => ({}) },
+      behaviorsInitialized: earlyReturn !== "initialize",
+      tickIsCurrent: () => true,
+      configureHybridStrategy() {},
+      refreshBehaviorPlayerReferences() {},
+      prepareInitializedTickState() {},
+      runNavalTickPhases: async () => true,
+      handleSpawnTick: () => false,
+      observeHybridCombat() {},
+      handleEliminatedPlayer: () => earlyReturn === "eliminated",
+      nukeBehavior: { observeHostileNukeThreats: () => calls.push("observe") },
+      initializeTick: async () => {
+        calls.push("initialize");
+        return nationRealm.NationBot.prototype.initializeTick.call(scheduled, 100, null, 1);
+      },
+      initializeBehaviors() {
+        assert.equal(this.nukeBehavior, undefined, "startup has no preexisting nuke behavior");
+        calls.push("create");
+        this.nukeBehavior = { observeHostileNukeThreats: () => calls.push("observe") };
+        this.structureBehavior = {};
+        this.behaviorsInitialized = true;
+      },
+      feat: (feature) => feature === "expand",
+      processPendingNukeSalvo: async () => {
+        calls.push("pending");
+        return earlyReturn !== "pending";
+      },
+      attackBehavior: {
+        maybeRetakeBeachheads() {},
+        forceSendAttack: async () => {
+          assert.equal(calls.at(-1), "observe", "startup threat latch precedes opening attack");
+          calls.push("opening");
+          return true;
+        },
+      },
+      handleIncomingDefense: async () => {
+        calls.push("defense");
+        return true;
+      },
+      shouldBuildInitialDefenseWarship: () => false,
+      runContainmentGrowth: async () => calls.push("containment"),
+      handleOpeningExpansion: () => assert.fail("early return must stop the decision chain"),
+    });
+    if (earlyReturn === "initialize") delete scheduled.nukeBehavior;
+    await scheduled.tick(100, null, 1);
+    const expected = {
+      initialize: ["initialize", "create", "observe", "opening"],
+      pending: ["initialize", "observe", "pending"],
+      defense: ["initialize", "observe", "pending", "defense", "containment"],
+      eliminated: [],
+    }[earlyReturn];
+    assert.deepEqual(calls, expected, `native tick observes threats before ${earlyReturn}`);
+    await scheduled.tick(100, null, 1);
+    assert.deepEqual(calls, expected, "duplicate game tick never repeats threat observation");
+  }
+}
 let spawnSends = 0;
 let footprintCalls = 0;
 Object.assign(nationRealm, {
@@ -738,6 +906,7 @@ function economicRealm() {
     },
   });
   assert.equal(funding.canFundLandAttack(defender), false, "below native capture floor");
+  assert.equal(funding.inspectLandAttackFunding(defender).reason, "capture-reserve-insufficient");
   available = 40;
   assert.equal(funding.canFundLandAttack(defender), true, "exact floor remains eligible");
   multiplier = 2;
@@ -746,6 +915,7 @@ function economicRealm() {
   assert.equal(funding.canFundLandAttack(defender), true);
   appetite = true;
   assert.equal(funding.canFundLandAttack(defender), false, "war appetite retained");
+  assert.equal(funding.inspectLandAttackFunding(defender).reason, "war-appetite-exceeded");
   appetite = false;
   multiplier = 1;
   defenderTroops = 0;
@@ -757,6 +927,16 @@ function economicRealm() {
   available = 39;
   assert.equal(funding.sendLandAttack(defender), false, "sender rechecks changed budget");
   assert.equal(emissions, 0);
+  defenderTroops = 0;
+  available = 0;
+  funding.hybridSafetyAttempt = {};
+  assert.equal(funding.sendLandAttack(defender), false);
+  assert.equal(funding.hybridSafetyAttempt.reason, "no-spendable-troops");
+  assert.equal(funding.landAttackPayloadRejection(Number.POSITIVE_INFINITY), "nonfinite-payload");
+  assert.equal(
+    funding.landAttackTroopsAreSafe({ requiredTribeAttackTroops: null }, Number.POSITIVE_INFINITY),
+    false,
+  );
 }
 
 {
@@ -939,4 +1119,154 @@ function economicRealm() {
   );
 }
 
+{
+  const sender = Object.create(sandbox.AttackBehavior.prototype);
+  sender.player = { smallID: () => 1 };
+  sender.currentAttackDecisionTick = () => 10;
+  sender.beginHybridSafetyAttempt = () => {
+    const attempt = { emitted: false };
+    sender.hybridSafetyAttempt = attempt;
+    return attempt;
+  };
+  const admissions = [],
+    safety = [];
+  sandbox.window.__OFH_attackAdmission = (row) => admissions.push({ ...row });
+  sandbox.window.__OFH_hybridSafety = (row) => safety.push({ ...row });
+  sender.sendAuthorizedAttack = () => {
+    sender.recordAttackEmission(30, "land");
+    throw new Error("post-emission failure fixture");
+  };
+  await assert.rejects(sender.sendAttack({ smallID: () => 2 }), /post-emission failure fixture/);
+  assert.equal(admissions[0].emitted, true, "actual emission remains visible after exception");
+  assert.equal(admissions[0].reason, "dispatch-exception");
+  assert.equal(admissions[0].payloadTroops, 30);
+  assert.equal(sender.hybridSafetyAttempt, null);
+  assert.equal(sender.attackAdmissionAttempt, undefined);
+  sender.sendAuthorizedAttack = () => {
+    sender.recordAttackEmission(30, "land");
+    return true;
+  };
+  sandbox.window.__OFH_attackAdmission = () => {
+    throw new Error("write failure fixture");
+  };
+  await assert.rejects(sender.sendAttack({ smallID: () => 2 }), /write failure fixture/);
+  assert.equal(safety.length, 2, "safety published even if diagnostic writing fails");
+  assert.equal(sender.hybridSafetyAttempt, null);
+  assert.equal(sender.attackAdmissionAttempt, undefined);
+  const originalFailure = new Error("original dispatch failure");
+  sender.sendAuthorizedAttack = () => {
+    throw originalFailure;
+  };
+  await assert.rejects(
+    sender.sendAttack({ smallID: () => 2 }),
+    (error) => error === originalFailure,
+  );
+  sender.sendForcedAttack = () => {
+    throw originalFailure;
+  };
+  await assert.rejects(
+    sender.forceSendAttack({ smallID: () => 2 }),
+    (error) => error === originalFailure,
+  );
+  sender.game = {};
+  sender.emitAuthorizedBoat = () => {
+    throw originalFailure;
+  };
+  assert.throws(
+    () => sender.emitBoat(7, 30, "boat fixture"),
+    (error) => error === originalFailure,
+  );
+  delete sandbox.window.__OFH_attackAdmission;
+  delete sandbox.window.__OFH_hybridSafety;
+}
+{
+  const fixture = createAttackBehaviorSandbox();
+  fixture.window = {};
+  const rows = [];
+  fixture.roundLogRecord = (_kind, row) => rows.push(row);
+  const policy = executeClassicScript(
+    readRepositoryFile("engine/ingame/auto-bot/hybridModelContract.js") +
+      "\n" +
+      readRepositoryFile("engine/ingame/auto-bot/hybridCombat.js") +
+      "\nhybridCombatPolicy",
+    fixture,
+  );
+  policy.configure({ mode: "shadow", learning: true, collectionPolicy: "coverage-wait-v1" });
+  const sender = Object.create(fixture.AttackBehavior.prototype);
+  const enemy = { smallID: () => 2, id: () => "enemy", isPlayer: () => true };
+  sender.player = { smallID: () => 1 };
+  sender.game = { owner: () => enemy };
+  sender.currentAttackDecisionTick = () => 10;
+  sender.captureSameClanNukeTerrain = () => {};
+  sender.reconcileOutboundAttackIntentCommitments = () => {};
+  sender.getForceAttackTroops = () => 30;
+  sender.canEmitBoatToDestination = () => true;
+  sender.boatLaunchWarshipDanger = () => false;
+  sender.boatDestinationReserved = () => false;
+  sender.resolveBoatTroops = (troops) => troops;
+  sender.recordOutboundAttackIntent = () => {};
+  sender.recordBoatDestinationIntent = () => {};
+  fixture.discoverCtors = () => ({ attack: () => {}, boat: () => {} });
+  fixture.getEventBus = () => ({});
+  fixture.hasAttackIntentRateCapacity = () => true;
+  let emitted = false;
+  fixture.emitIntent = () => emitted;
+  fixture.setLastAction = () => {};
+  fixture.tr = (value) => value;
+  const wait = () => {
+    policy.pending = {
+      target: null,
+      tick: 10,
+      gate: [1, 0.5, 0.2, 0],
+      share: 0.2,
+      episodeId: policy.episodeId,
+      generation: policy.generation,
+      actorSmallID: 1,
+      decisionStep: 0,
+      decisionSequence: 0,
+      modelIdentity: JSON.stringify(policy.exportModel()),
+      controlledAction: "wait",
+      collectorControl: true,
+      learned: false,
+      behaviorPolicy: "coverage-driven-safe-wait-collection-v1",
+    };
+    return policy.pending;
+  };
+  const modelBefore = JSON.stringify(policy.exportModel());
+  const original = wait();
+  assert.equal(await sender.forceSendAttack(enemy), false);
+  assert.equal(
+    policy.pending,
+    original,
+    "rejected forced emission preserves real WAIT observation",
+  );
+  emitted = true;
+  assert.equal(await sender.forceSendAttack(enemy), true);
+  assert.equal(policy.pending, null, "actual forced emission cancels collector WAIT");
+  wait();
+  assert.equal(sender.emitBoat(7, 30, "boat fixture"), true);
+  assert.equal(policy.pending, null, "actual boat emission cancels collector WAIT");
+  const failure = new Error("post-emission bookkeeping");
+  sender.recordOutboundAttackIntent = () => {
+    throw failure;
+  };
+  wait();
+  await assert.rejects(sender.forceSendAttack(enemy), (error) => error === failure);
+  assert.equal(policy.pending, null, "emitted-then-throw cannot survive as WAIT");
+  const outcomes = rows.filter((row) => row.kind === "hybrid-combat-outcome");
+  assert.equal(outcomes.length, 3);
+  for (const outcome of outcomes) {
+    assert.equal(outcome.collectorControl, true);
+    assert.equal(outcome.reward, null);
+    assert.equal(outcome.truncated, true);
+    assert.equal(outcome.reason, "competing-attack-emission");
+    assert.equal(outcome.behaviorPolicy, "coverage-driven-safe-wait-collection-v1");
+  }
+  assert.equal(
+    JSON.stringify(policy.exportModel()),
+    modelBefore,
+    "cancellations never update weights/counts",
+  );
+  assert.equal(policy.collection.completedWaits, 0);
+}
 process.stdout.write("hybrid runtime caller tests passed\n");
