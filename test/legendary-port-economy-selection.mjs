@@ -1,50 +1,11 @@
 import assert from "node:assert/strict";
-import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
+import { createLegendaryStructureSandbox } from "./helpers/legendary-structure-fixture.mjs";
 
-// UnitType enum values match the game's canonical string ids (UnitType.ts).
-const UNIT = {
-  City: "City",
-  Factory: "Factory",
-  Port: "Port",
-  TradeShip: "TradeShip",
-};
-const Difficulty = {
-  Easy: "Easy",
-  Medium: "Medium",
-  Hard: "Hard",
-  Impossible: "Impossible",
-  Legendary: "Legendary",
-};
-const sandbox = {
-  UNIT,
-  Difficulty,
-  GameMode: { Team: "Team", FFA: "Free For All" },
-  PlayerType: { Bot: "Bot", Nation: "Nation", Human: "Human" },
-  state: { settings: { winFixes: false }, stats: { builds: 0 } },
-  currentDifficulty: () => Difficulty.Legendary,
-  isLegendaryDifficulty: () => true,
-  isAtLeastHardDifficulty: () => true,
-  getBuildMenu: () => ({ sendBuildOrUpgrade: () => true }),
-  sendAutoBotBuildOrUpgrade: () => false,
-  autoBotBuildAllowed: () => true,
-  randTerritoryTileArray: () => [30],
-  withTimeout: (promise) => promise,
-  WORKER_TIMEOUT_MS: 50,
-  setLastAction: () => {},
-  tr: (value) => value,
-  captureRuntimeException: () => {},
-  runtimeDebugLog: () => {},
-  console,
-};
-sandbox.globalThis = sandbox;
-executeClassicScript(
-  readRepositoryFile("engine/ingame/auto-bot/legendaryPlanner.js") +
-    "\n" +
-    readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js") +
-    "\nglobalThis.__StructureBehavior = StructureBehavior;",
-  sandbox,
-  { filename: "legendary-port-economy-selection.vm.js" },
-);
+const sandbox = createLegendaryStructureSandbox({
+  randTerritoryTiles: [30],
+  vmFilename: "legendary-port-economy-selection.vm.js",
+});
+const { UNIT } = sandbox;
 
 const PORT_CONSTRUCTION_TICKS = 50;
 const PORT_COST_LADDER = 125_000;
@@ -446,6 +407,66 @@ const portCandidates = async (behavior) =>
     teamRoute.postAllianceWeight,
     teamRoute.weight,
     "the permanent teammate route keeps full weight for the whole horizon",
+  );
+}
+
+// (8) Landlocked Legendary: the real ladder body runs with no water access
+// and admits no Port candidate at all.
+{
+  const partner = waterOwner(2, { teamId: 7, ports: [port(20)] });
+  const player = waterOwner(1, { teamId: 7 });
+  player.borderTiles = () => [10];
+  player.oceanShoreBorderTiles = () => [];
+  const behavior = behaviorBase(player, [partner], new Set());
+  behavior.isShoreBorderTile = () => false;
+  behavior.legendaryConstructionState = ({ cityCount }) => ({
+    cityCount,
+    connectedCities: 1,
+    cityRailConnection: 1,
+    railNeed: 0.25,
+    tradeNeed: 1.3,
+    missileThreat: { critical: false, score: 0 },
+    samLevelParityGap: 0,
+    siloParityGap: 0,
+    siloParityTarget: 0,
+    targetPressure: 0,
+    defenseGap: 0,
+    destroyerNeed: 1,
+    portSurvivability: 1,
+    hasTradePartner: true,
+    economyHorizonTicks: MATCH_HORIZON_TICKS,
+    economyInputs: behavior.legendaryEconomyInputs({
+      trainCount: 0,
+      tradeShipCount: 0,
+      hasTradePartner: true,
+      hasCompletedTradePartner: true,
+      connectedStops: 1,
+    }),
+  });
+  const candidates = await behavior.legendaryConstructionCandidates({
+    config: liveConfig,
+    citiesDisabled: false,
+    cityCount: 4,
+    hasCoastalTiles: false,
+    hasOceanPortTiles: false,
+    missileSilosEnabled: false,
+    nukesEnabled: false,
+  });
+  assert.equal(
+    candidates.filter(
+      (candidate) =>
+        candidate.type === UNIT.Port && candidate.action === "build" && candidate.netTeamGold > 0n,
+    ).length,
+    0,
+    "the landlocked ladder body admits no positive Port build candidate",
+  );
+  assert.equal(
+    behavior
+      .legendaryConstructionActionGroups(candidates, true)
+      .flat()
+      .some((candidate) => candidate.type === UNIT.Port),
+    false,
+    "the landlocked economy group never selects a Port",
   );
 }
 

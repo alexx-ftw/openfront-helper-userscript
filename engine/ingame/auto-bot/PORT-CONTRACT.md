@@ -75,6 +75,13 @@ is admitted; no third-owner duplicate is eligible. Other difficulty tiers keep
 the native fixed structure order. The inherited first-two-Cities flag does not
 bypass the positive-value gate or displace a higher-value positive economy
 action. City capacity value is available only under troop-cap pressure.
+Stop pools value only team-member payouts: a trade stop between two non-team
+allies carries zero team gold by design and still dilutes the uniform visit
+share, which models the real visit cost of ally-ally stops on a shared cluster.
+Equal net-team-gold ties break on lower cost, so an equal-value upgrade can win;
+novel-connection preference is structural (Port builds restricted to unserved
+shared-water components, Factory builds to factory-less rail clusters), not a
+tie-break.
 
 Legendary compares each feasible City/Factory/Port build or throughput upgrade
 by projected net team gold over the remaining match horizon (live

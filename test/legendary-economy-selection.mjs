@@ -1,58 +1,11 @@
 import assert from "node:assert/strict";
-import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
+import { createLegendaryStructureSandbox } from "./helpers/legendary-structure-fixture.mjs";
 
-const UNIT = {
-  AtomBomb: "AtomBomb",
-  City: "City",
-  DefensePost: "DefensePost",
-  Factory: "Factory",
-  HydrogenBomb: "HydrogenBomb",
-  MIRV: "MIRV",
-  MIRVWarhead: "MIRVWarhead",
-  MissileSilo: "MissileSilo",
-  Port: "Port",
-  SAMLauncher: "SAMLauncher",
-  TradeShip: "TradeShip",
-  Train: "Train",
-  Warship: "Warship",
-};
-const Difficulty = {
-  Easy: "Easy",
-  Medium: "Medium",
-  Hard: "Hard",
-  Impossible: "Impossible",
-  Legendary: "Legendary",
-};
-const sandbox = {
-  UNIT,
-  Difficulty,
-  GameMode: { Team: "Team", FFA: "Free For All" },
-  PlayerType: { Bot: "Bot", Nation: "Nation", Human: "Human" },
-  state: { settings: { winFixes: false }, stats: { builds: 0 } },
-  currentDifficulty: () => Difficulty.Legendary,
-  isLegendaryDifficulty: () => true,
-  isAtLeastHardDifficulty: () => true,
-  getBuildMenu: () => ({ sendBuildOrUpgrade: () => true }),
-  sendAutoBotBuildOrUpgrade: () => false,
-  autoBotBuildAllowed: () => true,
-  randTerritoryTileArray: () => [5, 9, 10],
-  withTimeout: (promise) => promise,
-  WORKER_TIMEOUT_MS: 50,
-  setLastAction: () => {},
-  tr: (value) => value,
-  captureRuntimeException: () => {},
-  runtimeDebugLog: () => {},
-  console,
-};
-sandbox.globalThis = sandbox;
-executeClassicScript(
-  readRepositoryFile("engine/ingame/auto-bot/legendaryPlanner.js") +
-    "\n" +
-    readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js") +
-    "\nglobalThis.__StructureBehavior = StructureBehavior;",
-  sandbox,
-  { filename: "legendary-economy-selection.vm.js" },
-);
+const sandbox = createLegendaryStructureSandbox({
+  randTerritoryTiles: [5, 9, 10],
+  vmFilename: "legendary-economy-selection.vm.js",
+});
+const { UNIT } = sandbox;
 
 const railState = Array(12).fill(0);
 railState[2] = 1;
