@@ -6687,6 +6687,14 @@ would defeat the change. Refinement options (hold-instead-of-clear
 semantics, valuing units and population in blastStructureValue, not just
 structures) are future work, not silent tuning.
 
+Superseding policy (2026-10-12): the user rejected intentionally trading
+friendly-building loss for enemy value. The monetary gate remains a target-value
+check, never permission to damage friendly land. `sendNuke` now applies the
+hard `blastHitsFriendlyLand` veto after its async probe for every launch,
+including the finisher; rejection leaves the finisher pending for a safe retry.
+The historical 2026-10-08 receipt below remains evidence for the earlier policy,
+not the current firing rule.
+
 Receipt: /home/eros/ofh-matrix/finisher-gate-receipt/baikal-nuke-wars.log
 Run under MemoryMax=4G, MemorySwapMax=1G, OOMPolicy=kill, serial.
 

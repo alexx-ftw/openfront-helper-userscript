@@ -592,6 +592,7 @@
       const demandTarget = this.samDemandStrikeTarget();
       const priority = this.priorityNukeTarget(demandTarget);
       const target = priority.target;
+      const pinnedTarget = this.isPinnedNukeTarget(priority);
       if (!this.isEligibleNukeTarget(target)) {
         tel.noTarget += 1;
         return;
@@ -607,7 +608,7 @@
       }
       const difficulty = currentDifficulty();
       const candidates = await this.collectCandidatesWithRetry(
-        target, selectedNuke, silos, difficulty, !priority.incoming,
+        target, selectedNuke, silos, difficulty, !pinnedTarget,
       );
       if ((candidates.list?.length ?? 0) === 0) {
         tel.noCandidates += 1;
@@ -616,7 +617,7 @@
       }
       const ordinaryAction = await this.fireNukeFromCandidates(
         candidates.list,
-        priority.incoming ? target : demandTarget ?? candidates.retargeted ?? target,
+        pinnedTarget ? target : demandTarget ?? candidates.retargeted ?? target,
         selectedNuke,
         silos,
         difficulty,
@@ -700,7 +701,36 @@
       if (incomingTarget && this.isEligibleNukeTarget(incomingTarget)) {
         return { target: incomingTarget, incoming: true };
       }
+      const counterforceTarget = this.findCounterforceNukeTarget();
+      if (counterforceTarget) {
+        return { target: counterforceTarget, incoming: false, counterforce: true };
+      }
       return { target: demandTarget ?? this.findBestNukeTarget(), incoming: false };
+    }
+
+    isPinnedNukeTarget(priority) {
+      return priority.incoming || priority.counterforce === true;
+    }
+
+    findCounterforceNukeTarget() {
+      const players = this.game?.players?.() ?? [];
+      for (const [ownerId, threat] of this._hostileNukeThreats ?? []) {
+        const target = players.find(
+          (player) => String(player?.smallID?.()) === String(ownerId),
+        );
+        if (!target || !this.isEligibleNukeTarget(target)) continue;
+        const sourceSiloIds = threat?.sourceSiloIds;
+        if (
+          (target.units?.(UNIT.MissileSilo) ?? []).some(
+            (silo) =>
+              silo?.isActive?.() !== false &&
+              (!sourceSiloIds?.size || sourceSiloIds.has(String(silo?.id?.() ?? ""))),
+          )
+        ) {
+          return target;
+        }
+      }
+      return null;
     }
 
     // Shared idle-lane gate: unusable silo set or every tube cooling/queued
@@ -2190,8 +2220,7 @@
     // This preserves arrival staggering without blocking the bot or depending
     // on real-time timers, which would drift when game speed changes.
     async sendNuke(tile, nukeType, targetPlayer, waitTicks = 0, salvo = null) {
-      const allowFriendlyBlast = salvo?.allowFriendlyBlast === true;
-      const salvoMetadata = allowFriendlyBlast ? null : salvo;
+      const salvoMetadata = salvo;
       const delay = Math.max(0, Math.ceil(Number(waitTicks) || 0));
       this.observeHostileNukeThreats();
       if (delay > 0) {
@@ -2238,7 +2267,7 @@
       if (
         !this.isEligibleNukeTarget(targetPlayer, false) ||
         !this.isValidNukeDestination(tile, false, targetPlayer) ||
-        (this.blastHitsFriendlyLand(tile, nukeType) && !allowFriendlyBlast) ||
+        this.blastHitsFriendlyLand(tile, nukeType) ||
         !this.nukeLaunchRouteViable(tile, nukeType, targetPlayer, salvoMetadata)
       ) return false;
       // DIVERGENCE: the source can change while the worker prices this shot.
@@ -3144,13 +3173,13 @@
       // every blast as empty, so the finisher safely holds instead of firing
       // unpriced.
       if (!this.postSalvoHydrogenHasValue(config, target, pending)) return false;
-      // The monetary gate above is the finisher fire/hold arbitration; the
-      // generic blast gate must not veto its deliberate value tradeoff.
+      // Recheck friendly land after the async nuke probe; a rejection keeps
+      // this finisher pending until the blast area is safe.
       const sent = await this.sendNuke(
         pending.targetTile,
         UNIT.HydrogenBomb,
         target,
-        0, { allowFriendlyBlast: true },
+        0,
       );
       if (sent || this.postSalvoHydrogenTarget(pending) === null) {
         state.postSalvoHydrogen = null;

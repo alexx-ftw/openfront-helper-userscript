@@ -2,6 +2,10 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  deltaBotTeamGrossRailTradeEarnings,
+  sumBotTeamGrossRailTradeEarnings,
+} from "./team-rail-trade-metrics.mjs";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(directory, "../..");
@@ -77,6 +81,7 @@ const aggregate = (games) => {
   const count = games.length;
   return {
     matches: count,
+    ...sumBotTeamGrossRailTradeEarnings(games),
     wins: sum((game) => (game?.won === true ? 1 : 0)),
     survived: sum((game) => (survived(game) ? 1 : 0)),
     comebackRecoveries: sum((game) => (recoveredComeback(game) ? 1 : 0)),
@@ -142,6 +147,7 @@ const scenarios = candidate.results.map((candidateEntry) => {
         upgrades:
           constructionActionCount(candidateGame, "upgrade") -
           constructionActionCount(baselineGame, "upgrade"),
+        ...deltaBotTeamGrossRailTradeEarnings(candidateGame, baselineGame),
       },
     };
   });
@@ -188,6 +194,7 @@ const scenarios = candidate.results.map((candidateEntry) => {
           candidateAggregate.upgrades[unit] - baselineAggregate.upgrades[unit],
         ]),
       ),
+      ...deltaBotTeamGrossRailTradeEarnings(candidateAggregate, baselineAggregate),
     },
     pairs,
   };

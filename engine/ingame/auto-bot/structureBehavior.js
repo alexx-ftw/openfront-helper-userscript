@@ -1922,12 +1922,10 @@
       if (await this.maybeOpenLandlockedLegendaryArsenal(
         context, profile, hasWaterAccess,
       )) return true;
-      if (legendaryDifficulty && hasWaterAccess) {
-        // Shared-water lakes (Baikal) carry the same naval/nuclear economy
-        // as oceans. Truly landlocked maps retain the faithful structure
-        // order, with only the bounded first-Silo/baseline-SAM Arsenal lane
-        // checked after its 3000-tick backstop. The hydro fixture map (Alps)
-        // therefore keeps its dedicated nuclear path.
+      if (legendaryDifficulty) {
+        // Shared-water lakes (Baikal) enable naval candidates like oceans.
+        // The adaptive economy ladder also runs on landlocked maps; without a
+        // legal shared-water route, it simply admits no Port build candidate.
         return profileStructureAsync(profile, "structures-ordinary-legendary", () =>
           this.doHandleLegendaryStructures(context));
       }
@@ -11520,6 +11518,7 @@
             economyCostQuotes.set(buildable.type, buildable.cost);
           }
         }
+      // eslint-disable-next-line no-restricted-syntax -- Fall back to local price if worker quote fails.
       } catch {
         // Keep the existing estimate when the worker quote is unavailable.
       }

@@ -30,6 +30,7 @@ import {
   playersShareSide,
   HybridFifoDispatcher,
 } from "./opponent-adapter.js";
+import { botTeamGrossRailTradeEarnings } from "./team-rail-trade-metrics.mjs";
 import { UnitImpl } from "../../openfront-engine/src/core/game/UnitImpl.ts";
 import { PlayerImpl } from "../../openfront-engine/src/core/game/PlayerImpl.ts";
 
@@ -2073,6 +2074,9 @@ const finalMe = runner.game.playerByClientID(clientID);
 const won =
   winner !== null &&
   (winner === finalMe?.team() || (typeof winner !== "string" && winner.clientID() === clientID));
+const botTeamGrossRailTrade = finalMe
+  ? botTeamGrossRailTradeEarnings(runner.game.allPlayers(), finalMe)
+  : null;
 bot.finalizeHybridCombatObservation(stopReason);
 const finalBotState =
   finalMe === null || finalMe === undefined
@@ -2241,6 +2245,8 @@ const finalResult = {
   winner: typeof winner === "string" ? winner : (winner?.name() ?? null),
   myTeam: finalMe?.team() ?? null,
   alive: finalMe?.isAlive() ?? false,
+  botTeamGrossTrainGoldEarned: botTeamGrossRailTrade?.botTeamGrossTrainGoldEarned ?? null,
+  botTeamGrossTradeGoldEarned: botTeamGrossRailTrade?.botTeamGrossTradeGoldEarned ?? null,
   finalAllies: (finalMe?.allies?.() ?? []).map((ally) =>
     typeof ally.name === "function" ? ally.name() : String(ally),
   ),

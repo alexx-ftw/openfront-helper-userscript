@@ -2209,6 +2209,63 @@ assert.equal(
   };
   priorityBehavior.random = {};
   priorityBehavior._hostileNukeThreats = sourceTracker._hostileNukeThreats;
+  priorityBehavior.attackBehavior = { findIncomingAttackPlayer: () => null };
+  priorityBehavior.isEligibleNukeTarget = () => true;
+  const demandTarget = { smallID: () => 4 };
+  const incomingAttacker = { smallID: () => 5 };
+  assert.equal(
+    priorityBehavior.priorityNukeTarget(demandTarget).target,
+    wrappedOwner,
+    "a live hostile-nuke source owner outranks an unrelated SAM-demand target",
+  );
+  priorityBehavior.attackBehavior.findIncomingAttackPlayer = () => incomingAttacker;
+  const incomingPriority = priorityBehavior.priorityNukeTarget(demandTarget);
+  assert.equal(
+    incomingPriority.target,
+    incomingAttacker,
+    "an immediate troop attacker remains the selected target",
+  );
+  assert.equal(
+    incomingPriority.incoming,
+    true,
+    "an immediate troop attacker still outranks counterforce retaliation",
+  );
+  priorityBehavior.attackBehavior.findIncomingAttackPlayer = () => null;
+  launchSiloIsLive = false;
+  assert.equal(
+    priorityBehavior.priorityNukeTarget(demandTarget).target,
+    demandTarget,
+    "a destroyed recorded launch Silo no longer diverts target priority",
+  );
+  launchSiloIsLive = true;
+  let counterforceRetargetAllowed;
+  let counterforceFireTarget;
+  priorityBehavior.player = { units: () => [] };
+  priorityBehavior.hasPendingNukeLaunches = () => false;
+  priorityBehavior.nukeLaneBlockedByCapacity = () => false;
+  priorityBehavior.observeHostileNukeThreats = () => {};
+  priorityBehavior.samDemandStrikeTarget = () => demandTarget;
+  priorityBehavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
+  priorityBehavior.shouldDeferNukeForEconomy = () => false;
+  priorityBehavior.collectCandidatesWithRetry = async (...args) => {
+    counterforceRetargetAllowed = args[4];
+    return { list: [{ tile: 100 }], retargeted: demandTarget };
+  };
+  priorityBehavior.fireNukeFromCandidates = async (_candidates, target) => {
+    counterforceFireTarget = target;
+    return true;
+  };
+  await priorityBehavior.maybeSendNuke();
+  assert.equal(
+    counterforceRetargetAllowed,
+    false,
+    "a counterforce target cannot be replaced during candidate retry",
+  );
+  assert.equal(
+    counterforceFireTarget,
+    wrappedOwner,
+    "the launch-owner target survives SAM-demand selection through the firing call",
+  );
   priorityBehavior.removeOldNukeEvents = () => {};
   priorityBehavior.isScorableNukeTile = () => 1;
   priorityBehavior.nukeTileScore = (tile) => (tile === 100 ? 10 : 1000);
@@ -2225,6 +2282,51 @@ assert.equal(
     candidates[0]?.tile,
     100,
     "the observed launch Silo ranks before a higher-value decoy target",
+  );
+}
+
+// A post-salvo Hydrogen finisher must pass the same hard friendly-land veto
+// as every other launch, even when enemy structure value covers replacement.
+{
+  const finisher = Object.create(sandbox.__NukeBehavior.prototype);
+  const pending = { targetSmallID: 9, targetTile: 100, dueTick: 1, salvoId: 900 };
+  const enemy = { smallID: () => 9 };
+  let emitted = 0;
+  finisher._pendingNukeLaunches = [];
+  sandbox.state.postSalvoHydrogen = pending;
+  finisher.game = {
+    ticks: () => 10,
+    config: () => ({ isUnitDisabled: () => false }),
+  };
+  finisher.player = {
+    gold: () => 1_000_000n,
+    units: (type) => (type === UNIT.MissileSilo ? [{ isUnderConstruction: () => false }] : []),
+  };
+  finisher.postSalvoHydrogenTarget = () => enemy;
+  finisher.extendFinisherForLiveAtoms = () => 0;
+  finisher.getPerceivedNukeCost = async () => 1n;
+  finisher.findEnemySamsCoveringTile = () => [];
+  finisher.postSalvoHydrogenHasValue = () => true;
+  finisher.observeHostileNukeThreats = () => {};
+  finisher.isEligibleNukeTarget = () => true;
+  finisher.isValidNukeDestination = () => true;
+  finisher.probeNukeBuildable = async () => ({ cost: 1n });
+  finisher.nukeBuildableCanLaunch = () => true;
+  finisher.shouldHoldCounterforceNuke = async () => false;
+  finisher.blastHitsFriendlyLand = () => true;
+  finisher.nukeLaunchRouteViable = () => true;
+  finisher.emitNukeWithSalvoFlight = () => {
+    emitted++;
+    return true;
+  };
+  finisher.rememberSuccessfulNukeLaunch = async () => {};
+
+  assert.equal(await finisher.maybeFirePostSalvoHydrogen(), false);
+  assert.equal(emitted, 0, "no Hydrogen launch is emitted into friendly land");
+  assert.equal(
+    sandbox.state.postSalvoHydrogen,
+    pending,
+    "the finisher remains pending so it can retry after friendly land is clear",
   );
 }
 

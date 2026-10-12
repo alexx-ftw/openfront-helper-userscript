@@ -114,7 +114,11 @@ const candidates = await behavior.legendaryConstructionCandidates({
 });
 
 assert.equal(quoteCalls.length, 1, "all productive structure prices use one batched quote request");
-assert.equal(quoteCalls[0].tile, undefined, "the price-only request does not claim placement legality");
+assert.equal(
+  quoteCalls[0].tile,
+  undefined,
+  "the price-only request does not claim placement legality",
+);
 assert.deepEqual(quoteCalls[0].types, [UNIT.Factory, UNIT.Port, UNIT.City]);
 assert.equal(candidates[0].cost, 125_000n, "candidate pricing uses the live BuildableUnit quote");
 assert.equal(
@@ -127,7 +131,11 @@ assert.equal(
 );
 
 const ranked = behavior.legendaryConstructionActionGroups(candidates, true)[0];
-assert.equal(ranked[0].type, UNIT.City, "the quoted price makes the City affordable and rankable now");
+assert.equal(
+  ranked[0].type,
+  UNIT.City,
+  "the quoted price makes the City affordable and rankable now",
+);
 assert.notEqual(ranked[0].action, "wait");
 
 const estimatedCandidate = {
@@ -162,5 +170,158 @@ assert.equal(
   "Wait",
   "a failed quote does not make the captured City appear affordable",
 );
+
+const originalOwnedLevels = behavior.ownedLevels;
+for (const [type, placementKey] of [
+  [UNIT.Factory, "factoryPlacementTile"],
+  [UNIT.Port, "portPlacementTile"],
+]) {
+  const liveQuote = 125_000n;
+  const upgradeCost = 150_000n;
+  const placementTile = 4;
+  behavior.ownedLevels = (ownedType) =>
+    originalOwnedLevels(ownedType) + (ownedType === type ? 1 : 0);
+  const estimate = behavior.cost(type);
+  assert.ok(estimate > availableGold, `${type} estimate is unaffordable`);
+  behavior.player.buildables = async (tile, types) => {
+    return Array.from(types, (quotedType) => ({
+      type: quotedType,
+      cost: quotedType === type ? liveQuote : 250_000n,
+      canBuild: false,
+      canUpgrade: false,
+    }));
+  };
+  behavior.probeLegendaryThroughputUpgradeCandidates = async () => [
+    {
+      type,
+      action: "upgrade",
+      upgradeStructureId: `${type}-productive-upgrade`,
+      upgradeCost,
+      netTeamGold: 100_000n,
+      mandatory: 0,
+      safety: 0,
+      capacity: 0,
+    },
+  ];
+  behavior.addLegendaryCityCandidates = () => {};
+  behavior.addLegendaryCityRouteCandidates = () => {};
+  behavior.addLegendaryPortRouteCandidates = function (context) {
+    if (type === UNIT.Port) {
+      this.addLegendaryConstructionCandidate(context, type, {
+        [placementKey]: placementTile,
+        netTeamGold: 120_000n,
+      });
+    }
+  };
+  behavior.addLegendaryFactoryRouteCandidates = function (context) {
+    if (type === UNIT.Factory) {
+      this.addLegendaryConstructionCandidate(context, type, {
+        [placementKey]: placementTile,
+        netTeamGold: 120_000n,
+      });
+    }
+  };
+  behavior.addLegendaryRatioCandidate = () => {};
+
+  const candidates = await behavior.legendaryConstructionCandidates({
+    config: { isUnitDisabled: () => false },
+    citiesDisabled: false,
+    cityCount: 2,
+    hasCoastalTiles: true,
+    hasOceanPortTiles: true,
+    missileSilosEnabled: false,
+    nukesEnabled: false,
+  });
+  const routeCandidate = candidates.find(
+    (candidate) => candidate.type === type && candidate.action !== "upgrade",
+  );
+  assert.equal(routeCandidate.cost, liveQuote, `${type} ranking uses the live quote`);
+  const actions = behavior.legendaryConstructionActionGroups(candidates, true)[0];
+  assert.equal(actions[0].type, type, `${type} outranks its lower-value upgrade at the live price`);
+  assert.equal(actions[0].action, undefined);
+
+  let emitted;
+  behavior.maybeSpawnStructure = async (buildType, options) => {
+    emitted = { buildType, options };
+    return true;
+  };
+  assert.equal(
+    await behavior.legendaryConstructionActionGroupResult(actions, [actions], 0),
+    "built",
+  );
+  assert.equal(emitted.buildType, type);
+  assert.equal(emitted.options.legendaryEconomyCostQuote, liveQuote);
+  assert.equal(
+    behavior.constructionCostForOptions(type, emitted.options),
+    liveQuote,
+    `${type} actuation affordability reuses the quote that won ranking`,
+  );
+
+  const staleActions = behavior.legendaryConstructionActionGroups(
+    candidates.map((candidate) =>
+      candidate === routeCandidate
+        ? { ...candidate, cost: estimate, affordable: false }
+        : candidate,
+    ),
+    true,
+  )[0];
+  assert.ok(
+    staleActions[0]?.action,
+    `${type} fallback estimate would retain the upgrade or wait instead of building`,
+  );
+}
+behavior.ownedLevels = originalOwnedLevels;
+
+const mandatoryCityWithoutReturn = {
+  type: UNIT.City,
+  cost: 100_000n,
+  netTeamGold: 0n,
+  mandatory: 1,
+  capacity: 0,
+};
+assert.equal(
+  behavior.legendaryConstructionActionGroups([mandatoryCityWithoutReturn], true)[0].length,
+  0,
+  "the inherited first-two-City flag does not bypass the positive-value gate",
+);
+assert.equal(
+  behavior.legendaryConstructionActionGroups(
+    [
+      { ...mandatoryCityWithoutReturn, netTeamGold: 50_000n },
+      { type: UNIT.Factory, cost: 100_000n, netTeamGold: 200_000n, capacity: 0 },
+    ],
+    true,
+  )[0][0].type,
+  UNIT.Factory,
+  "a lower-profit mandatory City does not displace the best positive economy action",
+);
+
+const landlockedDispatch = Object.create(sandbox.__StructureBehavior.prototype);
+let rankedLandlockedCalls = 0;
+let faithfulLandlockedCalls = 0;
+landlockedDispatch.legendaryBigStartGame = () => false;
+landlockedDispatch.structureBuildContext = () => ({
+  difficulty: Difficulty.Legendary,
+  economyGrowthPriority: false,
+  hasCoastalTiles: false,
+  hasOceanPortTiles: false,
+});
+landlockedDispatch.handleOpeningStructurePriorities = async () => false;
+landlockedDispatch.maybeOpenLandlockedLegendaryArsenal = async () => false;
+landlockedDispatch.hasAnyShoreBorderTile = () => false;
+landlockedDispatch.doHandleLegendaryStructures = async (context) => {
+  rankedLandlockedCalls++;
+  assert.equal(context.hasOceanPortTiles, false);
+  assert.equal(context.hasCoastalTiles, false);
+  return true;
+};
+landlockedDispatch.handleMissileSiloParity = async () => false;
+landlockedDispatch.handleOrdinaryStructurePriorities = async () => {
+  faithfulLandlockedCalls++;
+  return false;
+};
+assert.equal(await landlockedDispatch.doHandleStructures(), true);
+assert.equal(rankedLandlockedCalls, 1, "landlocked Legendary uses the ranked planner");
+assert.equal(faithfulLandlockedCalls, 0, "landlocked Legendary skips the fixed economy order");
 
 process.stdout.write("legendary economy live-cost quote test passed\n");

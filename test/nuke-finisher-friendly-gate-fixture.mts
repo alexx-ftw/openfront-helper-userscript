@@ -10,18 +10,17 @@ import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapte
 
 // The post-salvo Hydrogen finisher fires the largest blast circle the bot
 // owns (outer 100). Offensive-reach silo placement deliberately moves our
-// silos toward hostile centers, so the finisher must price friendly-fire
-// with the same monetary geometry as the anti-SAM aim selector: fire only
-// when remaining enemy structure value covers the friendly replacement
-// loss. An own forward silo inside the circle holds and clears the
-// finisher; without one, the finisher still launches.
+// silos toward hostile centers, so the finisher must never trade friendly land
+// or building loss for enemy structure value. An own forward silo inside the
+// circle holds the finisher even when the enemy has a MIRV-capable silo; with
+// no friendly land inside, the finisher can launch.
 for (const c of [
   { forwardSilo: true, expectFired: false, label: "own silo inside the circle" },
   {
     forwardSilo: true,
     mirvTarget: true,
-    expectFired: true,
-    label: "mirv-capable enemy silo outweighs own silo loss",
+    expectFired: false,
+    label: "enemy value never outweighs friendly building loss",
   },
   { forwardSilo: false, expectFired: true, label: "no friendly structure inside" },
 ]) {

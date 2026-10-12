@@ -68,6 +68,14 @@ placement scorer also uses engine rail connectivity, friendly ally
 power/proximity, the own border nearest the team's geometric center, and
 trajectory-aware SAM coverage.
 
+`// DIVERGENCE:` Legendary adaptive construction ranks City/Factory/Port
+candidates on landlocked as well as water-access maps. Without an existing
+route, only the deterministic two-owner seed on mutually tradeable shared water
+is admitted; no third-owner duplicate is eligible. Other difficulty tiers keep
+the native fixed structure order. The inherited first-two-Cities flag does not
+bypass the positive-value gate or displace a higher-value positive economy
+action. City capacity value is available only under troop-cap pressure.
+
 Legendary compares each feasible City/Factory/Port build or throughput upgrade
 by projected net team gold over the remaining match horizon (live
 `maxTimerValue`, construction delay, global saturation, and route travel, minus
@@ -738,6 +746,11 @@ before emission (Legendary only, where SAM-overwhelm salvos exist):
   `nukeWantSlots` capacity demand against the live SAM layout (via
   `rememberFailedSamTarget` + `createSamOverwhelmPlan`), or releases it when
   no hostile SAM covers the tile anymore.
+- Every nuclear launch, including the post-salvo Hydrogen finisher, keeps the
+  hard `blastHitsFriendlyLand` veto after its async buildability probe. Enemy
+  structure value or replacement-cost scoring cannot authorize friendly-land
+  damage. A rejected finisher stays pending for a later safe retry; do not add
+  an `allowFriendlyBlast` bypass.
 - `samSalvoStillViable` now filters the planned `coveringSamIds` out of the
   penetration/overkill re-check for every salvo entry, and `fireSamSalvo`
   attaches those ids (deep-copied in `queueDelayedNukeLaunch`) to each delayed
