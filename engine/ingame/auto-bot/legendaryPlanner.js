@@ -309,7 +309,15 @@ function legendaryStructureHorizonTicks(game, tick, player) {
     1,
     Number(config?.msPerTick?.() ?? 100),
   );
-  const currentTick = Math.max(0, Number(tick) || 0);
+  // Client GameView exposes ticksSinceStart() (GameView.ts:1171-1177), which
+  // already subtracts the spawn-phase startTick the raw tick includes. Fixtures
+  // without that method keep the raw tick (equivalent for tick 0 fixtures).
+  const currentTick = Math.max(
+    0,
+    typeof game?.ticksSinceStart === "function"
+      ? Number(game.ticksSinceStart()) || 0
+      : Number(tick) || 0,
+  );
   // DIVERGENCE: without a configured match timer, WinCheckExecution's
   // 170-minute hard cap is the only deterministic horizon exposed by source.
   const usefulMinutes = Math.min(
@@ -568,6 +576,7 @@ function legendaryEconomyNetGold(
   if (productiveTicks <= 0) return { refused: true };
 
   let incomePerTick;
+  let portPlacementTile;
   if (type === "Factory" || type === "City") {
     if (typeof config?.trainSpawnRate !== "function") return null;
     const trainCount = Math.max(0, Math.floor(Number(inputs.trainCount ?? 0)));
@@ -950,6 +959,18 @@ function legendaryEconomyNetGold(
       }, 0);
     const candidatePortIncome = (profile) =>
       routeIncome(profile, 1) + incomingRouteIncome(profile);
+    const selectPortCandidate = (profiles) => {
+      let profile = null;
+      let gold = -Infinity;
+      for (const candidate of profiles) {
+        const candidateGold = candidatePortIncome(candidate);
+        if (profile === null || candidateGold > gold) {
+          profile = candidate;
+          gold = candidateGold;
+        }
+      }
+      return { profile, gold };
+    };
     let totalTeamGold = 0;
     if (inputs.upgradeAction === true) {
       const portUpgradeProfiles = inputs.portUpgradeProfiles ?? {};
@@ -964,14 +985,21 @@ function legendaryEconomyNetGold(
       ) + incomingRouteIncome(profile);
     } else if (inputs.hasCompletedTradePartner === true) {
       const candidateProfiles = inputs.portCandidateProfiles ?? [];
-      totalTeamGold = candidateProfiles.length > 0
-        ? Math.max(...candidateProfiles.map(candidatePortIncome))
-        : candidatePortIncome(inputs);
+      if (candidateProfiles.length > 0) {
+        const selected = selectPortCandidate(candidateProfiles);
+        totalTeamGold = selected.gold;
+        portPlacementTile = selected.profile?.placementTile;
+      } else {
+        totalTeamGold = candidatePortIncome(inputs);
+      }
     } else {
       const seedSources = Array.isArray(inputs.portSeedSources)
         ? inputs.portSeedSources
         : [];
       if (seedSources.length > 0) {
+        portPlacementTile = seedSources.find(
+          (source) => source.portSeedStream === "own",
+        )?.placementTile;
         // With no committed partner Port on the shared water,
         // PortExecution.tradingPorts() is empty: our port spawns no ships and
         // the partner has no port to spawn from. The seed pair is income only
@@ -995,9 +1023,13 @@ function legendaryEconomyNetGold(
         }
       } else if (inputs.hasPendingTradePartner === true) {
         const candidateProfiles = inputs.portCandidateProfiles ?? [];
-        totalTeamGold = candidateProfiles.length > 0
-          ? Math.max(...candidateProfiles.map(candidatePortIncome))
-          : candidatePortIncome(inputs);
+        if (candidateProfiles.length > 0) {
+          const selected = selectPortCandidate(candidateProfiles);
+          totalTeamGold = selected.gold;
+          portPlacementTile = selected.profile?.placementTile;
+        } else {
+          totalTeamGold = candidatePortIncome(inputs);
+        }
       } else {
         return { refused: true };
       }
@@ -1022,6 +1054,7 @@ function legendaryEconomyNetGold(
       incomePerTick > 0 ? costNumber / incomePerTick : Infinity,
     incomePerTick,
     productiveTicks: eligibleTicks,
+    ...(portPlacementTile === undefined ? {} : { portPlacementTile }),
   };
 }
 

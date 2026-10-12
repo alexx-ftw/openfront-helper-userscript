@@ -4207,7 +4207,7 @@ const originalEconomicBuildLegendaryCheck = sandbox.isLegendaryDifficulty;
 testDifficulty = Difficulty.Legendary;
 sandbox.isLegendaryDifficulty = () => true;
 const economicBuildFirstBehavior = Object.create(sandbox.__StructureBehavior.prototype);
-const existingEconomicStructure = { isUnderConstruction: () => false };
+const existingEconomicStructure = { isUnderConstruction: () => false, level: () => 1 };
 let economicUpgradeCalls = 0;
 const newCityBuildable = { canBuild: 456, canUpgrade: false };
 economicBuildFirstBehavior.structureSpawnEligible = () => true;
@@ -4300,7 +4300,15 @@ sandbox.isLegendaryDifficulty = () => true;
 for (const type of [UNIT.City, UNIT.Factory, UNIT.Port]) {
   const legendaryLegalBuildBehavior = Object.create(sandbox.__StructureBehavior.prototype);
   let upgradeProbeCount = 0;
-  const legalBuildable = { canBuild: `${type}-legendary-site`, canUpgrade: false };
+  const candidate = {
+    type,
+    ...(type === UNIT.Port ? { portPlacementTile: 1 } : {}),
+  };
+  const legalBuildable = {
+    type,
+    canBuild: type === UNIT.Port ? 1 : `${type}-legendary-site`,
+    canUpgrade: false,
+  };
   legendaryLegalBuildBehavior.player = {
     gold: () => 10n,
     units: (unitType) =>
@@ -4316,13 +4324,15 @@ for (const type of [UNIT.City, UNIT.Factory, UNIT.Port]) {
   legendaryLegalBuildBehavior.ownSamCapacity = () => 1;
   legendaryLegalBuildBehavior.ownProjectedSamCapacity = () => 1;
   legendaryLegalBuildBehavior.legendaryMissileDefenseUrgent = () => false;
-  legendaryLegalBuildBehavior.legendaryConstructionCandidates = () => [{ type }];
-  legendaryLegalBuildBehavior.legendaryConstructionActionGroups = () => [[{ type }]];
+  legendaryLegalBuildBehavior.legendaryConstructionCandidates = () => [candidate];
+  legendaryLegalBuildBehavior.legendaryConstructionActionGroups = () => [[candidate]];
   legendaryLegalBuildBehavior.structureSpawnEligible = () => true;
+  legendaryLegalBuildBehavior.cost = () => 1n;
   legendaryLegalBuildBehavior.getConstructionCost = () => 1n;
   legendaryLegalBuildBehavior.availableGoldAfterReserve = () => 10n;
   legendaryLegalBuildBehavior.hasStructureUnderConstruction = () => false;
   legendaryLegalBuildBehavior.structureSpawnTile = async () => legalBuildable;
+  legendaryLegalBuildBehavior.isSafeBuildablePlacement = () => true;
   legendaryLegalBuildBehavior.structureUpgradeBeforeSpawn = async () => {
     upgradeProbeCount++;
     return true;

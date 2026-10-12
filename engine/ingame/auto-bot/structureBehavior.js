@@ -43,8 +43,13 @@
 //     compute min(count, 0|1) — wrong, and would also corrupt cityCount/targetCount/
 //     owned-multipliers (strategy, not just cost) once anything is upgraded. We
 //     therefore reproduce each cost FORMULA from src/core/configuration/Config.ts
-//     directly as BigInt, with `numUnits = ownedLevels(type)` (see DIVERGENCE on
-//     ownedLevels below). Config scalar reads (samRange/defaultSamRange/
+//     directly as BigInt, with `numUnits = ownedLevels(type)`. The costWrapper
+//     counts min(unitsOwned, unitsConstructed) where recordUnitConstructed
+//     fires on EVERY build AND upgrade (PlayerImpl.ts:1414,1496-1501), so for
+//     each live unit constructed == 1 + (level - 1) == level and the level sum
+//     reproduces the min exactly — except captured units (untrackable client
+//     side, cost would be lower; documented DIVERGENCE, conservative). Config
+//     scalar reads (samRange/defaultSamRange/
 //     trainGold/trainStationMin|MaxRange/nukeMagnitudes/startingGold/isUnitDisabled)
 //     go through the `game.config()` passthrough unchanged.
 //   - DATA SHIMS (the two genuinely-missing datasets): `game.sharedWaterComponents`
@@ -2888,6 +2893,33 @@
             ? await this.maybeUpgradeLegendaryCityCapacity(candidate)
             : await this.maybeUpgradeLegendaryThroughput(candidate);
           if (upgraded) {
+            return "built";
+          }
+          continue;
+        }
+        if (candidate.type === UNIT.Port) {
+          if (
+            candidate.portPlacementTile === null ||
+            candidate.portPlacementTile === undefined
+          ) {
+            continue;
+          }
+          if (
+            await this.maybeSpawnStructure(UNIT.Port, {
+              useActualCost: true,
+              legendaryEconomyPortTile: candidate.portPlacementTile,
+            })
+          ) {
+            return "built";
+          }
+          continue;
+        }
+        if (ECONOMIC_STRUCTURE_TYPES.includes(candidate.type)) {
+          if (
+            await this.maybeSpawnStructure(candidate.type, {
+              useActualCost: true,
+            })
+          ) {
             return "built";
           }
           continue;
@@ -10103,6 +10135,12 @@
         (units ?? []).reduce((total, unit) => total + levelOf(unit), 0);
       const trainGold = (relation, source) => {
         const player = source?.__src ?? source;
+        // DIVERGENCE: Config.ts:481-507 decays each TRAIN's payout after its
+        // 10th cumulative stop (floor 5k) via the train-internal
+        // tradeStopsVisited counter, which the client does not expose. This
+        // valuation prices every stop at full base — it overestimates mature
+        // saturated rail networks. GLOBAL saturation (spawn-rate denominators
+        // vs the live train count) is modeled separately.
         return typeof config?.trainGold === "function" &&
             typeof player?.isLobbyCreator === "function"
           ? Number(config.trainGold(relation, 1, player))
@@ -10587,6 +10625,7 @@
         const profile = this.legendaryPortRouteProfile(tile, ownPlayer, foreignPorts);
         if (profile) {
           profile.inboundSources = this.legendaryPortInboundSources(tile);
+          profile.placementTile = tile;
           portCandidateProfiles.push(profile);
         }
         if (
@@ -10659,7 +10698,12 @@
               if (!ownProfile || !partnerProfile) continue;
               const candidate = {
                 sources: [
-                  { ...ownProfile, level: 1, portSeedStream: "own" },
+                  {
+                    ...ownProfile,
+                    level: 1,
+                    portSeedStream: "own",
+                    placementTile: ownTile,
+                  },
                   {
                     ...partnerProfile,
                     level: 1,
@@ -10887,9 +10931,9 @@
       const ports = this.legendaryPortsForOwners(
         this.legendaryPortOwnersIncludingSelf(),
       );
-      const completedPorts = ports.filter(
-        ({ unit }) => unit?.isUnderConstruction?.() !== true,
-      );
+      // Engine-faithful (PortExecution.ts:107-129): pending Ports remain valid
+      // trade-ship destinations — they pay on arrival once active, so each
+      // pending source keeps its construction delay instead of vanishing.
       const targetUnit = targetPort
         ? { isUnderConstruction: () => false, level: () => upgradedLevel }
         : { isUnderConstruction: () => true, level: () => 1 };
@@ -10902,10 +10946,14 @@
         .map((source) => {
           const profiles = this.legendaryPortInboundProfiles(
             source,
-            completedPorts,
+            ports,
             { ownPlayer, tile, targetPort, targetUnit },
           );
-          return this.legendaryPortInboundSource(source, profiles, constructionTicks);
+          return this.legendaryPortInboundSource(
+            source,
+            profiles,
+            constructionTicks,
+          );
         })
         .filter(Boolean);
     }
@@ -11512,15 +11560,20 @@
       // An upgrade candidate carries the authoritative probe cost: upgrading an
       // existing City must never be pre-rejected (or pre-priced) with the
       // count-scaled formula for constructing another new structure.
-      // Productive candidates likewise carry their real next-build price
-      // (getConstructionCost already does this under win-fixes): the
+      // Productive candidates use the live structure price, not the perceived
+      // save-up price: the
       // perceived-cost save-up multiplier priced a second Port at 1M after
       // one Port + two Factories, so the planner's Wait action dominated at
       // every post-Atom-drain treasury level and the fleet economy never
       // got funded (measured on Baikal: candidates present, groups all Wait).
-      const cost = values.upgradeCost !== undefined
-        ? legendaryBigInt(values.upgradeCost)
-        : this.getConstructionCost(type);
+      let cost;
+      if (values.upgradeCost !== undefined) {
+        cost = legendaryBigInt(values.upgradeCost);
+      } else if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
+        cost = this.cost(type);
+      } else {
+        cost = this.getConstructionCost(type);
+      }
       const objective = legendaryConstructionObjectiveVector(type, {
         ...context.strategicState,
         costFactor: this.legendaryCostFactor(cost),
@@ -11547,6 +11600,15 @@
           );
         } else {
           valuesWithPolicy.netTeamGold = 0n;
+        }
+        if (type === UNIT.Port && values.action !== "upgrade") {
+          const seedTile = context.strategicState?.economyInputs?.portSeedSources?.find(
+            (source) => source.portSeedStream === "own",
+          )?.placementTile;
+          const placementTile = evaluation?.portPlacementTile ?? seedTile;
+          if (placementTile !== null && placementTile !== undefined) {
+            valuesWithPolicy.portPlacementTile = placementTile;
+          }
         }
       }
       if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
@@ -11868,10 +11930,15 @@
     // src: this.game.unitInfo(type).cost(this.game, this.player).
     // DIVERGENCE: reproduced from the Config.ts cost formulas as BigInt (the
     // passthrough cost fn would mis-compute numUnits from the client's
-    // count/boolean unitsOwned/unitsConstructed — see ownedLevels). numUnits is
-    // the core-faithful level-sum; Port/Factory combine BOTH types per the
-    // costWrapper arglist (Config.ts:309-401). MIRV uses the base price only
-    // (numMirvsLaunched is core-only) — see getSaveUpTarget DIVERGENCE.
+    // count/boolean unitsOwned/unitsConstructed). numUnits is the level sum:
+    // the costWrapper min(unitsOwned, unitsConstructed) collapses to the level
+    // sum because recordUnitConstructed fires per build AND per upgrade
+    // (PlayerImpl.ts:1414,1496-1501), so constructed == level for every live
+    // unit the client can see. Captured units are the one gap (client cannot
+    // distinguish them; engine price would be LOWER). Port/Factory combine
+    // BOTH types per the costWrapper arglist (Config.ts:597-606/670-690).
+    // MIRV uses the base price only (numMirvsLaunched is core-only) — see
+    // getSaveUpTarget DIVERGENCE.
     cost(type) {
       switch (type) {
         case UNIT.Port: {
@@ -11954,7 +12021,14 @@
       // Therefore it must never be converted into an upgrade. The planner may
       // upgrade an economic structure only when a future exhaustive placement
       // result explicitly supplies economicSpaceExhausted=true.
-      if (this.economicStructureSpawnPending(economicType, structures)) {
+      const profiledLegendaryPort =
+        type === UNIT.Port &&
+        options.legendaryEconomyPortTile !== null &&
+        options.legendaryEconomyPortTile !== undefined;
+      if (
+        this.economicStructureSpawnPending(economicType, structures) &&
+        !profiledLegendaryPort
+      ) {
         return false;
       }
 
@@ -11993,6 +12067,12 @@
       if (buildable === null) return finishSiloStage(false);
       if (typeof buildable === "boolean") return finishSiloStage(buildable);
       if (
+        profiledLegendaryPort &&
+        buildable.canBuild !== options.legendaryEconomyPortTile
+      ) {
+        return finishSiloStage(false);
+      }
+      if (
         economicType &&
         this.buildableCostOrFallback(buildable, perceivedCost) >
           this.availableGoldAfterReserve(type, { includeSam: true })
@@ -12019,6 +12099,10 @@
     }
 
     async structureSpawnBuildable(type, structures, economicType, options) {
+      const profiledLegendaryPort =
+        type === UNIT.Port &&
+        options.legendaryEconomyPortTile !== null &&
+        options.legendaryEconomyPortTile !== undefined;
       // RANK-THEN-PROBE: structureSpawnTile now returns the snapped BuildableUnit
       // (the first build-only descriptor down the value-ranked list) instead of
       // a bare TileRef, folding the src `player.canBuild(type, tile)` check into
@@ -12040,11 +12124,15 @@
         return false;
       }
       let buildable = null;
-      if (!economicType || !this.hasPendingEconomicPlacementScan(type)) {
+      if (
+        !economicType ||
+        profiledLegendaryPort ||
+        !this.hasPendingEconomicPlacementScan(type)
+      ) {
         buildable = await this.structureSpawnTile(type, options);
       }
       if (buildable === null) {
-        if (!economicType) return null;
+        if (!economicType || profiledLegendaryPort) return null;
         const placement = await this.findEconomicPlacementOrExhaustion(
           type,
           options,
@@ -12800,9 +12888,12 @@
         ? (this.player.units(UNIT.MissileSilo) || [])
             .filter((silo) => !silo.isUnderConstruction?.())
         : [];
-      return Boolean(
-        nuke.createSamOverwhelmPlan(targetSam, silos)?.capacityMissing,
-      );
+      const plan = nuke.createSamOverwhelmPlan(targetSam, silos);
+      // A refused plan (friendly blast at the aim tile, etc.) cannot close a
+      // live capacity demand — only a closing plan releases it. Keep the
+      // request alive so the Silo still upgrades toward required capacity.
+      if (plan === null) return null;
+      return Boolean(plan.capacityMissing);
     }
 
     routeEligibleSilosForDemand(request) {
@@ -14644,18 +14735,27 @@
     }
 
     structureCandidateTiles(type, options, candidateLimit) {
-      let tiles =
-        type === UNIT.Port
-          ? this.portCandidateTiles(candidateLimit).filter((tile) =>
-              this.portTileHasOpenWaterAccess(tile) &&
-              (!isLegendaryDifficulty() || this.portCandidateHasTradeRoute(tile)),
-            )
-          : randTerritoryTileArray(
+      const profiledLegendaryPort =
+        type === UNIT.Port &&
+        options.legendaryEconomyPortTile !== null &&
+        options.legendaryEconomyPortTile !== undefined;
+      let tiles;
+      if (type === UNIT.Port) {
+        tiles = profiledLegendaryPort
+          ? [options.legendaryEconomyPortTile]
+          : this.portCandidateTiles(candidateLimit);
+        tiles = tiles.filter((tile) =>
+          this.portTileHasOpenWaterAccess(tile) &&
+          (!isLegendaryDifficulty() || this.portCandidateHasTradeRoute(tile)),
+        );
+      } else {
+        tiles = randTerritoryTileArray(
               this.random,
               this.game,
               this.player,
               candidateLimit,
-            );
+        );
+      }
       if (type === UNIT.City) {
         tiles = this.prependCommercialRailCityTiles(tiles, candidateLimit);
       }

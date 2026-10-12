@@ -98,7 +98,12 @@ function makeSalvoWorld() {
       samRange: () => 150,
       isUnitDisabled: () => false,
     }),
-    nearbyUnits: (_tile, _radius, type) => (type === UNIT.SAMLauncher ? world.covering : []),
+    nearbyUnits: (_tile, _radius, type, _from, includeUnderConstruction) =>
+      type === UNIT.SAMLauncher
+        ? world.covering.filter(
+            (entry) => includeUnderConstruction || entry.unit.isUnderConstruction?.() !== true,
+          )
+        : [],
   };
   const player = {
     smallID: () => 1,
@@ -124,6 +129,100 @@ function makeSalvoWorld() {
     type: () => UNIT.SAMLauncher,
   });
   return { world, game, player, nukeTarget, behavior };
+}
+
+{
+  const { game, nukeTarget, behavior } = makeSalvoWorld();
+  const samTile = { x: 5, y: 5 };
+  const unsafeAim = { x: 7, y: 5 };
+  const safeAim = { x: 5, y: 7 };
+  const structures = [{ tile: () => ({ x: 9, y: 5 }) }, { tile: () => ({ x: 5, y: 9 }) }];
+  const targetSam = {
+    id: () => "aim-sam",
+    tile: () => samTile,
+    owner: () => nukeTarget,
+  };
+  nukeTarget.units = (type) => (type === UNIT.City ? structures : []);
+  Object.assign(game, {
+    config: () => ({ nukeMagnitudes: () => ({ outer: 5 }) }),
+    x: (tile) => tile.x,
+    y: (tile) => tile.y,
+    isValidCoord: () => true,
+    ref: (x, y) => ({ x, y }),
+    euclideanDistSquared: (left, right) => (left.x - right.x) ** 2 + (left.y - right.y) ** 2,
+  });
+  behavior.blastHitsFriendlyLand = (tile) =>
+    (tile.x === samTile.x && tile.y === samTile.y) ||
+    (tile.x === unsafeAim.x && tile.y === unsafeAim.y);
+  behavior.blastStructureValue = (tile) => {
+    if (tile.x === unsafeAim.x && tile.y === unsafeAim.y) return 100;
+    if (tile.x === safeAim.x && tile.y === safeAim.y) return 50;
+    return 10;
+  };
+  behavior.friendlyFirePenalty = () => 0;
+  assert.deepEqual(
+    behavior.samSalvoAimTile(targetSam),
+    safeAim,
+    "an unsafe highest-value aim falls back to the best safe aim that still covers the SAM",
+  );
+}
+
+{
+  const { world, game, nukeTarget, behavior } = makeSalvoWorld();
+  const buildingSam = world.sam("building-sam", 2);
+  buildingSam.isUnderConstruction = () => true;
+  world.targetSams.push(buildingSam);
+  world.covering.push({ unit: buildingSam, distSquared: 0 });
+  game.config = () => ({
+    maxSamRange: () => 100,
+    samRange: () => 100,
+    SAMCooldown: () => 100,
+  });
+  game.nearbyUnits = (_tile, _range, type, _predicate, includeUnderConstruction) =>
+    type === UNIT.SAMLauncher && (includeUnderConstruction || !buildingSam.isUnderConstruction())
+      ? [{ unit: buildingSam, distSquared: 0 }]
+      : [];
+  behavior.samSalvoAimTile = () => 20;
+  behavior.getAvailableSiloEntries = () =>
+    [10, 20, 30].map((flightTicks) => ({
+      flightTicks,
+      interceptable: false,
+    }));
+  behavior.createSamLaunchSequence = (entries) => entries;
+  const plan = behavior.createSamOverwhelmPlan(buildingSam, [{}]);
+  assert.equal(
+    plan.coveringSamLevels,
+    2,
+    "capacity planning includes a hostile SAM that can finish construction before impact",
+  );
+  assert.equal(plan.totalBombs, 3);
+
+  behavior.samSalvoCapacityAtArrival = () => 2;
+  behavior.samSalvoLiveCapacitySpend = () => 0;
+  assert.equal(
+    behavior.samSalvoStillViable(
+      { targetPlayer: nukeTarget, salvo: { targetTile: 20, targetSamId: buildingSam.id() } },
+      1,
+      30,
+    ),
+    false,
+    "in-flight salvo rechecks account for SAMs under construction",
+  );
+
+  world.covering = [];
+  const stalePlan = {
+    targetTile: 20,
+    targetSamId: buildingSam.id(),
+    coveringSamIds: new Set(),
+    totalBombs: 1,
+  };
+  const launchMetadata = behavior.nextSamSalvoPlan(stalePlan);
+  world.covering.push({ unit: buildingSam, distSquared: 0 });
+  assert.equal(
+    behavior.samSalvoLaunchStillViable(20, nukeTarget, launchMetadata),
+    false,
+    "a SAM started during the async probe aborts an undersized first launch",
+  );
 }
 
 {
@@ -2195,6 +2294,44 @@ launchSink = null;
   );
 }
 
+{
+  // Projected coverage: a SAM still under construction completes before any
+  // in-flight bomb lands, so it must block the finisher like an armed one.
+  const { world, nukeTarget, behavior } = makeSalvoWorld();
+  launches.length = 0;
+  behavior.player.gold = () => 10_000_000n;
+  behavior.getPerceivedNukeCost = async () => 5_000_000n;
+  behavior.player.units = (type) =>
+    type === UNIT.MissileSilo
+      ? [
+          {
+            isUnderConstruction: () => false,
+            tile: () => 500,
+            level: () => 1,
+            type: () => UNIT.MissileSilo,
+          },
+        ]
+      : [];
+  behavior.player.buildables = async () => [
+    { type: UNIT.HydrogenBomb, cost: 5_000_000n, canBuild: true },
+  ];
+  const wipSam = world.sam("enemy-sam-wip", 2);
+  wipSam.isUnderConstruction = () => true;
+  world.covering.push({ unit: wipSam, distSquared: 0 });
+  sandbox.state.postSalvoHydrogen = {
+    targetTile: 20,
+    dueTick: world.tick,
+    targetSmallID: nukeTarget.smallID(),
+  };
+  assert.equal(
+    await behavior.maybeFirePostSalvoHydrogen(),
+    false,
+    "a SAM under construction already blocks the Hydrogen finisher",
+  );
+  assert.deepEqual(launches, [], "nothing launched into projected coverage");
+  sandbox.state.postSalvoHydrogen = null;
+}
+
 launchSink = null;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2917,18 +3054,25 @@ for (const difficulty of ["Hard", "Legendary"]) {
   assert.equal(behavior._pendingNukeLaunches.length, 0);
 }
 
-for (const difficulty of ["Hard", "Impossible"]) {
+for (const difficulty of ["Hard", "Impossible", "Legendary"]) {
   const { world, game, player, nukeTarget, behavior } = makeSalvoWorld();
   nukeTarget.isPlayer = () => true;
   nukeTarget.type = () => sandbox.PlayerType.Nation;
   game.owner = () => nukeTarget;
   const plannedSamId = `${difficulty}-planned-sam`;
   const newSamId = `${difficulty}-new-sam`;
+  const newSamUnderConstruction = difficulty === "Legendary";
   const routeSamIds = new Set([plannedSamId]);
   let blockDuringProbe = true;
   behavior.nukeSpawn = () => 11;
-  behavior.isTrajectoryInterceptableBySam = (_spawn, _tile, excludedSamIds) =>
-    [...routeSamIds].some((samId) => !excludedSamIds?.has(samId));
+  behavior.isTrajectoryInterceptableBySam = (_spawn, _tile, excludedSamIds, options = {}) =>
+    [...routeSamIds].some(
+      (samId) =>
+        !excludedSamIds?.has(samId) &&
+        (samId !== newSamId ||
+          !newSamUnderConstruction ||
+          options.includeUnderConstruction === true),
+    );
   behavior.rememberSuccessfulNukeLaunch = async () => {};
   player.buildables = async () => {
     if (blockDuringProbe) routeSamIds.add(newSamId);
@@ -3062,6 +3206,138 @@ for (const difficulty of ["Hard", "Impossible"]) {
     sandbox.currentDifficulty = previousDifficulty;
     launchSink = null;
   }
+}
+
+{
+  const { player, nukeTarget, behavior } = makeSalvoWorld();
+  const incomingTarget = { smallID: () => 3, isAlive: () => true };
+  player.units = () => [];
+  behavior.nukeLaneBlockedByCapacity = () => false;
+  behavior.samDemandStrikeTarget = () => nukeTarget;
+  behavior.attackBehavior.findIncomingAttackPlayer = () => incomingTarget;
+  behavior.isEligibleNukeTarget = (target) => target !== null;
+  behavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
+  behavior.shouldDeferNukeForEconomy = () => false;
+  let selectedTarget = null;
+  behavior.collectCandidatesWithRetry = async (target) => {
+    selectedTarget = target;
+    return { list: [], retargeted: null };
+  };
+  behavior.fireNukeFromCandidates = async () => true;
+  await behavior.maybeSendNuke();
+  assert.equal(
+    selectedTarget,
+    incomingTarget,
+    "immediate retaliation keeps survival priority over a pending Silo-capacity demand",
+  );
+  let fireTarget = null;
+  behavior.fireNukeFromCandidates = async (_candidates, target) => {
+    fireTarget = target;
+    return true;
+  };
+  behavior.collectCandidatesWithRetry = async (target) => {
+    selectedTarget = target;
+    return { list: [], retargeted: { smallID: () => 4, isAlive: () => true } };
+  };
+  await behavior.maybeSendNuke();
+  assert.equal(
+    fireTarget,
+    incomingTarget,
+    "the dispatch preserves the survival target over both the demand and candidate retarget",
+  );
+}
+
+{
+  const { game, behavior } = makeSalvoWorld();
+  let includedUnderConstruction = false;
+  game.nearbyUnits = (_tile, _radius, _type, _predicate, include) => {
+    includedUnderConstruction = include;
+    return [];
+  };
+  behavior.hasReachableSamAtTrajectoryIndex(20, [], 0, undefined, {
+    includeUnderConstruction: true,
+  });
+  assert.equal(
+    includedUnderConstruction,
+    true,
+    "route interception queries request SAMs under construction during salvo revalidation",
+  );
+}
+
+{
+  const { behavior, world } = makeSalvoWorld();
+  const wipSam = world.sam("aborted-route-sam-wip", 1);
+  wipSam.isUnderConstruction = () => true;
+  world.covering.push({ unit: wipSam, distSquared: 0 });
+  behavior.isValidNukeTarget = () => true;
+  const covering = behavior.abortedSamCoverage({ tile: 20 });
+  assert.equal(
+    covering[0]?.id(),
+    wipSam.id(),
+    "aborted capacity demand keeps projected SAM coverage alive for re-arming",
+  );
+}
+
+{
+  // Demand serviced first — but only when it coincides with the lane objective.
+  const { behavior } = makeSalvoWorld();
+  const demandTarget = { smallID: () => 7, isAlive: () => true };
+  behavior.samDemandStrikeTarget = () => demandTarget;
+  behavior.partitionCandidatesBySamCoverage = () => ({ clear: [], routeBlockedTile: null });
+  const demandCalls = [];
+  behavior.maybeDestroyEnemySam = async (...args) => {
+    demandCalls.push(args);
+    return true;
+  };
+  let clearCalls = 0;
+  behavior.fireLegendaryClearFallthrough = async () => {
+    clearCalls++;
+    return false;
+  };
+  assert.equal(
+    await behavior.fireNukeFromCandidates(
+      [],
+      demandTarget,
+      { type: UNIT.AtomBomb, cost: 1n },
+      [],
+      "Legendary",
+    ),
+    true,
+    "a matching demand is serviced before any clear-shot lane",
+  );
+  assert.deepEqual(demandCalls, [[demandTarget, false, null]]);
+  assert.equal(clearCalls, 0, "a serviced demand consumes the lane before the clear fallthrough");
+}
+
+{
+  // The demand lane declining yields the silo to the lane objective.
+  const { behavior } = makeSalvoWorld();
+  const demandTarget = { smallID: () => 7, isAlive: () => true };
+  behavior.samDemandStrikeTarget = () => demandTarget;
+  behavior.partitionCandidatesBySamCoverage = () => ({ clear: [], routeBlockedTile: null });
+  const demandCalls = [];
+  behavior.maybeDestroyEnemySam = async (...args) => {
+    demandCalls.push(args);
+    return false;
+  };
+  const clearTargets = [];
+  behavior.fireLegendaryClearFallthrough = async (_clear, target) => {
+    clearTargets.push(target);
+    return true;
+  };
+  assert.equal(
+    await behavior.fireNukeFromCandidates(
+      [],
+      demandTarget,
+      { type: UNIT.AtomBomb, cost: 1n },
+      [],
+      "Legendary",
+    ),
+    true,
+    "a declined demand yields the silo to the lane objective",
+  );
+  assert.deepEqual(demandCalls, [[demandTarget, false, null]]);
+  assert.deepEqual(clearTargets, [demandTarget]);
 }
 
 await import("./nuke-campaign-scenario.mjs");

@@ -2750,6 +2750,16 @@
     "initializerPreview": "10"
   },
   {
+    "id": "engine/ingame/auto-bot/structureBehavior.js:NUKE_DEMAND_SILO_INTENT_GRACE_TICKS#1",
+    "file": "engine/ingame/auto-bot/structureBehavior.js",
+    "name": "NUKE_DEMAND_SILO_INTENT_GRACE_TICKS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5",
+    "initializerLength": 2,
+    "initializerPreview": "10"
+  },
+  {
     "id": "engine/ingame/auto-bot/structureBehavior.js:LEGENDARY_SAM_IMPACT_MARGIN_TICKS#1",
     "file": "engine/ingame/auto-bot/structureBehavior.js",
     "name": "LEGENDARY_SAM_IMPACT_MARGIN_TICKS",

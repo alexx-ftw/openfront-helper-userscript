@@ -580,7 +580,8 @@
       const silos = this.player.units(UNIT.MissileSilo);
       if (this.nukeLaneBlockedByCapacity(silos, tel)) return;
       const demandTarget = this.samDemandStrikeTarget();
-      const target = demandTarget ?? this.findBestNukeTarget();
+      const priority = this.priorityNukeTarget(demandTarget);
+      const target = priority.target;
       if (!this.isEligibleNukeTarget(target)) {
         tel.noTarget += 1;
         return;
@@ -605,7 +606,7 @@
       }
       const ordinaryAction = await this.fireNukeFromCandidates(
         candidates.list,
-        demandTarget ?? candidates.retargeted ?? target,
+        priority.incoming ? target : demandTarget ?? candidates.retargeted ?? target,
         selectedNuke,
         silos,
         difficulty,
@@ -614,6 +615,15 @@
       // FFA endgame survival lane — additive-only: reached only when every
       // ordinary lane declined to fire. See maybeFreezeGiantStrike.
       await this.maybeFreezeGiantStrike(silos, difficulty);
+    }
+
+    // A live survival threat cannot wait behind a long-term Silo-capacity demand.
+    priorityNukeTarget(demandTarget) {
+      const incomingTarget = this.attackBehavior?.findIncomingAttackPlayer?.();
+      if (incomingTarget && this.isEligibleNukeTarget(incomingTarget)) {
+        return { target: incomingTarget, incoming: true };
+      }
+      return { target: demandTarget ?? this.findBestNukeTarget(), incoming: false };
     }
 
     // Shared idle-lane gate: unusable silo set or every tube cooling/queued
@@ -1687,12 +1697,14 @@
       trajectory,
       interceptionIndex,
       excludedSamIds,
-      interceptingSams = null,
+      { interceptingSams = null, includeUnderConstruction = false } = {},
     ) {
       const nearbySams = this.game.nearbyUnits(
         coverageTile,
         this.game.config().maxSamRange(),
         UNIT.SAMLauncher,
+        undefined,
+        includeUnderConstruction,
       );
       let interceptable = false;
       for (const sam of nearbySams) {
@@ -1709,7 +1721,7 @@
       trajectory,
       untargetable,
       excludedSamIds,
-      interceptingSams = null,
+      options = {},
     ) {
       const finalIndex = trajectory.length - 1;
       const penultimateIndex = finalIndex - 1;
@@ -1721,7 +1733,7 @@
         trajectory,
         penultimateIndex,
         excludedSamIds,
-        interceptingSams,
+        options,
       );
     }
 
@@ -1731,8 +1743,9 @@
       spawnTile,
       targetTile,
       excludedSamIds,
-      interceptingSams = null,
+      options = {},
     ) {
+      const { interceptingSams = null } = options;
       const pathFinder = UniversalPathFinding.Parabola(this.game, {
         increment: this.game.config().defaultNukeSpeed(),
         distanceBasedHeight: true,
@@ -1757,7 +1770,7 @@
             trajectory,
             i,
             excludedSamIds,
-            interceptingSams,
+            options,
           )
         ) {
           if (interceptingSams === null) return true;
@@ -1772,7 +1785,7 @@
         trajectory,
         untargetable,
         excludedSamIds,
-        interceptingSams,
+        options,
       ) || interceptable;
     }
 
@@ -2044,6 +2057,8 @@
     // This preserves arrival staggering without blocking the bot or depending
     // on real-time timers, which would drift when game speed changes.
     async sendNuke(tile, nukeType, targetPlayer, waitTicks = 0, salvo = null) {
+      const allowFriendlyBlast = salvo?.allowFriendlyBlast === true;
+      const salvoMetadata = allowFriendlyBlast ? null : salvo;
       const delay = Math.max(0, Math.ceil(Number(waitTicks) || 0));
       this.observeHostileNukeThreats();
       if (delay > 0) {
@@ -2065,7 +2080,7 @@
           nukeType,
           targetPlayer,
           delay,
-          salvo,
+          salvoMetadata,
         );
       }
       if (
@@ -2090,11 +2105,11 @@
       if (
         !this.isEligibleNukeTarget(targetPlayer, false) ||
         !this.isValidNukeDestination(tile, false, targetPlayer) ||
-        this.blastHitsFriendlyLand(tile, nukeType) ||
-        !this.nukeLaunchRouteViable(tile, nukeType, targetPlayer, salvo)
+        (this.blastHitsFriendlyLand(tile, nukeType) && !allowFriendlyBlast) ||
+        !this.nukeLaunchRouteViable(tile, nukeType, targetPlayer, salvoMetadata)
       ) return false;
       // DIVERGENCE: the source can change while the worker prices this shot.
-      if (!this.emitNukeWithSalvoFlight(buildable, tile, salvo)) return false;
+      if (!this.emitNukeWithSalvoFlight(buildable, tile, salvoMetadata)) return false;
       await this.rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer);
       return true;
     }
@@ -2402,7 +2417,7 @@
       // salvo cannot be re-validated, so keep the faithful fire-anyway path.
       if (typeof this.game?.nearbyUnits !== "function") return true;
       const salvo = pending.salvo;
-      const coveringSams = this.findEnemySamsCoveringTile(salvo.targetTile);
+      const coveringSams = this.findEnemySamsCoveringTile(salvo.targetTile, true);
       const coveringLevel = coveringSams.reduce(
         (sum, sam) => sum + sam.level(),
         0,
@@ -2451,24 +2466,39 @@
       const entries = (this._pendingNukeLaunches ?? []).filter(
         (pending) => pending.salvo && pending.salvo.salvoId === salvo.salvoId,
       );
-      if (entries.length > 0) {
-        const now = Number(this.game.ticks());
-        const fired = this._salvoFiredCounts?.get(salvo.salvoId) ?? 0;
+      const now = Number(this.game.ticks());
+      const fired = this._salvoFiredCounts?.get(salvo.salvoId) ?? 0;
+      // Plan-driven salvos always carry remainingLaunches; a direct sendNuke
+      // salvo without it stays on the documented trajectory-only path.
+      let remaining = entries.length + fired;
+      if (entries.length === 0) {
+        remaining = salvo.remainingLaunches == null
+          ? 0
+          : fired + Math.max(0, Number(salvo.remainingLaunches));
+      }
+      if (remaining > 0) {
         const arrivals = entries.map((entry) => {
           const flight = entry.salvo.flightTicks;
           return Number.isFinite(flight) && flight >= 0
             ? Math.max(now, entry.dueTick) + flight
             : NaN;
         });
+        const lastArrivalTick = arrivals.length > 0
+          ? Math.max(...arrivals)
+          : Number(salvo.lastArrivalTick);
         if (!this.samSalvoStillViable(
-          entries[0], entries.length + fired, Math.max(...arrivals),
+          entries[0] ?? { targetPlayer, salvo },
+          remaining,
+          lastArrivalTick,
         )) {
           this._salvoLaunchAbort = salvo.salvoId;
           return false;
         }
       }
       const exempt = new Set([...(salvo.coveringSamIds ?? [])]);
-      if (this.isTrajectoryInterceptableBySam(spawnTile, tile, exempt)) {
+      if (this.isTrajectoryInterceptableBySam(
+        spawnTile, tile, exempt, { includeUnderConstruction: true },
+      )) {
         this._salvoLaunchAbort = salvo.salvoId;
         return false;
       }
@@ -2679,7 +2709,7 @@
           (pinnedTile != null && this.blastHitsFriendlyLand(targetTile, UNIT.AtomBomb))) {
         return null;
       }
-      const coveringSams = this.findEnemySamsCoveringTile(targetTile);
+      const coveringSams = this.findEnemySamsCoveringTile(targetTile, true);
       const coveringSamIds = new Set(coveringSams.map((sam) => sam.id()));
       const coveringSamLevels = coveringSams.reduce(
         (sum, sam) => sum + sam.level(),
@@ -2716,9 +2746,9 @@
       const structures = unitsOfTypes(enemy);
       if (structures.length === 0) return this.safeSamSalvoAimTile(samTile);
       const bestTile = this.bestSamSalvoAimTile(samTile, structures, magnitude, radius);
-      if (!this.blastHitsFriendlyLand(bestTile, UNIT.AtomBomb)) return bestTile;
-      if (bestTile === samTile || this.blastHitsFriendlyLand(samTile, UNIT.AtomBomb)) return null;
-      return samTile;
+      return bestTile !== null && !this.blastHitsFriendlyLand(bestTile, UNIT.AtomBomb)
+        ? bestTile
+        : null;
     }
 
     safeSamSalvoAimTile(tile) {
@@ -2728,10 +2758,14 @@
     bestSamSalvoAimTile(samTile, structures, magnitude, radius) {
       const samX = this.game.x(samTile);
       const samY = this.game.y(samTile);
-      let bestTile = samTile;
+      let bestTile = null;
       // DIVERGENCE: monetary enemy value needs a monetary friendly-loss penalty.
-      let bestValue = this.blastStructureValue(samTile, structures, radius) -
-        this.friendlyFirePenalty(samTile, magnitude, true);
+      let bestValue = -Infinity;
+      if (!this.blastHitsFriendlyLand(samTile, UNIT.AtomBomb)) {
+        bestTile = samTile;
+        bestValue = this.blastStructureValue(samTile, structures, radius) -
+          this.friendlyFirePenalty(samTile, magnitude, true);
+      }
       for (const structure of structures) {
         const tile = structure.tile?.();
         if (tile == null) continue;
@@ -2744,6 +2778,7 @@
         // The SAM itself must remain inside the blast or the salvo loses
         // its anti-SAM purpose.
         if (this.game.euclideanDistSquared(candidate, samTile) >= radius * radius) continue;
+        if (this.blastHitsFriendlyLand(candidate, UNIT.AtomBomb)) continue;
         const value = this.blastStructureValue(candidate, structures, radius) -
           this.friendlyFirePenalty(candidate, magnitude, true);
         if (value > bestValue) {
@@ -2813,13 +2848,17 @@
     async fireSamSalvo(plan, nukeTarget, atomCost) {
       const salvo = this.getSamSalvo(plan);
       const flightTicks = salvo.waits.map((_, index) => plan.launchSequence?.[index]?.flightTicks);
+      const plannedLastArrivalTick = this.samSalvoLastArrivalTick(salvo, flightTicks);
       if (!await this.canStartSamSalvo(plan, nukeTarget, salvo, atomCost)) return false;
       this.ensureSamDemandRequest(plan, salvo);
       // Plan metadata carried by every delayed entry of this salvo so
       // processPendingNukeLaunches can re-validate the enemy SAM layout
       // mid-flight (see samSalvoStillViable). plannedCoveringLevel records the
       // hostile SAM level sum the bomb count was sized against at planning time.
-      const salvoPlan = this.nextSamSalvoPlan(plan);
+      const salvoPlan = this.nextSamSalvoPlan({
+        ...plan,
+        lastArrivalTick: plannedLastArrivalTick,
+      });
       let result;
       try {
         result = await this.launchSamSalvoBombs(plan, nukeTarget, salvo, flightTicks, salvoPlan);
@@ -2874,7 +2913,11 @@
       let queued = false;
       let firedOrQueued = false;
       for (let index = 0; index < salvo.bombsToFire; index++) {
-        const metadata = { ...salvoPlan, flightTicks: flightTicks[index] };
+        const metadata = {
+          ...salvoPlan,
+          remainingLaunches: salvo.bombsToFire - index,
+          flightTicks: flightTicks[index],
+        };
         const wait = Math.max(salvo.waits[index], queued ? 1 : 0);
         const sent = await this.sendNuke(
           plan.targetTile, UNIT.AtomBomb, nukeTarget, wait, metadata,
@@ -2946,7 +2989,9 @@
       const silos = this.player.units(UNIT.MissileSilo)
         .filter((silo) => !silo.isUnderConstruction());
       if (silos.length === 0) return false;
-      if (this.findEnemySamsCoveringTile(pending.targetTile).length > 0) {
+      // Projected coverage: a SAM under construction completes before impact,
+      // so it blocks the finisher like an armed one.
+      if (this.findEnemySamsCoveringTile(pending.targetTile, true).length > 0) {
         return false;
       }
       // LEGENDARY DIVERGENCE (2026-10-08, pre-declared in
@@ -2966,10 +3011,13 @@
       // every blast as empty, so the finisher safely holds instead of firing
       // unpriced.
       if (!this.postSalvoHydrogenHasValue(config, target, pending)) return false;
+      // The monetary gate above is the finisher fire/hold arbitration; the
+      // generic blast gate must not veto its deliberate value tradeoff.
       const sent = await this.sendNuke(
         pending.targetTile,
         UNIT.HydrogenBomb,
         target,
+        0, { allowFriendlyBlast: true },
       );
       if (sent || this.postSalvoHydrogenTarget(pending) === null) {
         state.postSalvoHydrogen = null;
@@ -3100,7 +3148,7 @@
       const spawnTile = this.nukeSpawn(UNIT.AtomBomb, tile);
       if (spawnTile === false) return;
       const interceptingSams = new Set();
-      if (!this.isTrajectoryInterceptableBySam(spawnTile, tile, undefined, interceptingSams)) {
+      if (!this.isTrajectoryInterceptableBySam(spawnTile, tile, undefined, { interceptingSams })) {
         return;
       }
       for (const sam of interceptingSams) {
@@ -3116,11 +3164,13 @@
      * Find all enemy SAMs whose range covers a given tile.
      */
     // ── findEnemySamsCoveringTile — NationNukeBehavior.ts:1010 ────────────────
-    findEnemySamsCoveringTile(tile) {
+    findEnemySamsCoveringTile(tile, includeUnderConstruction = false) {
       const nearbySams = this.game.nearbyUnits(
         tile,
         this.game.config().maxSamRange(),
         UNIT.SAMLauncher,
+        undefined,
+        includeUnderConstruction,
       );
 
       const result = [];
@@ -3591,7 +3641,7 @@
       const covering = tile === null || tile === undefined ||
         typeof this.game?.nearbyUnits !== "function"
         ? []
-        : this.findEnemySamsCoveringTile(tile)
+        : this.findEnemySamsCoveringTile(tile, true)
             .filter((sam) => this.isValidNukeTarget(sam.owner?.()))
             .sort((a, b) => a.level() - b.level());
       return covering;
@@ -3734,6 +3784,9 @@
       const salvoPlan = {
         salvoId: this._nextSalvoId,
         plannedCoveringLevel: Number(plan.coveringSamLevels ?? 0),
+        totalBombs: Number(plan.totalBombs ?? 0),
+        remainingLaunches: Number(plan.totalBombs ?? 0),
+        lastArrivalTick: Number(plan.lastArrivalTick ?? NaN),
         targetTile: plan.targetTile,
         targetSamId: plan.targetSamId ?? null,
         coveringSamIds: [...(plan.coveringSamIds ?? [])],

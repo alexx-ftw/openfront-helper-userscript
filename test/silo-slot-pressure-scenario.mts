@@ -189,6 +189,11 @@ try {
     true,
     "the same NukeBehavior emits or queues the now-capable SAM-overwhelm salvo",
   );
+  assert.equal(
+    state.nukeWantSlots?.pendingLaunches,
+    true,
+    "the Silo demand stays coordinated while the planned salvo is in flight",
+  );
   const atomIntents = bot.intentBuffer.filter(
     (intent) => intent.type === "build_unit" && intent.unit === UnitType.AtomBomb,
   );

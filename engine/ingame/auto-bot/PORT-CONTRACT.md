@@ -73,6 +73,11 @@ its post-alliance payout at its own observed pairwise expiry, while later stops
 retain their allied payout until their respective expiries. Port routes require
 a different-owner Port on matching shared water, and team income counts the
 source and destination owners separately.
+For each new Legendary economic structure, the ROI-ranked placement is carried
+through the asynchronous buildability probe; a Port cannot be emitted on a
+different tile or fall back to an unprofiled site. Candidate construction cost
+uses the live structure price, while upgrades retain their authoritative probe
+cost.
 Once the selected seed route is complete, other owners can use it for ordinary
 route valuation.
 
@@ -102,19 +107,44 @@ cluster; upgrades use the live buildable quote, are repriced and route-checked
 before emission, and compete with construction by net team-gold value. City cap
 relief remains limited to the existing 0.9 troop-cap pressure.
 
+// DIVERGENCE (explicit conservative decision): a CANDIDATE Factory's ROI
+prices only already-stationed paid stops of its reachable rail clusters. The
+engine would additionally promote stationless City/Port units within
+trainStationMaxRange on the Factory's first tick (FactoryExecution), but the
+promoted stops' resulting rail-cluster membership is decided by the live rail
+segment grid plus the half-resolution minimap A* pathfinder, which the client
+does not expose; projecting them could silently misprice routes, so they are
+excluded until they actually gain stations.
+
 The Legendary horizon also uses the live Doomsday Clock deadline while the
 player is flagged: `rotDeathSeconds` minus `doomsdayClockTicks()` caps projected
 payback. Recovery or a disabled territory-rot deadline restores the ordinary
 match-timer horizon. This is a deterministic at-risk deadline, not a general
 combat-loss prediction.
+The horizon baseline is elapsed match time: the client GameView
+ticksSinceStart() when available (it already subtracts the spawn-phase start
+tick), falling back to the raw tick for fixtures without the method.
+
+// DIVERGENCE: rail stop pricing uses the full trainGold base. The engine
+decays each train's payout after its tenth cumulative stop (floor 5k) via the
+train-internal tradeStopsVisited counter, which the client does not expose;
+global saturation is still modeled through the live spawn-rate denominators.
+
+Economic construction cost reproduces the costWrapper exactly at the client
+surface: recordUnitConstructed fires on every build AND upgrade
+(PlayerImpl), so the wrapper's min(unitsOwned, unitsConstructed) collapses
+to the owned level sum. Captured units are the one gap (the engine price
+would be lower; the client cannot distinguish them).
 
 `// DIVERGENCE:` the client does not expose `RailNetwork.findStationsPath` or
 `TradeShipExecution`'s smoothed `WaterPathFinder`, nor each Port's current pity
 counter. Rail stops therefore use the engine's equal-weight endpoint choice,
 and Port distance uses bounded water BFS; routes beyond the search budget are
 excluded from the estimate. Incoming Port source rates use the live global
-trade-ship count as fixed for the horizon, and the route mix includes completed
-destination Ports only; a pending source waits its full construction duration.
+trade-ship count as fixed for the horizon. Matching PortExecution's
+destination selection (no under-construction filter), the destination mix now
+includes pending destination Ports; they pay only after their construction
+delay, and a pending source likewise waits its full construction duration.
 The estimate does not forecast later fleet saturation or per-Port pity state.
 Port route weights follow the engine's selection list: a non-team alliance adds
 its friendly selection weight only until expiry, and the post-expiry mix
