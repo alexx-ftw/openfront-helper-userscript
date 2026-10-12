@@ -11749,7 +11749,19 @@
       { citiesDisabled, cityCount, capPressure, strategicState },
     ) {
       if (citiesDisabled) return;
+      // A founding City has no rail cluster to price train value, so the
+      // positive-value gate would defer it forever on landlocked maps. Seed
+      // it with its own cost as baseline value; a real route evaluation
+      // replaces it once the rail network exists.
+      const foundingBaseline = cityCount < 2 &&
+          candidateContext.hasCoastalTiles === false &&
+          candidateContext.hasOceanPortTiles === false
+        ? BigInt(this.cost(UNIT.City, candidateContext.economyCostQuotes))
+        : undefined;
       this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
+        ...(foundingBaseline !== undefined
+          ? { netTeamGold: foundingBaseline }
+          : {}),
         mandatory: cityCount < 2 ? 1 : 0,
         safety: 0,
         capacity: capPressure ? 1 : 0,
@@ -11844,10 +11856,10 @@
         (entry) => entry.type === UNIT.City && entry.action !== "upgrade",
       );
       if (!candidate) return;
-      candidate.netTeamGold = 0n;
       const inputs = context.strategicState?.economyInputs;
       const profiles = inputs?.cityRouteProfiles;
       if (!Array.isArray(profiles) || profiles.length === 0) return;
+      candidate.netTeamGold = 0n;
       const tileByCluster = this.legendaryCityRailClusterTiles(inputs);
       if (!tileByCluster) return;
       const best = this.legendaryBestCityRoute(

@@ -71,8 +71,10 @@ trajectory-aware SAM coverage.
 `// DIVERGENCE:` Legendary adaptive construction ranks City/Factory/Port
 candidates on landlocked as well as water-access maps. Without an existing
 route, only the deterministic two-owner seed on mutually tradeable shared water
-is admitted; no third-owner duplicate is eligible. Other difficulty tiers keep
-the native fixed structure order. The inherited first-two-Cities flag does not
+is admitted; no third-owner duplicate is eligible. On truly landlocked maps the
+first two Cities carry their own cost as baseline value, because a founding
+City has no rail cluster to price otherwise. Other difficulty tiers keep the
+native fixed structure order. The inherited first-two-Cities flag does not
 bypass the positive-value gate or displace a higher-value positive economy
 action. City capacity value is available only under troop-cap pressure.
 Stop pools value only team-member payouts: a trade stop between two non-team
