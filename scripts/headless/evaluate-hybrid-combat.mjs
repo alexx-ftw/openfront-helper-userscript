@@ -803,8 +803,9 @@ export function runMatch({
   const descriptor = fs.openSync(logPath, "wx");
   return new Promise((resolve) => {
     const child = spawnProcess(
-      path.join(projectRoot, "node_modules/.bin/tsx"),
+      process.execPath,
       [
+        path.join(projectRoot, "node_modules/tsx/dist/cli.mjs"),
         "--tsconfig",
         path.join(projectRoot, "openfront-engine/tsconfig.json"),
         path.join(projectRoot, "scripts/headless/run-match.mts"),
@@ -925,12 +926,14 @@ function evaluationInputs(environment, cohorts) {
         })),
       }),
     ),
-    engineRevision: execFileSync("/usr/bin/git", ["-C", engineRoot, "rev-parse", "HEAD"], {
+    // eslint-disable-next-line sonarjs/no-os-command-from-path -- same installed Git and trusted launch PATH as the native runner
+    engineRevision: execFileSync("git", ["-C", engineRoot, "rev-parse", "HEAD"], {
       encoding: "utf8",
       env: foreignGitEnvironment(),
     }).trim(),
     engineDiffHash: hash(
-      execFileSync("/usr/bin/git", ["-C", engineRoot, "diff", "HEAD", "--binary"], {
+      // eslint-disable-next-line sonarjs/no-os-command-from-path -- same installed Git and trusted launch PATH as the native runner
+      execFileSync("git", ["-C", engineRoot, "diff", "HEAD", "--binary"], {
         env: foreignGitEnvironment(),
       }),
     ),

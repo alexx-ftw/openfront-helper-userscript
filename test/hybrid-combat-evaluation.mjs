@@ -458,7 +458,10 @@ async function nativeLedgerLaunch(
     timeoutMs: timeout ? 1 : 1000,
     environment: {},
     runID,
-    spawnProcess(_command, _args, options) {
+    spawnProcess(command, args, options) {
+      assert.equal(command, process.execPath, "Launch the installed Node without a shell shim");
+      assert.equal(args[0], path.resolve("node_modules/tsx/dist/cli.mjs"));
+      assert.equal(args[1], "--tsconfig");
       assert.equal(options.env.OFH_HYBRID_RUN_ID, runID);
       const file = options.env.OFH_HYBRID_EVENT_LOG;
       assert.equal(path.dirname(file), fs.realpathSync(outDir));
@@ -777,14 +780,16 @@ const collectionRunner = async ({ seed, mode, modelPath: inputPath }) => {
     start: {
       engineFingerprint: {
         revision: execFileSync(
-          "/usr/bin/git",
+          // eslint-disable-next-line sonarjs/no-os-command-from-path -- exercise the same installed Git as the portable native harness
+          "git",
           ["-C", path.join(root, "openfront-engine"), "rev-parse", "HEAD"],
           { encoding: "utf8", env: foreignGitEnvironment() },
         ).trim(),
         diffHash: createHash("sha256")
           .update(
             execFileSync(
-              "/usr/bin/git",
+              // eslint-disable-next-line sonarjs/no-os-command-from-path -- exercise the same installed Git as the portable native harness
+              "git",
               ["-C", path.join(root, "openfront-engine"), "diff", "HEAD", "--binary"],
               { env: foreignGitEnvironment() },
             ),

@@ -77,6 +77,15 @@ are not counted as losses/wins. Completed paired wins are distinct from survival
 territory, runtime and whether the combat lane actually executed. No automatic
 promotion or external model download occurs.
 
+Native Windows collection uses Node and the installed tsx JavaScript CLI directly;
+Git must be installed on the launch PATH. Source-closure identity hashes bind relative
+paths, import identities and exact bytes, while retaining absolute paths as audit
+evidence. Identical Linux/Windows copies can therefore resume a checkpoint under the
+same frozen harness and configuration. Previous absolute-path harness hashes are
+not rewritten: changing the harness requires a new collection. Parallel learners
+remain independent; never merge their weights. A frozen holdout may partition seeds
+between hosts, with all three modes per seed and one globally recomputed paired score.
+
 The source audit and extraction decisions are in
 [`docs/hybrid-bot-project-audit.md`](../../../docs/hybrid-bot-project-audit.md).
 The bounded collection, complete-ledger and offline terminal-return workflows are

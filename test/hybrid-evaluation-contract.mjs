@@ -387,6 +387,14 @@ const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "ofh-contract-imports-")
 fs.writeFileSync(path.join(temporary, "entry.mjs"), "import './helper.mjs?worker&inline';\n");
 fs.writeFileSync(path.join(temporary, "helper.mjs"), "export const value = 1;\n");
 const before = fingerprintSources(temporary, ["entry.mjs"]);
+const relocated = fs.mkdtempSync(path.join(os.tmpdir(), "ofh-relocated-imports-"));
+fs.cpSync(temporary, relocated, { recursive: true });
+assert.equal(
+  fingerprintSources(relocated, ["entry.mjs"]).hash,
+  before.hash,
+  "Identical source bytes and relative import identities survive relocation",
+);
+fs.rmSync(relocated, { recursive: true });
 assert.ok(
   before.imports.some(
     (entry) => entry.specifier === "./helper.mjs?worker&inline" && entry.resolved === "helper.mjs",

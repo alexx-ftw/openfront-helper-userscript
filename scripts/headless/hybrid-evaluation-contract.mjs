@@ -642,13 +642,20 @@ function importEvidence(scope, file, specifier, externalManifest) {
   return {
     dependency,
     entry: {
-      importer: path.relative(scope.realRoot, file),
+      importer: path.relative(scope.realRoot, file).split(path.sep).join("/"),
       specifier,
-      resolved: dependency ? path.relative(scope.realRoot, dependency) : null,
+      resolved: dependency
+        ? path.relative(scope.realRoot, dependency).split(path.sep).join("/")
+        : null,
       realPath: dependency,
       scope: dependency ? "source" : "external-manifest",
     },
   };
+}
+
+function compareSourceIdentity(left, right) {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 export function fingerprintSources(root, declaredPaths, externalManifest = {}) {
@@ -670,12 +677,27 @@ export function fingerprintSources(root, declaredPaths, externalManifest = {}) {
   }
   const sources = Object.fromEntries(
     [...files]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([file, value]) => [path.relative(sourceScope.realRoot, file), value]),
+      .map(([file, value]) => [
+        path.relative(sourceScope.realRoot, file).split(path.sep).join("/"),
+        value,
+      ])
+      .sort(([a], [b]) => compareSourceIdentity(a, b)),
   );
-  imports.sort((a, b) => canonical(a).localeCompare(canonical(b)));
+  const portableImports = imports.map(({ realPath: _realPath, ...entry }) => entry);
+  portableImports.sort((a, b) => {
+    const left = canonical(a);
+    const right = canonical(b);
+    return compareSourceIdentity(left, right);
+  });
   return {
-    hash: digest(canonical({ sourceScope, sources, imports, externalManifest })),
+    hash: digest(
+      canonical({
+        version: "portable-source-closure-v2",
+        sources,
+        imports: portableImports,
+        externalManifest,
+      }),
+    ),
     sourceScope,
     declaredPaths: [...declaredPaths],
     sources,
