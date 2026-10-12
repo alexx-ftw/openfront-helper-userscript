@@ -851,33 +851,53 @@ assert.ok(
     ) < 1e-6,
   "after both Ports complete, the seed pair earns from both owners' trade-ship streams",
 );
-const staggeredSeedValue = plannerSandbox.legendaryEconomyNetGold("Port", {
+const staggeredSeedInputs = {
+  ...seedPortInputs,
+  portSeedSources: [
+    {
+      level: 1,
+      portSeedStream: "own",
+      routes: [{ weight: 1, distance: 0, teamGoldPerArrival: 100 }],
+    },
+    {
+      level: 1,
+      portSeedStream: "partner",
+      constructionDelayTicks: 100,
+      routes: [{ weight: 1, distance: 0, teamGoldPerArrival: 100 }],
+    },
+  ],
+};
+const staggeredSeedConfig = {
+  unitInfo: () => ({ constructionDuration: 50 }),
+  tradeShipSpawnRate: () => 1,
+};
+const staggeredSeedBeforePartner = plannerSandbox.legendaryEconomyNetGold("Port", {
   cost: 1,
   horizonTicks: 80,
-  inputs: {
-    ...seedPortInputs,
-    portSeedSources: [
-      {
-        level: 1,
-        portSeedStream: "own",
-        routes: [{ weight: 1, distance: 0, teamGoldPerArrival: 100 }],
-      },
-      {
-        level: 1,
-        portSeedStream: "partner",
-        constructionDelayTicks: 100,
-        routes: [{ weight: 1, distance: 0, teamGoldPerArrival: 100 }],
-      },
-    ],
-  },
-  config: {
-    unitInfo: () => ({ constructionDuration: 50 }),
-    tradeShipSpawnRate: () => 1,
-  },
+  inputs: staggeredSeedInputs,
+  config: staggeredSeedConfig,
+});
+const staggeredSeedAtPartnerCompletion = plannerSandbox.legendaryEconomyNetGold("Port", {
+  cost: 1,
+  horizonTicks: 100,
+  inputs: staggeredSeedInputs,
+  config: staggeredSeedConfig,
+});
+const staggeredSeedAfterPairCompletion = plannerSandbox.legendaryEconomyNetGold("Port", {
+  cost: 1,
+  horizonTicks: 101,
+  inputs: staggeredSeedInputs,
+  config: staggeredSeedConfig,
 });
 assert.ok(
-  staggeredSeedValue?.netTeamGold > 0,
-  "a committed seed begins paying from the first completed source instead of waiting for both Ports",
+  staggeredSeedBeforePartner?.refused === true &&
+    staggeredSeedAtPartnerCompletion?.refused === true,
+  "a committed seed pair has no payout while either Port is still under construction",
+);
+assert.ok(
+  staggeredSeedAfterPairCompletion?.refused !== true &&
+    staggeredSeedAfterPairCompletion?.netTeamGold > 0,
+  "both seed streams pay only after the slower Port completes",
 );
 const cityAllianceConfig = {
   unitInfo: () => ({ constructionDuration: 0 }),
@@ -2786,6 +2806,27 @@ assert.equal(
   "a non-team alliance stops adding the friendly destination weight after it expires",
 );
 assert.equal(allyPortProfile.routes[0].allianceTicksRemaining, 50);
+const routeTeammate = {
+  id: () => 23,
+  smallID: () => 23,
+  isOnSameTeam: () => true,
+  isAlliedWith: () => false,
+  hasEmbargoAgainst: () => false,
+};
+const teamRouteActor = {
+  ...routeActor,
+  isOnSameTeam: (other) => other === routeTeammate,
+  isAlliedWith: () => false,
+};
+portRouteProfileBehavior.player = teamRouteActor;
+const teamPortProfile = portRouteProfileBehavior.legendaryPortRouteProfile(0, teamRouteActor, [
+  {
+    owner: routeTeammate,
+    unit: { tile: () => 3, level: () => 2, isUnderConstruction: () => false },
+  },
+]);
+assert.equal(teamPortProfile.routes[0].postAllianceGoldPerArrival, 600);
+assert.equal(teamPortProfile.routes[0].allianceTicksRemaining, Infinity);
 portRouteProfileBehavior.game.getWaterComponent = (tile) => (tile === 2 ? 8 : 7);
 assert.equal(
   portRouteProfileBehavior.legendaryPortRouteProfile(0, routeActor, [
@@ -4194,7 +4235,7 @@ const oneStructureAction = Object.create(structureSandbox.StructureBehavior.prot
 const attemptedActions = [];
 Object.assign(oneStructureAction, {
   legendaryConstructionActionGroups: () => [
-    [{ type: "City" }, { type: "Factory" }, { type: "Port" }],
+    [{ type: "City" }, { type: "Factory", factoryPlacementTile: 1 }, { type: "Port" }],
     [{ type: "Port" }],
   ],
   maybeSpawnStructure: async (type) => {
@@ -4812,12 +4853,17 @@ for (const type of [structureSandbox.UNIT.City, structureSandbox.UNIT.Factory]) 
     economicSpawnRequest = args;
     return true;
   };
+  const candidate =
+    type === structureSandbox.UNIT.Factory ? { type, factoryPlacementTile: 28 } : { type };
   assert.equal(
-    await economicDispatch.legendaryConstructionActionGroupResult([{ type }], [], 0),
+    await economicDispatch.legendaryConstructionActionGroupResult([candidate], [], 0),
     "built",
   );
   assert.equal(economicSpawnRequest[0], type);
   assert.equal(economicSpawnRequest[1]?.useActualCost, true);
+  if (type === structureSandbox.UNIT.Factory) {
+    assert.equal(economicSpawnRequest[1]?.legendaryEconomyFactoryTile, 28);
+  }
 }
 
 let profiledPortTilesProbed;

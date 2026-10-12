@@ -564,8 +564,7 @@ function legendaryEconomyNetGold(
     ) {
       return { refused: true };
     }
-    // A completed source Port can send to a destination that is still
-    // under construction; there is no shared seed-pair ready barrier.
+    // DIVERGENCE: seed-pair ROI starts only after both selected Ports complete.
   }
   const productiveTicks = type === "Port"
     ? horizon
@@ -577,6 +576,7 @@ function legendaryEconomyNetGold(
 
   let incomePerTick;
   let portPlacementTile;
+  let factoryPlacementTile;
   if (type === "Factory" || type === "City") {
     if (typeof config?.trainSpawnRate !== "function") return null;
     const trainCount = Math.max(0, Math.floor(Number(inputs.trainCount ?? 0)));
@@ -780,11 +780,24 @@ function legendaryEconomyNetGold(
         const factoryRouteProfiles = Array.isArray(inputs.factoryRouteProfiles)
           ? inputs.factoryRouteProfiles
           : [];
-        const newFactoryGold = factoryRouteProfiles.length > 0
-          ? Math.max(...factoryRouteProfiles.map((profile) =>
-              factoryGoldForTicks(profile, newFactoryRate, actionReadyTicks),
-            ))
-          : newFactoryRate * goldPerTrain * productiveTicks;
+        let newFactoryGold;
+        if (factoryRouteProfiles.length > 0) {
+          let selectedRoute = null;
+          for (const profile of factoryRouteProfiles) {
+            const routeGold = factoryGoldForTicks(
+              profile,
+              newFactoryRate,
+              actionReadyTicks,
+            );
+            if (selectedRoute === null || routeGold > selectedRoute.gold) {
+              selectedRoute = { profile, gold: routeGold };
+            }
+          }
+          newFactoryGold = selectedRoute?.gold ?? 0;
+          factoryPlacementTile = selectedRoute?.profile?.placementTile;
+        } else {
+          newFactoryGold = newFactoryRate * goldPerTrain * productiveTicks;
+        }
         incomePerTick = (existingFactoryGold + newFactoryGold) / productiveTicks;
       }
       } else {
@@ -1002,21 +1015,24 @@ function legendaryEconomyNetGold(
         )?.placementTile;
         // With no committed partner Port on the shared water,
         // PortExecution.tradingPorts() is empty: our port spawns no ships and
-        // the partner has no port to spawn from. The seed pair is income only
-        // once the partner commits; before that both streams are zero and the
-        // candidate can only survive as a marked strategic seed.
+        // the candidate can only survive as a marked strategic seed. Once a
+        // partner commits, neither stream pays until the slower Port completes.
         if (inputs.portSeedPartnerCommitted === true) {
+          const pairReadyTicks = Math.max(
+            constructionDelayTicks,
+            ...seedSources.map((source) =>
+              Math.max(
+                0,
+                Number(source.constructionDelayTicks ?? constructionDelayTicks) || 0,
+              ),
+            ),
+          );
           totalTeamGold = seedSources.reduce(
             (total, source) => total + routeIncome(
               source,
               Math.max(1, Math.floor(Number(source.level) || 1)),
               false,
-              source.portSeedStream === "partner"
-                ? Math.max(
-                    0,
-                    Number(source.constructionDelayTicks ?? constructionDelayTicks) || 0,
-                  )
-                : constructionDelayTicks,
+              pairReadyTicks,
             ),
             0,
           );
@@ -1054,6 +1070,9 @@ function legendaryEconomyNetGold(
       incomePerTick > 0 ? costNumber / incomePerTick : Infinity,
     incomePerTick,
     productiveTicks: eligibleTicks,
+    ...(factoryPlacementTile === undefined
+      ? {}
+      : { factoryPlacementTile }),
     ...(portPlacementTile === undefined ? {} : { portPlacementTile }),
   };
 }

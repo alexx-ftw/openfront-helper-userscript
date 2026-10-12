@@ -281,8 +281,14 @@ Object.assign(constructionBehavior, {
   player: actor,
   buildReachableStations: (types: string[], owners: ReturnType<typeof makeOwner>[]) =>
     owners.flatMap((owner) =>
-      owner.units(...types).map((unit) => ({ tile: unit.tile(), cluster: "rail" })),
+      owner.units(...types).map((unit) => ({
+        tile: unit.tile(),
+        cluster: unit.tile() === 2 || unit.tile() === 20 ? "rail#1" : "rail#2",
+      })),
     ),
+  readRailroadState: () => [{ id: "rail#stub" }],
+  assignRailClusters: (tiles: Array<{ tile: number }>) => tiles.map(() => "rail#1"),
+  structureCandidateTiles: (type: string) => (type === LiveUnitType.Factory ? [30] : []),
   legendaryRailMetrics: () => ({
     connectedCities: 3,
     cityRailConnection: 1,
@@ -359,14 +365,14 @@ assert.ok(
 );
 
 // A City only earns when OTHER owners' trains stop there (both endpoint
-// owners are paid), so with teammate-owned factories a builder City is the
-// positive-value saturation alternative.
+// owners are paid), so teammate-owned factories must increase its live ROI.
 const teammateFactoryStations = Array.from({ length: 6 }, (_, index) =>
   station(`team-factory-${index}`, index + 10),
 );
+const cityFlipOwnCities = [station("own-city-0", 0), station("own-city-1", 1)];
 const cityFlipOwnOwner = Object.assign(
   makeOwner(1, {
-    [LiveUnitType.City]: [],
+    [LiveUnitType.City]: cityFlipOwnCities,
     [LiveUnitType.Factory]: [],
   }),
   { gold: () => 10_000_000n },
@@ -376,11 +382,13 @@ const cityFlipTeammate = makeOwner(2, {
   [LiveUnitType.City]: [station("team-city", 20)],
 });
 let cityFlipTrainCount = 0;
+let cityFlipRouteActive = true;
 const cityFlipBehavior = Object.create(structureSandbox.__StructureBehavior!.prototype);
 Object.assign(cityFlipBehavior, {
   game: {
     config: () => config,
-    players: () => [cityFlipOwnOwner, cityFlipTeammate],
+    players: () =>
+      cityFlipRouteActive ? [cityFlipOwnOwner, cityFlipTeammate] : [cityFlipOwnOwner],
     units: (type: string) =>
       type === LiveUnitType.Train ? Array.from({ length: cityFlipTrainCount }) : [],
     ticks: () => 0,
@@ -416,23 +424,31 @@ Object.assign(cityFlipBehavior, {
   computeTroopCapPressure: () => false,
   availableGoldAfterReserve: () => cityFlipOwnOwner.gold(),
 });
-const rankCityFlipAt = async (trainCount: number) => {
+const rankCityFlipAt = async (trainCount: number, routeActive = true) => {
   cityFlipTrainCount = trainCount;
+  cityFlipRouteActive = routeActive;
   const candidates = await cityFlipBehavior.legendaryConstructionCandidates({
     config,
     citiesDisabled: false,
-    cityCount: 0,
+    cityCount: cityFlipOwnCities.length,
     hasCoastalTiles: false,
     hasOceanPortTiles: false,
     missileSilosEnabled: false,
     nukesEnabled: false,
   });
-  return cityFlipBehavior.legendaryConstructionActionGroups(candidates, true)[0]?.[0];
+  return {
+    winner: cityFlipBehavior.legendaryConstructionActionGroups(candidates, true)[0]?.[0],
+    city: candidates.find((candidate) => candidate.type === LiveUnitType.City),
+  };
 };
-assert.equal(
-  (await rankCityFlipAt(300))?.type,
-  "City",
-  "live Config saturation flips the choice to a City that earns teammate-train stop payouts",
+const saturatedCityWithTeammateRoute = await rankCityFlipAt(300);
+const saturatedCityWithoutTeammateRoute = await rankCityFlipAt(300, false);
+assert.ok(
+  saturatedCityWithTeammateRoute.city?.mandatory === 0 &&
+    (saturatedCityWithTeammateRoute.city?.netTeamGold ?? 0n) > 0n &&
+    (saturatedCityWithTeammateRoute.city?.netTeamGold ?? 0n) >
+      (saturatedCityWithoutTeammateRoute.city?.netTeamGold ?? 0n),
+  "a non-mandatory City earns positive live-Config ROI from eligible teammate train stops",
 );
 
 process.stdout.write("construction simulator live config tests passed\n");

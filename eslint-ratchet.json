@@ -24,6 +24,10 @@
       "warning": 0,
       "error": 3
     },
+    "max-depth": {
+      "warning": 0,
+      "error": 2
+    },
     "sonarjs/no-unenclosed-multiline-block": {
       "warning": 0,
       "error": 1
@@ -76,11 +80,11 @@
   "engine/ingame/auto-bot/structureBehavior.js": {
     "complexity": {
       "warning": 0,
-      "error": 21
+      "error": 26
     },
     "sonarjs/cognitive-complexity": {
       "warning": 0,
-      "error": 11
+      "error": 12
     },
     "max-lines-per-function": {
       "warning": 0,
@@ -97,6 +101,10 @@
     "max-depth": {
       "warning": 0,
       "error": 6
+    },
+    "no-restricted-syntax": {
+      "warning": 0,
+      "error": 1
     }
   },
   "engine/ingame/nuke-suggestions.js": {

@@ -2914,6 +2914,23 @@
           }
           continue;
         }
+        if (candidate.type === UNIT.Factory) {
+          if (
+            candidate.factoryPlacementTile === null ||
+            candidate.factoryPlacementTile === undefined
+          ) {
+            continue;
+          }
+          if (
+            await this.maybeSpawnStructure(UNIT.Factory, {
+              useActualCost: true,
+              legendaryEconomyFactoryTile: candidate.factoryPlacementTile,
+            })
+          ) {
+            return "built";
+          }
+          continue;
+        }
         if (ECONOMIC_STRUCTURE_TYPES.includes(candidate.type)) {
           if (
             await this.maybeSpawnStructure(candidate.type, {
@@ -10503,6 +10520,14 @@
           );
           const routeProfile = {
             clusterId: cluster,
+            factorySourceCount: [...data.factories.values()].reduce(
+              (total, source) =>
+                total +
+                source.productiveFactoryUnits.length +
+                source.pendingFactoryLevels.length,
+              0,
+            ),
+            paidStops: eligibleDestinations.length,
             teamGoldPerSpawn: poolMean(ownPlayer, false, false),
             postTeamGoldPerSpawn: poolMean(ownPlayer, false, true),
             teamGoldAfterPendingPerSpawn:
@@ -10788,6 +10813,8 @@
         trainSources: bestTrainSources,
         ownerFactoryClusters: ownFactoryClusterEntries,
         factoryRouteProfiles,
+        factoryStationEntries: clusterEntries,
+        factoryRailState: railState,
         factoryUpgradeTargets,
         portUpgradeTargetIds,
         portUpgradeProfiles,
@@ -10976,7 +11003,10 @@
         if (String(owner?.smallID?.() ?? "") === sourceId) continue;
         if (!shimCanTrade(sourceOwner, owner)) continue;
         const targetComponents = this.portWaterComponents(tile);
-        if (![...sourceComponents].some((component) => targetComponents.has(component))) continue;
+        const waterComponents = [...sourceComponents].filter((component) =>
+          targetComponents.has(component),
+        );
+        if (waterComponents.length === 0) continue;
         let bestWaterDistance = Infinity;
         for (const neighbor of this.game?.neighbors?.(tile) ?? []) {
           if (this.game?.isWater?.(neighbor) !== true) continue;
@@ -10993,6 +11023,7 @@
           tile,
           distance,
           manhattan: Number.isFinite(manhattan) ? manhattan : distance,
+          waterComponents,
           level: destination?.unit?.isUnderConstruction?.() === true
             ? 1
             : Math.max(1, Math.floor(Number(destination?.unit?.level?.() ?? 1))),
@@ -11060,6 +11091,7 @@
         Math.max(1, totalWeight);
       return {
         routes,
+        waterComponents: [...new Set(eligible.flatMap(({ waterComponents }) => waterComponents))],
         teamGoldPerArrival: weighted("teamGoldPerArrival"),
         postAllianceGoldPerArrival: weighted("postAllianceGoldPerArrival"),
         routeDelayTicks: weighted("distance"),
@@ -11481,12 +11513,8 @@
         ratios,
       };
 
-      this.addLegendaryRatioCandidate(ratioContext, UNIT.Port, {
-        strategic: strategicState.tradeNeed > 1.25 ? 1 : 0,
-      });
-      this.addLegendaryRatioCandidate(ratioContext, UNIT.Factory, {
-        strategic: strategicState.railNeed > 1.25 ? 1 : 0,
-      });
+      this.addLegendaryPortRouteCandidates(ratioContext);
+      this.addLegendaryFactoryRouteCandidates(ratioContext);
       this.addLegendaryRatioCandidate(ratioContext, UNIT.SAMLauncher, {
         mandatory:
           (strategicState.missileThreat.critical ? 1 : 0) +
@@ -11499,6 +11527,172 @@
       });
 
       return candidates;
+    }
+
+    addLegendaryFactoryRouteCandidates(context) {
+      const inputs = context.strategicState?.economyInputs;
+      const profiles = Array.isArray(inputs?.factoryRouteProfiles)
+        ? inputs.factoryRouteProfiles
+        : [];
+      const stationEntries = inputs?.factoryStationEntries;
+      const railState = inputs?.factoryRailState;
+      if (
+        profiles.length === 0 ||
+        !Array.isArray(stationEntries) ||
+        stationEntries.length === 0 ||
+        !railState ||
+        railState.length === 0
+      ) {
+        return;
+      }
+
+      // Reuse the exact live rail components used to build factoryRouteProfiles.
+      // Proximity-only components and guessed paths cannot bind ROI to a site.
+      const routeProfiles = profiles.filter((profile) =>
+        typeof profile?.clusterId === "string" &&
+        profile.clusterId.startsWith("rail#") &&
+        Number.isFinite(Number(profile.factorySourceCount)) &&
+        Number(profile.factorySourceCount) === 0 &&
+        Number(profile.paidStops) > 0,
+      );
+      if (routeProfiles.length === 0) return;
+
+      const candidateTiles = this.structureCandidateTiles(
+        UNIT.Factory,
+        {},
+        ECONOMIC_INITIAL_PLACEMENT_CANDIDATE_LIMIT,
+      );
+      if (candidateTiles.length === 0) return;
+
+      let candidateClusters;
+      try {
+        candidateClusters = this.assignRailClusters(
+          stationEntries.concat(candidateTiles.map((tile) => ({ tile }))),
+          railState,
+        );
+      } catch {
+        return;
+      }
+      if (
+        !Array.isArray(candidateClusters) ||
+        candidateClusters.length !== stationEntries.length + candidateTiles.length
+      ) {
+        return;
+      }
+      const tileByCluster = new Map();
+      for (let index = 0; index < candidateTiles.length; index++) {
+        const cluster = candidateClusters[stationEntries.length + index];
+        if (cluster === null || cluster === undefined) continue;
+        const key = String(cluster);
+        if (!tileByCluster.has(key)) tileByCluster.set(key, candidateTiles[index]);
+      }
+      const candidateProfiles = routeProfiles.flatMap((profile) => {
+        const placementTile = tileByCluster.get(profile.clusterId);
+        return placementTile === undefined
+          ? []
+          : [{ ...profile, placementTile }];
+      });
+      if (candidateProfiles.length === 0) return;
+
+      const cost = this.cost(UNIT.Factory);
+      const evaluation = legendaryEconomyNetGold(UNIT.Factory, {
+        cost: Number(cost),
+        horizonTicks: context.strategicState?.economyHorizonTicks,
+        inputs: { ...inputs, factoryRouteProfiles: candidateProfiles },
+        config: context.config,
+      });
+      if (
+        !evaluation ||
+        evaluation.refused === true ||
+        evaluation.netTeamGold <= 0 ||
+        evaluation.factoryPlacementTile === null ||
+        evaluation.factoryPlacementTile === undefined
+      ) {
+        return;
+      }
+      this.addLegendaryConstructionCandidate(context, UNIT.Factory, {
+        netTeamGold: BigInt(Math.round(evaluation.netTeamGold)),
+        factoryPlacementTile: evaluation.factoryPlacementTile,
+        mandatory: 0,
+        safety: 0,
+        capacity: 0,
+        strategic: context.strategicState.railNeed > 1.25 ? 1 : 0,
+        deficit: 1,
+        efficiency: 1,
+      });
+    }
+
+    addLegendaryPortRouteCandidates(context) {
+      const inputs = context.strategicState?.economyInputs;
+      if (
+        inputs?.portSeedWindowOpen === true &&
+        inputs?.hasCompletedTradePartner !== true
+      ) {
+        this.addLegendaryRatioCandidate(context, UNIT.Port, {
+          strategic: context.strategicState.tradeNeed > 1.25 ? 1 : 0,
+        });
+        return;
+      }
+
+      const profiles = Array.isArray(inputs?.portCandidateProfiles)
+        ? inputs.portCandidateProfiles
+        : [];
+      const sharedWater = this.game?.sharedWaterComponents?.(this.player);
+      if (profiles.length === 0 || !sharedWater || sharedWater.size === 0) return;
+
+      const servedComponents = new Set();
+      for (const port of this.player?.units?.(UNIT.Port) ?? []) {
+        if (!this.portIsUsable(port)) continue;
+        for (const component of this.portWaterComponents(port?.tile?.())) {
+          servedComponents.add(component);
+        }
+      }
+      const novelProfiles = profiles.filter((profile) => {
+        if (
+          profile?.placementTile === null ||
+          profile?.placementTile === undefined ||
+          !Array.isArray(profile.routes) ||
+          profile.routes.length === 0
+        ) {
+          return false;
+        }
+        const components = Array.isArray(profile.waterComponents)
+          ? profile.waterComponents
+          : this.portWaterComponents(profile.placementTile);
+        return [...components].some(
+          (component) =>
+            sharedWater.has(component) && !servedComponents.has(component),
+        );
+      });
+      if (novelProfiles.length === 0) return;
+
+      const cost = this.cost(UNIT.Port);
+      const evaluation = legendaryEconomyNetGold(UNIT.Port, {
+        cost: Number(cost),
+        horizonTicks: context.strategicState?.economyHorizonTicks,
+        inputs: { ...inputs, portCandidateProfiles: novelProfiles },
+        config: context.config,
+      });
+      const usableEvaluation = evaluation !== null &&
+        evaluation.refused !== true &&
+        evaluation.portPlacementTile !== null &&
+        evaluation.portPlacementTile !== undefined;
+
+      // DIVERGENCE: only this builder's usable Ports suppress a shared-water route; teammate Ports may seed its new owner-pair route.
+      this.addLegendaryConstructionCandidate(context, UNIT.Port, {
+        netTeamGold: usableEvaluation
+          ? BigInt(Math.round(evaluation.netTeamGold))
+          : 0n,
+        ...(usableEvaluation
+          ? { portPlacementTile: evaluation.portPlacementTile }
+          : {}),
+        mandatory: 0,
+        safety: 0,
+        capacity: 0,
+        strategic: context.strategicState.tradeNeed > 1.25 ? 1 : 0,
+        deficit: 1,
+        efficiency: 1,
+      });
     }
 
     addLegendaryCityCandidates(
@@ -11605,7 +11799,9 @@
           const seedTile = context.strategicState?.economyInputs?.portSeedSources?.find(
             (source) => source.portSeedStream === "own",
           )?.placementTile;
-          const placementTile = evaluation?.portPlacementTile ?? seedTile;
+          const placementTile = values.portPlacementTile !== undefined
+            ? values.portPlacementTile
+            : evaluation?.portPlacementTile ?? seedTile;
           if (placementTile !== null && placementTile !== undefined) {
             valuesWithPolicy.portPlacementTile = placementTile;
           }
@@ -12025,6 +12221,11 @@
         type === UNIT.Port &&
         options.legendaryEconomyPortTile !== null &&
         options.legendaryEconomyPortTile !== undefined;
+      const profiledLegendaryFactory =
+        type === UNIT.Factory &&
+        isLegendaryDifficulty() &&
+        options.legendaryEconomyFactoryTile !== null &&
+        options.legendaryEconomyFactoryTile !== undefined;
       if (
         this.economicStructureSpawnPending(economicType, structures) &&
         !profiledLegendaryPort
@@ -12073,6 +12274,12 @@
         return finishSiloStage(false);
       }
       if (
+        profiledLegendaryFactory &&
+        buildable.canBuild !== options.legendaryEconomyFactoryTile
+      ) {
+        return finishSiloStage(false);
+      }
+      if (
         economicType &&
         this.buildableCostOrFallback(buildable, perceivedCost) >
           this.availableGoldAfterReserve(type, { includeSam: true })
@@ -12103,6 +12310,11 @@
         type === UNIT.Port &&
         options.legendaryEconomyPortTile !== null &&
         options.legendaryEconomyPortTile !== undefined;
+      const profiledLegendaryFactory =
+        type === UNIT.Factory &&
+        isLegendaryDifficulty() &&
+        options.legendaryEconomyFactoryTile !== null &&
+        options.legendaryEconomyFactoryTile !== undefined;
       // RANK-THEN-PROBE: structureSpawnTile now returns the snapped BuildableUnit
       // (the first build-only descriptor down the value-ranked list) instead of
       // a bare TileRef, folding the src `player.canBuild(type, tile)` check into
@@ -12127,12 +12339,15 @@
       if (
         !economicType ||
         profiledLegendaryPort ||
+        profiledLegendaryFactory ||
         !this.hasPendingEconomicPlacementScan(type)
       ) {
         buildable = await this.structureSpawnTile(type, options);
       }
       if (buildable === null) {
-        if (!economicType || profiledLegendaryPort) return null;
+        if (!economicType || profiledLegendaryPort || profiledLegendaryFactory) {
+          return null;
+        }
         const placement = await this.findEconomicPlacementOrExhaustion(
           type,
           options,
@@ -13713,6 +13928,11 @@
       // has to be allowed.
       if (
         type === UNIT.Factory &&
+        !(
+          isLegendaryDifficulty() &&
+          options.legendaryEconomyFactoryTile !== null &&
+          options.legendaryEconomyFactoryTile !== undefined
+        ) &&
         safeScored.length > 0 &&
         this.onlyDuplicateFactoryTradeCandidates(safeScored)
       ) {
@@ -13751,6 +13971,10 @@
       if (
         type === UNIT.Factory &&
         isLegendaryDifficulty() &&
+        !(
+          options.legendaryEconomyFactoryTile !== null &&
+          options.legendaryEconomyFactoryTile !== undefined
+        ) &&
         safeScored.length > 0
       ) {
         safeScored = this.novelFactoryTradeCandidates(safeScored);
@@ -14739,6 +14963,11 @@
         type === UNIT.Port &&
         options.legendaryEconomyPortTile !== null &&
         options.legendaryEconomyPortTile !== undefined;
+      const profiledLegendaryFactory =
+        type === UNIT.Factory &&
+        isLegendaryDifficulty() &&
+        options.legendaryEconomyFactoryTile !== null &&
+        options.legendaryEconomyFactoryTile !== undefined;
       let tiles;
       if (type === UNIT.Port) {
         tiles = profiledLegendaryPort
@@ -14748,6 +14977,8 @@
           this.portTileHasOpenWaterAccess(tile) &&
           (!isLegendaryDifficulty() || this.portCandidateHasTradeRoute(tile)),
         );
+      } else if (profiledLegendaryFactory) {
+        tiles = [options.legendaryEconomyFactoryTile];
       } else {
         tiles = randTerritoryTileArray(
               this.random,
@@ -14779,7 +15010,8 @@
       if (
         state.settings.winFixes &&
         type !== UNIT.SAMLauncher &&
-        type !== UNIT.Port
+        type !== UNIT.Port &&
+        !profiledLegendaryFactory
       ) {
         tiles = this.prependSamCoveredTiles(tiles, candidateLimit);
       }

@@ -64,6 +64,17 @@ assert.equal(
   false,
   "the first Factory remains legal when no Factory exists yet",
 );
+behavior.getOrBuildFactoryTradeDestinations = () => [{ tile: 60, cluster: null, weight: 1 }];
+assert.deepEqual(
+  Array.from(behavior.novelFactoryTradeCandidates([{ t: 45 }]), ({ t }) => t),
+  [],
+  "a Factory exactly at trainStationMinRange cannot create a paid route",
+);
+assert.deepEqual(
+  Array.from(behavior.novelFactoryTradeCandidates([{ t: 44 }]), ({ t }) => t),
+  [44],
+  "a Factory strictly beyond trainStationMinRange can create a paid route",
+);
 
 behavior.getOrBuildFactoryTradeDestinations = () => [];
 behavior.isDangerousStructureTile = () => false;
