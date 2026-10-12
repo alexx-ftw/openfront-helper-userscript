@@ -2917,6 +2917,7 @@
           if (
             await this.maybeSpawnStructure(UNIT.Port, {
               useActualCost: true,
+              legendaryEconomyCostQuote: candidate.cost,
               legendaryEconomyPortTile: candidate.portPlacementTile,
             })
           ) {
@@ -2934,6 +2935,7 @@
           if (
             await this.maybeSpawnStructure(UNIT.Factory, {
               useActualCost: true,
+              legendaryEconomyCostQuote: candidate.cost,
               legendaryEconomyFactoryTile: candidate.factoryPlacementTile,
             })
           ) {
@@ -2949,6 +2951,7 @@
           if (
             await this.maybeSpawnStructure(UNIT.City, {
               useActualCost: true,
+              legendaryEconomyCostQuote: candidate.cost,
               legendaryEconomyCityTile: candidate.cityPlacementTile,
             })
           ) {
@@ -2960,6 +2963,7 @@
           if (
             await this.maybeSpawnStructure(candidate.type, {
               useActualCost: true,
+              legendaryEconomyCostQuote: candidate.cost,
             })
           ) {
             return "built";
@@ -11500,6 +11504,25 @@
       const throughputUpgrades = await this.probeLegendaryThroughputUpgradeCandidates(
         strategicState,
       );
+      const economyCostQuotes = new Map();
+      try {
+        // PlayerImpl.buildableUnits computes cost without a tile; placement still needs its tile-scoped probe.
+        const buildables = await withTimeout(
+          this.player.buildables(undefined, ECONOMIC_STRUCTURE_TYPES),
+          STRUCTURE_PROBE_TIMEOUT_MS,
+          null,
+        );
+        for (const buildable of Array.isArray(buildables) ? buildables : []) {
+          if (
+            ECONOMIC_STRUCTURE_TYPES.includes(buildable?.type) &&
+            typeof buildable.cost === "bigint"
+          ) {
+            economyCostQuotes.set(buildable.type, buildable.cost);
+          }
+        }
+      } catch {
+        // Keep the existing estimate when the worker quote is unavailable.
+      }
       const typeOrder = {
         [UNIT.City]: 0,
         [UNIT.Port]: 1,
@@ -11515,6 +11538,7 @@
         hasOceanPortTiles,
         missileSilosEnabled,
         nukesEnabled,
+        economyCostQuotes,
         strategicState,
         typeOrder,
       };
@@ -11618,7 +11642,8 @@
       });
       if (candidateProfiles.length === 0) return;
 
-      const cost = this.cost(UNIT.Factory);
+      const cost = context.economyCostQuotes?.get(UNIT.Factory) ??
+        this.cost(UNIT.Factory);
       const evaluation = legendaryEconomyNetGold(UNIT.Factory, {
         cost: Number(cost),
         horizonTicks: context.strategicState?.economyHorizonTicks,
@@ -11690,7 +11715,8 @@
       });
       if (novelProfiles.length === 0) return;
 
-      const cost = this.cost(UNIT.Port);
+      const cost = context.economyCostQuotes?.get(UNIT.Port) ??
+        this.cost(UNIT.Port);
       const evaluation = legendaryEconomyNetGold(UNIT.Port, {
         cost: Number(cost),
         horizonTicks: context.strategicState?.economyHorizonTicks,
@@ -11875,7 +11901,7 @@
       if (values.upgradeCost !== undefined) {
         cost = legendaryBigInt(values.upgradeCost);
       } else if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
-        cost = this.cost(type);
+        cost = this.cost(type, context.economyCostQuotes);
       } else {
         cost = this.getConstructionCost(type);
       }
@@ -12235,18 +12261,26 @@
 
     // cost — NationStructureBehavior.ts:581.
     // src: this.game.unitInfo(type).cost(this.game, this.player).
+    // Legendary construction ranking passes authoritative BuildableUnit.cost
+    // quotes when available; these formulas remain the fallback for other callers.
     // DIVERGENCE: reproduced from the Config.ts cost formulas as BigInt (the
     // passthrough cost fn would mis-compute numUnits from the client's
     // count/boolean unitsOwned/unitsConstructed). numUnits is the level sum:
     // the costWrapper min(unitsOwned, unitsConstructed) collapses to the level
     // sum because recordUnitConstructed fires per build AND per upgrade
     // (PlayerImpl.ts:1414,1496-1501), so constructed == level for every live
-    // unit the client can see. Captured units are the one gap (client cannot
-    // distinguish them; engine price would be LOWER). Port/Factory combine
+    // unit the client can see. Captured units differ when no live quote is
+    // available (the engine price is lower). Port/Factory combine
     // BOTH types per the costWrapper arglist (Config.ts:597-606/670-690).
     // MIRV uses the base price only (numMirvsLaunched is core-only) — see
     // getSaveUpTarget DIVERGENCE.
-    cost(type) {
+    cost(type, economyCostQuotes = null) {
+      if (
+        ECONOMIC_STRUCTURE_TYPES.includes(type) &&
+        economyCostQuotes?.has(type)
+      ) {
+        return economyCostQuotes.get(type);
+      }
       switch (type) {
         case UNIT.Port: {
           const n = this.ownedLevels(UNIT.Port) + this.ownedLevels(UNIT.Factory);
@@ -12511,7 +12545,15 @@
     }
 
     constructionCostForOptions(type, options = {}) {
-      if (options.useActualCost === true) return this.cost(type);
+      if (options.useActualCost === true) {
+        if (
+          ECONOMIC_STRUCTURE_TYPES.includes(type) &&
+          typeof options.legendaryEconomyCostQuote === "bigint"
+        ) {
+          return options.legendaryEconomyCostQuote;
+        }
+        return this.cost(type);
+      }
       return this.getConstructionCost(type);
     }
 
