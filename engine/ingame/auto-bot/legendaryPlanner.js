@@ -385,6 +385,21 @@ function legendaryPortFallbackRoute(profile, fallbackDistance) {
   };
 }
 
+// A seed pair already spending gold on construction must never lose its slot
+// to a higher-raw-value uncommitted pair on another water component.
+function legendarySeedCandidateBeats(candidate, bestSeed) {
+  if (bestSeed === null) return true;
+  const commitRank = (seed) =>
+    (seed.committed === true ? 2 : 0) + (seed.ownInProgress === true ? 1 : 0);
+  if (commitRank(candidate) !== commitRank(bestSeed)) {
+    return commitRank(candidate) > commitRank(bestSeed);
+  }
+  if (candidate.value !== bestSeed.value) {
+    return candidate.value > bestSeed.value;
+  }
+  return candidate.routeDelay < bestSeed.routeDelay;
+}
+
 function legendaryPortRoutes(profile, fallbackDistance) {
   const routes = profile?.routes ?? profile?.portRoutes;
   return Array.isArray(routes) && routes.length > 0

@@ -1826,6 +1826,7 @@ const structureSandbox = {
   legendaryEconomySpawnMultipliers: plannerSandbox.legendaryEconomySpawnMultipliers,
   legendaryStructureHorizonTicks: plannerSandbox.legendaryStructureHorizonTicks,
   legendaryEconomyNetGold: plannerSandbox.legendaryEconomyNetGold,
+  legendarySeedCandidateBeats: plannerSandbox.legendarySeedCandidateBeats,
   legendaryMissileDefenseSchedule: plannerSandbox.legendaryMissileDefenseSchedule,
   UniversalPathFinding: null,
   state: { settings: { winFixes: true } },
@@ -2827,6 +2828,66 @@ const teamPortProfile = portRouteProfileBehavior.legendaryPortRouteProfile(0, te
 ]);
 assert.equal(teamPortProfile.routes[0].postAllianceGoldPerArrival, 600);
 assert.equal(teamPortProfile.routes[0].allianceTicksRemaining, Infinity);
+const routeAllyWithRecord = {
+  ...routeAlly,
+  alliances: () => [{ other: 21, expiresAt: 90 }],
+};
+const blindSourceOwner = {
+  ...routeActor,
+  isAlliedWith: (other) => other === routeAllyWithRecord,
+  isFriendly: (other) => other === routeAllyWithRecord,
+  alliances: () => [],
+};
+portRouteProfileBehavior.player = blindSourceOwner;
+const blindPairProfile = portRouteProfileBehavior.legendaryPortRouteProfile(0, blindSourceOwner, [
+  {
+    owner: routeAllyWithRecord,
+    unit: { tile: () => 3, level: () => 2, isUnderConstruction: () => false },
+  },
+]);
+assert.equal(
+  blindPairProfile.routes[0].allianceTicksRemaining,
+  80,
+  "an invisible source alliance record falls back to the other endpoint's own record",
+);
+const committedSeedPair = {
+  committed: true,
+  ownInProgress: true,
+  value: 100,
+  routeDelay: 50,
+};
+assert.equal(
+  plannerSandbox.legendarySeedCandidateBeats(
+    { committed: false, ownInProgress: false, value: 999, routeDelay: 1 },
+    committedSeedPair,
+  ),
+  false,
+  "a committed seed pair is never abandoned for a higher-raw-value uncommitted candidate",
+);
+assert.equal(
+  plannerSandbox.legendarySeedCandidateBeats(
+    { committed: true, ownInProgress: true, value: 100, routeDelay: 40 },
+    { committed: true, ownInProgress: false, value: 100, routeDelay: 1 },
+  ),
+  true,
+  "a pair with both Ports building outranks an equal-value partner-only commitment",
+);
+assert.equal(
+  plannerSandbox.legendarySeedCandidateBeats(
+    { committed: false, ownInProgress: false, value: 200, routeDelay: 9 },
+    { committed: false, ownInProgress: false, value: 200, routeDelay: 1 },
+  ),
+  false,
+  "equal-commitment candidates keep the value-then-route-delay order",
+);
+assert.equal(
+  plannerSandbox.legendarySeedCandidateBeats(
+    { committed: false, ownInProgress: false, value: 1, routeDelay: 1 },
+    null,
+  ),
+  true,
+  "the first seed candidate always wins the empty slot",
+);
 portRouteProfileBehavior.game.getWaterComponent = (tile) => (tile === 2 ? 8 : 7);
 assert.equal(
   portRouteProfileBehavior.legendaryPortRouteProfile(0, routeActor, [

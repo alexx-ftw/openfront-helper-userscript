@@ -10737,18 +10737,16 @@
                   },
                 ],
                 committed: inProgress.length > 0,
+                ownInProgress:
+                  this.portOwnerStateOnWater(ownPlayer, component).inProgress ===
+                  true,
                 value:
                   ownProfile.teamGoldPerArrival +
                   partnerProfile.teamGoldPerArrival,
                 routeDelay:
                   ownProfile.routeDelayTicks + partnerProfile.routeDelayTicks,
               };
-              if (
-                bestSeed === null ||
-                candidate.value > bestSeed.value ||
-                (candidate.value === bestSeed.value &&
-                  candidate.routeDelay < bestSeed.routeDelay)
-              ) {
+              if (legendarySeedCandidateBeats(candidate, bestSeed)) {
                 bestSeed = candidate;
               }
             }
@@ -10821,7 +10819,7 @@
       };
     }
 
-    legendaryAllianceTicksRemaining(owner, otherOwner) {
+    legendaryAllianceTicksRemainingOrNull(owner, otherOwner) {
       const source = owner?.__src ?? owner;
       const otherId = String(otherOwner?.smallID?.() ?? "");
       const tick = safeStructureGameTick(this.game) ?? 0;
@@ -10837,6 +10835,24 @@
           return Math.max(0, Number(expiresAt) - tick);
         }
       }
+      return null;
+    }
+
+    legendaryAllianceTicksRemaining(owner, otherOwner) {
+      const ticks = this.legendaryAllianceTicksRemainingOrNull(owner, otherOwner);
+      return ticks === null
+        ? Number(this.game?.config?.()?.allianceDuration?.() ?? 0)
+        : ticks;
+    }
+
+    legendaryAlliancePairTicks(left, right) {
+      const direct = this.legendaryAllianceTicksRemainingOrNull(left, right);
+      if (direct !== null) return direct;
+      const reverse = this.legendaryAllianceTicksRemainingOrNull(right, left);
+      if (reverse !== null) return reverse;
+      // The client reliably sees only its own alliance list; when the route
+      // source's record is invisible, read the same alliance from the other
+      // endpoint before falling back to the config duration.
       return Number(this.game?.config?.()?.allianceDuration?.() ?? 0);
     }
 
@@ -11053,19 +11069,19 @@
         const allianceTicks = [];
         if (destinationIsAlly) {
           allianceTicks.push(
-            this.legendaryAllianceTicksRemaining(this.player, destination.owner),
+            this.legendaryAlliancePairTicks(this.player, destination.owner),
           );
         }
         if (sourceIsAlly) {
           allianceTicks.push(
-            this.legendaryAllianceTicksRemaining(this.player, sourceOwner),
+            this.legendaryAlliancePairTicks(this.player, sourceOwner),
           );
         }
         const sameTeamRoute = sourceOwner?.isOnSameTeam?.(destination.owner) === true ||
           sourceIsTeam && destinationIsTeam;
         const friendlyAllianceTicks = sameTeamRoute
           ? Infinity
-          : this.legendaryAllianceTicksRemaining(sourceOwner, destination.owner);
+          : this.legendaryAlliancePairTicks(sourceOwner, destination.owner);
         return {
           weight,
           postAllianceWeight:
