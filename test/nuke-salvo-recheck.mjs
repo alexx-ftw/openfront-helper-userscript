@@ -2851,11 +2851,55 @@ launchSink = null;
   assert.equal(behavior.isEligibleNukeTarget(tribe), false, "tribes are not nuclear recipients");
   assert.equal(behavior.isEligibleNukeTarget(human), true, "human targets remain eligible");
   assert.equal(behavior.isEligibleNukeTarget(nation), true, "nation targets remain eligible");
+  const tribeSam = {
+    id: () => "tribe-sam",
+    isAlive: () => true,
+    owner: () => tribe,
+  };
+  tribe.units = (type) => (type === UNIT.SAMLauncher ? [tribeSam] : []);
+  assert.equal(
+    behavior.samDemandOwner(tribe, "tribe-sam").owner,
+    undefined,
+    "a Bot-owned SAM does not create a Silo-capacity demand for an illegal recipient",
+  );
   game.owner = () => tribe;
   assert.equal(
     behavior.isValidNukeDestination(20, false),
     true,
     "tribe-owned territory remains a valid destination when the recipient is different",
+  );
+
+  const relations = [
+    { relation: sandbox.Relation.Hostile, player: tribe },
+    { relation: sandbox.Relation.Hostile, player: human },
+    { relation: sandbox.Relation.Hostile, player: nation },
+  ];
+  player.allRelationsSorted = () => relations;
+  assert.equal(
+    behavior.findHostileNukeTarget(true),
+    human,
+    "production hostile selection skips an illegal Bot recipient and continues to a Human",
+  );
+  behavior.findDominantCrownNukeTarget = () => null;
+  behavior.findAllyNukeTarget = () => null;
+  behavior.findFFACrownTarget = () => null;
+  behavior.findStrongestTeamTarget = () => null;
+  behavior.findLegendaryStructureTarget = () => null;
+  assert.equal(
+    behavior.findNukeRelationTarget(sandbox.Difficulty.Hard),
+    human,
+    "the production target ladder continues after an illegal Bot hostile",
+  );
+
+  game.players = () => [player, tribe, human, nation];
+  tribe.units = () => [{ value: 100 }];
+  human.units = () => [{ value: 50 }];
+  nation.units = () => [{ value: 75 }];
+  behavior.nukeStructureValue = (structure) => structure.value;
+  assert.equal(
+    behavior.findHighestValueNukeTarget(null),
+    nation,
+    "highest-value selection skips a richer Bot recipient and continues to a Nation",
   );
 
   const previousDifficulty = sandbox.currentDifficulty;

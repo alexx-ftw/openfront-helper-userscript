@@ -11748,11 +11748,12 @@
       // positive-value gate would defer it forever on landlocked maps. Seed
       // it with its own cost as baseline value; a real route evaluation
       // replaces it once the rail network exists.
-      const foundingBaseline = cityCount < 2 &&
-          candidateContext.hasCoastalTiles === false &&
-          candidateContext.hasOceanPortTiles === false
-        ? BigInt(this.cost(UNIT.City, candidateContext.economyCostQuotes))
-        : undefined;
+      const foundingBaseline =
+        cityCount < 2 &&
+        candidateContext.hasCoastalTiles === false &&
+        candidateContext.hasOceanPortTiles === false
+          ? BigInt(this.cost(UNIT.City, candidateContext.economyCostQuotes))
+          : undefined;
       this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
         ...(foundingBaseline !== undefined
           ? { netTeamGold: foundingBaseline }
@@ -12459,6 +12460,7 @@
       if (
         options.nukePendingLaunchRoute === true &&
         (!this.nuclearSlotPressureQueueEligible() ||
+          this.nuclearSlotPressureReadyShotTotal() > 0 ||
           !this.nukePendingLaunchRouteAllowed(buildable.canBuild))
       ) {
         return finishSiloStage(false);
@@ -12870,9 +12872,14 @@
         this.nukePendingLaunchRouteAllowed(silo.tile?.()),
       );
       if (routeEligibleSilos.length === 0) return false;
-      if (this.legendaryReadyShotTotal(routeEligibleSilos) > 0) return false;
-      const result = await this.findBestStructureToUpgrade(routeEligibleSilos);
-      if (this.legendaryReadyShotTotal(routeEligibleSilos) > 0) return false;
+      if (this.nuclearSlotPressureReadyShotTotal() > 0) return false;
+      const upgradeCandidates = routeEligibleSilos.filter((silo) =>
+        this.structureBelowUpgradeLimit(silo),
+      );
+      const result = upgradeCandidates.length > 0
+        ? await this.findBestStructureToUpgrade(upgradeCandidates)
+        : null;
+      if (this.nuclearSlotPressureReadyShotTotal() > 0) return false;
       if (result === null) {
         // A null probe can be a timeout. Only a confirmed max-level set can
         // justify adding another launcher for the waiting queue.
@@ -12907,10 +12914,18 @@
         return false;
       }
       return this.maybeSpawnStructure(UNIT.MissileSilo, {
+        forceNewStructure: true,
         useActualCost: true,
         prioritizeStructureCoverage: true,
         nukePendingLaunchRoute: true,
       });
+    }
+
+    nuclearSlotPressureReadyShotTotal() {
+      const silos = (this.player?.units?.(UNIT.MissileSilo) || [])
+        .filter((silo) => silo.isUnderConstruction?.() !== true)
+        .filter((silo) => this.nukePendingLaunchRouteAllowed(silo.tile?.()));
+      return this.legendaryReadyShotTotal(silos);
     }
 
     // Surplus silo leveling (DIVERGENCE): the reactive lanes above only open
@@ -17939,15 +17954,12 @@
       }).filter((candidate) => currentRoutes === undefined || currentRoutes === null ||
         currentRoutes.some((silo) => silo.id() === candidate.silo.id()));
       if (ranked.length === 0) {
-        // Demand-driven leveling must outrank another level-one silo when a
-        // route-eligible upgrade exists but outprices this tick's gold.
-        const upgradeStillPossible = candidates.some((silo, index) =>
-          buildables[index] &&
-          buildables[index].canUpgrade !== false &&
-          (currentRoutes === undefined || currentRoutes === null ||
-            currentRoutes.some((route) => route.id() === silo.id())));
-        if (upgradeStillPossible) return false;
-        return this.maybeSpawnNukeDemandSilo(pendingRequest);
+        return this.nukeDemandSiloUpgradeFallback(
+          pendingRequest,
+          candidates,
+          buildables,
+          currentRoutes,
+        );
       }
       const selected = ranked[0];
       const selectedLevel = Number(selected.silo.level?.() ?? 1);
@@ -17963,6 +17975,23 @@
       return upgraded;
     }
 
+    nukeDemandSiloUpgradeFallback(pendingRequest, candidates, buildables, currentRoutes) {
+      const upgradeProbeUnknown = candidates.some((silo, index) =>
+        buildables?.[index] == null &&
+        (currentRoutes === undefined || currentRoutes === null ||
+          currentRoutes.some((route) => route.id() === silo.id())));
+      if (upgradeProbeUnknown) return false;
+      // Demand-driven leveling must outrank another level-one silo when a
+      // route-eligible upgrade exists but outprices this tick's gold.
+      const upgradeStillPossible = candidates.some((silo, index) =>
+        buildables[index] &&
+        buildables[index].canUpgrade !== false &&
+        (currentRoutes === undefined || currentRoutes === null ||
+          currentRoutes.some((route) => route.id() === silo.id())));
+      if (upgradeStillPossible) return false;
+      return this.maybeSpawnNukeDemandSilo(pendingRequest);
+    }
+
     nukeSiloRequestTargetInvalid(request) {
       const targetSam = this.game.units(UNIT.SAMLauncher)
         .find((sam) => sam.id() === request.targetSamId);
@@ -17972,9 +18001,13 @@
     }
 
     nukeSiloRequestOwnerInvalid(owner, request) {
+      const nukeTargetInvalid = this.nukeBehavior &&
+        (typeof this.nukeBehavior.isEligibleNukeTarget === "function"
+          ? !this.nukeBehavior.isEligibleNukeTarget(owner)
+          : !this.nukeBehavior.isValidNukeTarget(owner));
       return owner.smallID() === this.player.smallID() ||
         this.player.isFriendly?.(owner) === true || this.player.isOnSameTeam?.(owner) === true ||
-        (this.nukeBehavior && (!this.nukeBehavior.isValidNukeTarget(owner) ||
+        (this.nukeBehavior && (nukeTargetInvalid ||
           !this.nukeBehavior.isValidNukeDestination(request.targetTile)));
     }
 

@@ -128,6 +128,25 @@ function makeWorld({ gold, upgradeCost, routes, canUpgrade = true, stubSpawn = t
   assert.equal(spawn(), 0);
 }
 
+// An unknown upgrade probe is not proof that another Silo is needed. Preserve
+// the demand and retry the useful upgrade on the next pass.
+{
+  const { behavior, state, emitted, spawn } = makeWorld({
+    gold: 5000n,
+    upgradeCost: 4000n,
+    routes: [{ id: () => 1 }],
+  });
+  behavior.buildableForUnits = async () => [null];
+  assert.equal(await behavior.maybeUpgradeSiloForNukeDemand(), false);
+  assert.equal(spawn(), 0, "an unknown upgrade probe must not build another silo");
+  assert.equal(state.nukeWantSlots?.targetSamId, "sam1", "keep the live demand for retry");
+
+  behavior.buildableForUnits = async () => [{ canUpgrade: true, cost: 4000n }];
+  assert.equal(await behavior.maybeUpgradeSiloForNukeDemand(), true);
+  assert.equal(emitted.length, 1, "the next authoritative probe upgrades the existing silo");
+  assert.equal(spawn(), 0);
+}
+
 // One in-flight upgrade must reserve the silo until its updated level is
 // visible; repeated passes against the stale snapshot must not upgrade twice.
 {
@@ -216,4 +235,21 @@ function makeWorld({ gold, upgradeCost, routes, canUpgrade = true, stubSpawn = t
     "a live friendly-fire veto closes the Silo demand instead of falling back to static capacity",
   );
   assert.equal(vetoedUnitType, UNIT.AtomBomb, "check the same weapon used by the salvo plan");
+}
+
+// A tribe-owned SAM cannot keep a Silo investment request alive when that
+// owner is not a legal nuke recipient.
+{
+  const { behavior, state } = makeWorld({
+    gold: 5000n,
+    upgradeCost: 4000n,
+    routes: [{ id: () => 1 }],
+  });
+  const botOwner = { smallID: () => 2 };
+  behavior.nukeBehavior.isEligibleNukeTarget = (candidate) => candidate !== botOwner;
+  assert.equal(
+    behavior.nukeSiloRequestOwnerInvalid(botOwner, state.nukeWantSlots),
+    true,
+    "reject an existing target-demand request for a Bot-owned SAM",
+  );
 }

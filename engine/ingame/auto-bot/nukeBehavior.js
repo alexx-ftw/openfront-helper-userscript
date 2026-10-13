@@ -1002,15 +1002,20 @@
       return resolved;
     }
 
+    isHighestValueNukeTargetCandidate(other, exclude) {
+      return other.smallID() !== this.player.smallID() &&
+        other.type?.() !== PlayerType.Bot &&
+        (!exclude || other.smallID() !== exclude.smallID()) &&
+        other.isAlive?.() !== false &&
+        !playersArePermanentTeammates(this.player, other) &&
+        this.attackBehavior.shouldAttack(other) !== false;
+    }
+
     computeHighestValueNukeTarget(exclude) {
       let best = null;
       let bestValue = 0;
       for (const other of this.game.players()) {
-        if (other.smallID() === this.player.smallID()) continue;
-        if (exclude && other.smallID() === exclude.smallID()) continue;
-        if (other.isAlive?.() === false) continue;
-        if (playersArePermanentTeammates(this.player, other)) continue;
-        if (this.attackBehavior.shouldAttack(other) === false) continue;
+        if (!this.isHighestValueNukeTargetCandidate(other, exclude)) continue;
         const structures = unitsOfTypes(other);
         const value = structures.reduce(
           (total, structure) => total + this.nukeStructureValue(structure),
@@ -1212,10 +1217,11 @@
       return null;
     }
 
-    findHostileNukeTarget() {
+    findHostileNukeTarget(eligibleOnly = false) {
       for (const relation of this.player.allRelationsSorted()) {
         if (relation.relation !== Relation.Hostile) continue;
         const other = relation.player;
+        if (eligibleOnly && !this.isEligibleNukeTarget(other)) continue;
         if (playersArePermanentTeammates(this.player, other)) continue;
         // A hostile is still a legitimate nuclear target when we have grown
         // larger.  The old 2x-capacity veto made a winning nation unable to
@@ -3575,7 +3581,7 @@
       );
       if (!sam || sam.isAlive?.() === false) return {};
       const owner = sam.owner?.();
-      if (!owner || !this.isValidNukeTarget(owner)) return {};
+      if (!owner || !this.isEligibleNukeTarget(owner)) return {};
       return { sam, owner };
     }
 
@@ -3616,7 +3622,7 @@
       if (dominantCrown) return dominantCrown;
       const allyTarget = this.findAllyNukeTarget();
       if (allyTarget) return allyTarget;
-      const hostileTarget = this.findHostileNukeTarget();
+      const hostileTarget = this.findHostileNukeTarget(true);
       if (hostileTarget) return hostileTarget;
 
       // In FFAs, nuke the crown if they're far enough ahead

@@ -321,8 +321,36 @@ function loadHistoryScenarios(dir) {
   });
 }
 
-function runSim(scenario, logPath) {
+function finishLog(log, knownError) {
   return new Promise((resolve) => {
+    let settled = false;
+    const settle = (error = null) => {
+      if (settled) return;
+      settled = true;
+      log.off("finish", onFinish);
+      log.off("error", onError);
+      resolve(error);
+    };
+    const onFinish = () => settle();
+    const onError = (error) => settle(error);
+
+    if (knownError || log.errored) {
+      settle(knownError ?? log.errored);
+      return;
+    }
+    if (log.writableFinished) {
+      settle();
+      return;
+    }
+
+    log.once("finish", onFinish);
+    log.once("error", onError);
+    log.end((error) => settle(error ?? null));
+  });
+}
+
+function runSim(scenario, logPath) {
+  return new Promise((resolve, reject) => {
     const env = { ...process.env, ...BASE_ENV, ...scenario.env };
     const child = spawn(
       "./node_modules/.bin/tsx",
@@ -330,18 +358,21 @@ function runSim(scenario, logPath) {
       { env, stdio: ["ignore", "pipe", "pipe"] },
     );
     const log = fs.createWriteStream(logPath);
-    child.stdout.pipe(log);
-    child.stderr.pipe(log);
+    let logError = null;
+    log.on("error", (error) => {
+      logError ??= error;
+    });
+    child.stdout.pipe(log, { end: false });
+    child.stderr.pipe(log, { end: false });
     const timeoutMs =
       Number.parseInt(process.env.OFH_RUNNER_TIMEOUT_MS ?? "", 10) || 15 * 60 * 1000;
     const timer = setTimeout(() => {
       log.write(`\n[run-scenario] timeout after ${Math.round(timeoutMs / 60000)} min, killing\n`);
       child.kill("SIGKILL");
     }, timeoutMs);
-    child.on("exit", (code) => {
+    child.on("close", (code, signal) => {
       clearTimeout(timer);
-      log.end();
-      resolve({ code });
+      finishLog(log, logError).then((error) => resolve({ code, signal, logError: error }), reject);
     });
   });
 }
@@ -371,11 +402,17 @@ let failures = 0;
 for (const scenario of selected) {
   const logPath = path.join(outDir, `${scenario.name}.log`);
   process.stdout.write(`[run-scenario] start ${scenario.name} ... `);
-  await runSim(scenario, logPath);
+  const run = await runSim(scenario, logPath);
+  const status = run.signal ? `signal ${run.signal}` : `exit ${run.code}`;
+  if (run.logError) {
+    failures += 1;
+    process.stdout.write(`FAIL (log write error; child ${status})\n`);
+    continue;
+  }
   const { result, text: logText } = parseResult(logPath);
   if (result === null) {
     failures += 1;
-    process.stdout.write("FAIL (no result line)\n");
+    process.stdout.write(`FAIL (no result line; child ${status})\n`);
     continue;
   }
   const ok = scenario.assert(result.result ?? result, logText);

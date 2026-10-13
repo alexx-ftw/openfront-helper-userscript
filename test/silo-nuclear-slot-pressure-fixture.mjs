@@ -51,6 +51,7 @@ function makeWorld({
   const game = {
     ticks: () => 0,
     config: () => ({
+      gameConfig: () => ({ gameMode: "Free For All", difficulty }),
       isUnitDisabled: (type) => siloDisabled && type === UNIT.MissileSilo,
       SiloCooldown: () => 500,
       SAMCooldown: () => 500,
@@ -489,6 +490,83 @@ function makeWorld({
   );
   assert.equal(readyChecks, 2, "recheck ready slots before falling back to a build");
   assert.equal(spawns.length, 0, "do not add a Silo once the queue has a ready shot");
+}
+
+// A successful probe must not take the AI beyond its level-five Silo policy.
+{
+  const { behavior } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5],
+    level: 5,
+  });
+  behavior.nukePendingLaunchRouteAllowed = () => true;
+  behavior.legendaryReadyShotTotal = () => 0;
+  let probed = null;
+  behavior.findBestStructureToUpgrade = async (structures) => {
+    probed = structures;
+    return structures.length > 0 ? { structure: structures[0], bu: {} } : null;
+  };
+  behavior.maybeSpawnUnqueuedNuclearSlotPressureSilo = () => false;
+  assert.equal(await behavior.maybeUpgradeSiloForNuclearSlotPressure(), false);
+  assert.deepEqual(probed, null, "do not probe capped level-five Silos for another upgrade");
+}
+
+// When the route-scoped lane decides a new Silo is needed, generic spawning
+// must not upgrade a different, route-blocked Silo first.
+{
+  const { behavior } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5],
+    level: 1,
+  });
+  behavior.missileSiloPhysicalCapReached = () => false;
+  behavior.safeConstructionCost = () => 1n;
+  behavior.spendableConstructionGold = () => 1n;
+  let spawnOptions = null;
+  behavior.maybeSpawnStructure = (_type, options) => {
+    spawnOptions = options;
+    return true;
+  };
+  assert.equal(behavior.maybeSpawnNuclearSlotPressureSilo(), true);
+  assert.equal(spawnOptions.forceNewStructure, true, "the fallback must place a new Silo");
+}
+
+// A launch slot can become ready while new-Silo placement awaits the worker.
+{
+  const { behavior, emitted } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5],
+    level: 5,
+  });
+  behavior.structureSpawnEligible = () => true;
+  behavior.debugStructureLaneCount = () => {};
+  behavior.missileSiloPhysicalCapReached = () => false;
+  behavior.safeConstructionCost = () => 1n;
+  behavior.spendableConstructionGold = () => 1n;
+  behavior.economicStructureSpawnPending = () => false;
+  behavior.constructionCostForOptions = () => 1n;
+  behavior.availableGoldAfterReserve = () => 1n;
+  behavior.nuclearSlotPressureQueueEligible = () => true;
+  behavior.nukePendingLaunchRouteAllowed = () => true;
+  let readyShots = 0;
+  behavior.nuclearSlotPressureReadyShotTotal = () => readyShots;
+  let finishProbe;
+  behavior.structureSpawnBuildable = () =>
+    new Promise((resolve) => {
+      finishProbe = () => resolve({ canBuild: 77, cost: 1n });
+    });
+  behavior.emitStructureBuildable = (type, buildable) => {
+    emitted.push({ type, buildable });
+    return true;
+  };
+
+  const spawn = behavior.maybeSpawnNuclearSlotPressureSilo();
+  await Promise.resolve();
+  assert.equal(typeof finishProbe, "function", "wait until the placement probe is pending");
+  readyShots = 1;
+  finishProbe();
+  assert.equal(await spawn, false, "a newly ready shot vetoes the pending Silo build");
+  assert.equal(emitted.length, 0, "do not emit a Silo after the queue gains a ready slot");
 }
 
 process.stdout.write("silo nuclear slot pressure tests passed\n");
