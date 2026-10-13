@@ -52,7 +52,9 @@ const sandbox = {
   PlayerType: { Bot: "Bot" },
   state: { settings: { winFixes: true }, stats: { nukes: 0 }, recentMirvHits: [] },
   currentDifficulty: () => testDifficulty,
-  isLegendaryDifficulty: (difficulty) => difficulty === "Legendary",
+  // Production (portutil.js) treats both spellings as the Legendary tier:
+  // the engine enum only has Impossible, the userscript UI says Legendary.
+  isLegendaryDifficulty: (difficulty) => difficulty === "Legendary" || difficulty === "Impossible",
   isAtLeastHardDifficulty: () => true,
   console,
 };
@@ -119,6 +121,8 @@ const wrappedGame = gameApiSandbox.__createGameApi({}).game;
   retryBehavior.collectNukeCandidates = async (candidateTarget) =>
     candidateTarget === richerTarget ? richerCandidates : ladderCandidates;
   retryBehavior.findHighestValueNukeTarget = () => richerTarget;
+  retryBehavior.findValueRankedNukeTargets = () => [{ target: richerTarget, value: 3_000_000 }];
+  retryBehavior.isEligibleNukeTarget = () => true;
   retryBehavior.shouldDeferNukeForEconomy = async () => false;
   retryBehavior.playerStructureValue = (candidateTarget) =>
     candidateTarget === richerTarget ? 3_000_000 : 100_000;
@@ -439,11 +443,12 @@ assert.equal(
   "Legendary uses an affordable Atom instead of leaving a ready Silo idle while saving for Hydrogen",
 );
 testDifficulty = sandbox.Difficulty.Impossible;
-// Merged semantics: the atom fallback is now LEGENDARY-ONLY, so the
-// Impossible hydro specialist (unaffordable Hydro, no Atom allowed)
-// declines to fire rather than leaving a ready Silo idle.
+// Production bridge semantics: currentDifficulty() maps the Legendary UI
+// tier to the engine's Impossible enum, and the fallback gate is the
+// isLegendaryDifficulty union — so the Impossible hydro specialist keeps
+// the same affordable-Atom fallback instead of idling a ready Silo.
 const impossibleFallbackNuke = await legendaryHydroSpecialist.selectAffordableNuke();
-assert.equal(impossibleFallbackNuke, null);
+assert.equal(impossibleFallbackNuke?.type, UNIT.AtomBomb);
 
 const nukeSelf = {
   smallID: () => 1,
@@ -1375,6 +1380,44 @@ assert.equal(
   );
 }
 
+// ── Decision record: the raw-equality Legendary saturation divergence is
+// PINNED DEAD. Activating it (isLegendaryDifficulty union) was probed on
+// 2026-10-13 and rejected on paired SAM-regime evidence — seed A turned a
+// 25000-tick draw into a 15571 conquest loss (936k -> 295k tiles alive) and
+// seed B died at 5108 instead of 8491; baikal stayed neutral. Same family as
+// the 2026-10-09 starvation-release closure. Do not "fix" this comparison
+// without a new pre-declared lever that pairs the scoring change with its own
+// state scoping and passes both SAM seeds plus baikal no-harm.
+{
+  sandbox.boundingBoxTiles = (gm, center) => [center];
+  const sat = Object.create(sandbox.__NukeBehavior.prototype);
+  sat.game = {
+    owner: () => null,
+    config: () => ({ gameConfig: () => ({ gameMode: "Free For All" }) }),
+  };
+  sat.player = { smallID: () => 1, isFriendly: () => false };
+  sat.nukeSpawn = () => 7;
+  sat.isNukeAlreadyLandingNear = () => false;
+  sat.isTrajectoryInterceptableBySam = () => true;
+  sat.enemyLandBlastCoverage = () => 0.5;
+  const ctx = (difficulty) => ({
+    range: 2,
+    target: { smallID: () => 42 },
+    type: UNIT.AtomBomb,
+    difficulty,
+  });
+  assert.equal(
+    sat.isScorableNukeTile(5, ctx(sandbox.Difficulty.Impossible)),
+    -1,
+    "the saturation divergence stays intentionally dead on the Legendary tier",
+  );
+  assert.equal(
+    sat.isScorableNukeTile(5, ctx(sandbox.Difficulty.Hard)),
+    -1,
+    "Hard still vetoes SAM-interceptable tiles at collection",
+  );
+}
+
 // ── Upstream 34a8fe723 delta 2: per-tile value gate + coverage ranking ──────
 {
   const col = Object.create(sandbox.__NukeBehavior.prototype);
@@ -2029,10 +2072,18 @@ assert.equal(
     null,
     "the lane is win-fixes gated",
   );
+  // Production bridge semantics: currentDifficulty() maps the Legendary UI
+  // tier to the engine's Impossible enum, so the survival lane must arm on
+  // Impossible and stay dormant below the tier.
   assert.equal(
     mk({ difficulty: "Impossible" }).freezeGiantStrikeTarget(),
+    giant,
+    "the production Legendary tier (Impossible enum) arms the survival lane",
+  );
+  assert.equal(
+    mk({ difficulty: "Hard" }).freezeGiantStrikeTarget(),
     null,
-    "the strike is Legendary-only",
+    "below the Legendary tier the lane stays dormant",
   );
   sandbox.state.settings.winFixes = true;
   testDifficulty = "Impossible";

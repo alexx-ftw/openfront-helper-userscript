@@ -3493,6 +3493,7 @@ function makeIncomingNukePriorityCase(hasDemand = false) {
   behavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 1n });
   behavior.shouldDeferNukeForEconomy = () => false;
   behavior.findHighestValueNukeTarget = () => richerTarget;
+  behavior.findValueRankedNukeTargets = () => [{ target: richerTarget, value: 5_000_000 }];
   behavior.playerStructureValue = (target) => (target === richerTarget ? 5_000_000 : 1_000_000);
   behavior.collectNukeCandidates = async (target) => {
     collectedTargets.push(target);

@@ -619,6 +619,7 @@
       // threat }) per game tick; the hostile-player and border scans it builds
       // on are shared with the other construction gates.
       this._strategicBorderDefensePostThreatSnapshot = null;
+      this._leadGuardDefensePostThreatSnapshot = null;
       this._hostileThreatSnapshotTick = null;
       this._hostileThreatSnapshot = null;
       this._hostileSiloCapacitySnapshotTick = null;
@@ -1173,7 +1174,10 @@
       // nuclear threat must not release an overwhelming land-invasion reserve
       // to the offensive/economic planner after its SAM work fails.
       if (legendaryMissileEmergency && !hardReserve) return null;
-      if (hardReserve && this.shouldDeferHardDefensePostRetry()) return false;
+      if (hardReserve && this.shouldDeferHardDefensePostRetry()) {
+        // The SAM-demand lane already preserves economic and defensive reserves.
+        return this.maybeUpgradeSiloForNukeDemand();
+      }
       if (await this.tryBuildDefensePost(activeThreat)) return true;
 
       // Save the slot only while gold is the missing requirement. If the post
@@ -1181,9 +1185,9 @@
       // into productive construction. An army-sized Nation/Human invasion keeps
       // the hard reserve so a Port or other unrelated build cannot consume the
       // next bounded placement retry.
-      if (
-        !this.canAffordDefensePost() || hardReserve
-      ) return false;
+      if (!this.canAffordDefensePost() || hardReserve) {
+        return hardReserve ? this.maybeUpgradeSiloForNukeDemand() : false;
+      }
       return null;
     }
 
@@ -1328,7 +1332,8 @@
         // neighbour still authorizes a small capped Post budget — waiting for
         // the first incoming wave is what left quiet frontiers with zero Posts
         // once the multi-nation dogpile actually started.
-        return this.strategicBorderDefensePostThreat(difficulty);
+        return this.strategicBorderDefensePostThreat(difficulty) ||
+          this.leadGuardDefensePostThreat(difficulty);
       }
       const ourTroops = this.player.troops();
       if (ourTroops <= 0) return null;
@@ -1341,7 +1346,11 @@
         ratio >= PREEMPTIVE_DEFENSE_POST_THREAT_RATIO &&
         landAttacks.some((attack) => this.isStrategicLandAttack(attack));
       if (ratio < UNDER_ATTACK_THREAT_RATIO && !preemptiveStrategicThreat) {
-        return null;
+        // War-agnostic guard reach: a sub-threshold live attack must still
+        // fall through to the lead guard — an active attacker is precisely
+        // the front that needs Posts, and waiting for the ratio threshold is
+        // what left the 52%-lead window with zero defensive structures.
+        return this.leadGuardDefensePostThreat(difficulty, landAttacks);
       }
       const allowed =
         difficulty === Difficulty.Medium
@@ -1410,16 +1419,7 @@
       const allowed =
         difficulty === Difficulty.Medium
           ? 1
-          : Math.min(
-              PREEMPTIVE_DEFENSE_POST_MAX_POSTS_CEILING,
-              PREEMPTIVE_DEFENSE_POST_MAX_POSTS +
-                Math.floor(
-                  Math.max(
-                    0,
-                    frontTiles.length - PREEMPTIVE_DEFENSE_POST_FRONT_FLOOR,
-                  ) / PREEMPTIVE_DEFENSE_POST_FRONT_TILES_PER_POST,
-                ),
-            );
+          : this.frontScaledPreemptiveDefensePostBudget(frontTiles);
       return {
         allowed,
         frontTiles,
@@ -1427,6 +1427,250 @@
         landAttacks: [],
         ratio: strongest.troops / ourTroops,
         strategicBorder: true,
+      };
+    }
+
+    // Front-scaled preemptive Post budget shared by the strategic-border lane
+    // and the lead guard: the existing measured constants (2 base posts plus
+    // one per extra block of exposed front tiles, capped at 6).
+    frontScaledPreemptiveDefensePostBudget(frontTiles) {
+      return Math.min(
+        PREEMPTIVE_DEFENSE_POST_MAX_POSTS_CEILING,
+        PREEMPTIVE_DEFENSE_POST_MAX_POSTS +
+          Math.floor(
+            Math.max(0, frontTiles.length - PREEMPTIVE_DEFENSE_POST_FRONT_FLOOR) /
+              PREEMPTIVE_DEFENSE_POST_FRONT_TILES_PER_POST,
+          ),
+      );
+    }
+
+    // Lead-survival guard (measured baikal-nuke-wars collapse: 52% territory
+    // at tick 3000 with zero defensive structures, dead by 4433): while the
+    // bot is the leading non-team player by territory AND holds gold headroom
+    // beyond a Defense Post plus the next economy rung, its most pressured
+    // strategic border — regardless of quiet/war status — must reach the same
+    // front-scaled Post expectation the preemptive lane already uses before
+    // discretionary offense spending resumes. Legendary-only (the documented
+    // adaptive construction mode) and winFixes-scoped; reuses the existing
+    // numTilesOwned/hostile-player/front accessors and coverage math — no new
+    // plumbing or thresholds.
+    leadGuardDefensePostThreat(difficulty, activeLandAttacks = null) {
+      if (!isLegendaryDifficulty(difficulty)) {
+        if (Array.isArray(state.stats?.constructionDump)) {
+          this._leadGuardTraceState = {
+            gate: "not_legendary",
+            tick: safeStructureGameTick(this.game),
+            difficulty: String(difficulty),
+          };
+        }
+        return null;
+      }
+      if (state.settings.winFixes !== true) {
+        if (Array.isArray(state.stats?.constructionDump)) {
+          this._leadGuardTraceState = {
+            gate: "winfixes_off",
+            tick: safeStructureGameTick(this.game),
+            difficulty: String(difficulty),
+          };
+        }
+        return null;
+      }
+      const rawTick = safeStructureGameTick(this.game);
+      const snapshotTick = Number.isFinite(rawTick) ? rawTick : null;
+      const snapshot = this._leadGuardDefensePostThreatSnapshot;
+      if (
+        snapshot?.tick === snapshotTick &&
+        snapshot.difficulty === difficulty
+      ) {
+        return snapshot.threat;
+      }
+      const threat = this.computeLeadGuardDefensePostThreat(
+        difficulty,
+        activeLandAttacks,
+      );
+      if (snapshotTick !== null) {
+        this._leadGuardDefensePostThreatSnapshot = {
+          difficulty,
+          tick: snapshotTick,
+          threat,
+        };
+      }
+      return threat;
+    }
+
+    computeLeadGuardDefensePostThreat(difficulty, knownLandAttacks = null) {
+      // Runtime-truth diagnostic is inert without the test harness dump.
+      const trace = Array.isArray(state.stats?.constructionDump);
+      const numbers = {
+        ourTiles: null,
+        maxHostileTiles: null,
+        strongestTroops: null,
+        frontCount: null,
+        postsNearFront: null,
+        allowed: null,
+        activeLandAttacks: null,
+        strategicLandAttacks: null,
+        attackerTypes: null,
+        borderCandidates: null,
+      };
+      const reportGate = (gate) => {
+        if (trace) {
+          this._leadGuardTraceState = {
+            gate,
+            tick: safeStructureGameTick(this.game),
+            ...numbers,
+          };
+        }
+        return null;
+      };
+      const hostilePlayers = this.liveHostilePlayers();
+      if (!Array.isArray(hostilePlayers) || hostilePlayers.length === 0) {
+        return reportGate("hostiles_empty");
+      }
+      if (!this.leadGuardTerritorialLead(hostilePlayers, numbers)) {
+        return reportGate("not_lead");
+      }
+      if (!this.legendaryQuietPostGoldAboveEconomyRung()) {
+        return reportGate("gold_rung");
+      }
+      const activeLandAttacks = knownLandAttacks ??
+        (this.player?.incomingAttacks?.() ?? []).filter(
+          (attack) =>
+            this.isActiveIncomingAttack(attack) &&
+            this.isLandAttack(attack) &&
+            !this.isTribeLandAttack(attack),
+        );
+      const activeStrategicLandAttacks = activeLandAttacks.filter((attack) =>
+        this.isStrategicLandAttack(attack),
+      );
+      numbers.activeLandAttacks = activeLandAttacks.length;
+      numbers.strategicLandAttacks = activeStrategicLandAttacks.length;
+      numbers.attackerTypes = [...new Set(activeLandAttacks.map((attack) =>
+        String(attack.attacker?.()?.type?.() ?? "unknown"),
+      ))];
+      const front = this.leadGuardFrontData(
+        hostilePlayers,
+        activeStrategicLandAttacks,
+        numbers,
+        trace,
+      );
+      if (front === null) return reportGate("no_border_opponent");
+      return this.buildLeadGuardDefensePostThreat(
+        front,
+        numbers,
+        trace,
+        reportGate,
+      );
+    }
+
+    leadGuardTerritorialLead(hostilePlayers, numbers) {
+      const isTeam =
+        String(this.game.config().gameConfig().gameMode) === "Team";
+      let ourTiles = Number(this.player?.numTilesOwned?.());
+      if (isTeam) {
+        ourTiles = 0;
+        for (const player of this.game.players()) {
+          if (player.isPlayer() && this.player.isOnSameTeam(player)) {
+            ourTiles += Number(player.numTilesOwned?.());
+          }
+        }
+      }
+      if (!Number.isFinite(ourTiles) || ourTiles <= 0) return false;
+      let isLead = true;
+      for (const opponent of hostilePlayers) {
+        const tiles = Number(opponent.numTilesOwned?.() || 0);
+        numbers.ourTiles = ourTiles;
+        numbers.maxHostileTiles = Math.max(
+          numbers.maxHostileTiles ?? 0,
+          tiles,
+        );
+        if (tiles >= ourTiles) isLead = false;
+      }
+      return isLead;
+    }
+
+    leadGuardFrontData(hostilePlayers, activeStrategicLandAttacks, numbers, trace) {
+      const borderingOwnerIds = this.borderingLandOwnerIds();
+      const borderPlayers = hostilePlayers.filter((opponent) => {
+        const sid = this.readPlayerSmallId(opponent);
+        return borderingOwnerIds !== null
+          ? borderingOwnerIds.has(sid)
+          : this.safeSharesBorder(opponent);
+      });
+      const leadFrontPlayers = new Map(
+        borderPlayers.map((opponent) => [
+          this.readPlayerSmallId(opponent),
+          opponent,
+        ]),
+      );
+      for (const attack of activeStrategicLandAttacks) {
+        const attacker = attack.attacker?.();
+        const sid = this.readPlayerSmallId(attacker);
+        if (sid !== null && sid !== undefined) leadFrontPlayers.set(sid, attacker);
+      }
+      if (leadFrontPlayers.size === 0) return null;
+      if (trace) {
+        numbers.borderCandidates = borderPlayers
+          .map((opponent) => ({
+            sid: this.readPlayerSmallId(opponent),
+            type: String(opponent.type?.() ?? "unknown"),
+            tiles: Number(opponent.numTilesOwned?.() || 0),
+            troops: Number(opponent.troops?.() || 0),
+          }))
+          .slice(0, 12);
+      }
+      const frontTiles = new Set(
+        this.getLeadGuardBorderFrontTiles(new Set(leadFrontPlayers.keys())),
+      );
+      for (const attack of activeStrategicLandAttacks) {
+        for (const tile of this.getAttackFrontTiles([attack])) frontTiles.add(tile);
+      }
+      return { leadFrontPlayers, frontTiles: [...frontTiles] };
+    }
+
+    buildLeadGuardDefensePostThreat(front, numbers, trace, reportGate) {
+      const strongest = [...front.leadFrontPlayers.entries()].reduce(
+        (best, [opponentSid, opponent]) => {
+          const troops = Math.max(0, Number(opponent?.troops?.() || 0));
+          return best === null || troops > best.troops
+            ? { opponentSid, troops }
+            : best;
+        },
+        null,
+      );
+      if (strongest === null) return reportGate("no_border_opponent");
+      numbers.strongestTroops = strongest.troops;
+      numbers.frontCount = front.frontTiles.length;
+      if (front.frontTiles.length === 0) return reportGate("no_front");
+      if (
+        (this.player?.units?.(UNIT.DefensePost)?.length ?? 0) >=
+        PREEMPTIVE_DEFENSE_POST_MAX_POSTS
+      ) {
+        return reportGate("post_cap");
+      }
+      const allowed = this.frontScaledPreemptiveDefensePostBudget(front.frontTiles);
+      numbers.allowed = allowed;
+      numbers.postsNearFront = this.countDefensePostsNearFront(
+        front.frontTiles,
+        allowed,
+      );
+      if (numbers.postsNearFront >= allowed) return reportGate("coverage_ok");
+      if (trace) {
+        this._leadGuardTraceState = {
+          gate: "armed",
+          tick: safeStructureGameTick(this.game),
+          ...numbers,
+        };
+      }
+      return {
+        allowed,
+        frontTiles: front.frontTiles,
+        incomingTroops: 0,
+        landAttacks: [],
+        ratio:
+          strongest.troops /
+          Math.max(1, Number(this.player?.troops?.() || 0)),
+        leadGuard: true,
       };
     }
 
@@ -1466,6 +1710,36 @@
         opponents,
         borderingOwnerIds,
       );
+    }
+
+    // The leader's exposed perimeter can be separated from Nation rivals by
+    // a belt of tribes; protect every hostile-owned land edge so posts also
+    // cover the tile route the eventual attack must cross.
+    getLeadGuardBorderFrontTiles(hostileOwnerIds) {
+      if (
+        typeof this.player?.borderTiles !== "function" ||
+        typeof this.game?.neighbors !== "function" ||
+        typeof this.game?.hasOwner !== "function" ||
+        typeof this.game?.ownerID !== "function"
+      ) {
+        return [];
+      }
+      const frontTiles = [];
+      outer: for (const borderTile of this.player.borderTiles()) {
+        for (const neighbor of this.game.neighbors(borderTile)) {
+          if (typeof this.game.isLand === "function" && !this.game.isLand(neighbor)) {
+            continue;
+          }
+          if (
+            this.game.hasOwner(neighbor) &&
+            hostileOwnerIds.has(this.game.ownerID(neighbor))
+          ) {
+            frontTiles.push(borderTile);
+            continue outer;
+          }
+        }
+      }
+      return frontTiles;
     }
 
     strongestStrategicBorderOpponent(opponents, borderingOwnerIds) {
@@ -1880,6 +2154,7 @@
       const tick =
         typeof this.game?.ticks === "function" ? this.game.ticks() : 0;
       if (tick < LEGENDARY_LANDLOCKED_ARSENAL_BACKSTOP_TICK) return false;
+      if (this.leadGuardDefensePostThreat(context.difficulty) !== null) return false;
       return profileStructureAsync(profile, "structures-ordinary-landlocked-arsenal", () =>
         this.maybeOpenLegendaryArsenal(context));
     }
@@ -2674,6 +2949,7 @@
       config,
       citiesDisabled,
       cityCount,
+      difficulty,
       hasCoastalTiles,
       hasOceanPortTiles,
       missileSilosEnabled,
@@ -2683,7 +2959,13 @@
       this.debugStructureLaneCount("laneLegendaryChain");
       const missileDefenseInitiallyUrgent =
         this.legendaryMissileDefenseUrgent();
+      // Lead-survival cap: while the guarded border sits below its Defense
+      // Post expectation, discretionary offensive silo spending waits; the
+      // economy and in-flight nuclear commitments keep their existing lanes.
+      const leadGuardShortfall =
+        this.leadGuardDefensePostThreat(difficulty) !== null;
       if (
+        !leadGuardShortfall &&
         !missileDefenseInitiallyUrgent &&
         await this.maybeOpenLegendaryArsenal({
           config,
@@ -2720,6 +3002,7 @@
       // A first launcher is offensive capacity as well as deterrence; place
       // it only after every actionable, timely SAM construction has been tried.
       if (
+        !leadGuardShortfall &&
         nukesEnabled &&
         missileSilosEnabled &&
         typeof this.player?.units === "function" &&
@@ -2765,7 +3048,9 @@
       });
       return this.runLegendaryConstructionGroups(
         cityCount,
-        candidates,
+        leadGuardShortfall
+          ? candidates.filter((candidate) => candidate.type !== UNIT.MissileSilo)
+          : candidates,
         economyGrowthPriority,
       );
     }
@@ -2775,7 +3060,9 @@
     // the construction dump enabled (OFH_CONSTRUCTION_DUMP), the decision
     // appends one inert sample — see recordConstructionPlannerSample.
     async runLegendaryConstructionGroups(cityCount, candidates, economyGrowthPriority) {
-      const actionGroups = this.legendaryConstructionActionGroups(
+      // The headless structure-trace wrapper is async; await also accepts the
+      // synchronous production array without changing its ranking or order.
+      const actionGroups = await this.legendaryConstructionActionGroups(
         candidates,
         economyGrowthPriority,
       );
@@ -2814,6 +3101,7 @@
         gold: String(this.player.gold() ?? 0n),
         cityCount,
         ownedPorts: this.ownedLevels(UNIT.Port),
+        leadGuard: this._leadGuardTraceState ?? null,
         groups: actionGroups.map((group) =>
           group.slice(0, 4).map((candidate) => ({
             type: candidate.type ?? candidate.action ?? "unknown",
@@ -13405,7 +13693,6 @@
       const pendingRequest = state.nukeWantSlots;
       const request = this.validNukeSiloUpgradeRequest();
       if (request === null) return false;
-      if (this.legendaryMissileDefenseUrgent()) return false;
       const planStillMissing = this.samOverwhelmPlanStillMissing(request);
       const scopedSilos = this.nukeDemandSilosForUpgrade(
         request,
@@ -13598,6 +13885,7 @@
       if (!state.settings.winFixes || !autoBotBuildAllowed(UNIT.MissileSilo)) {
         return null;
       }
+      if (this.legendaryMissileDefenseUrgent()) return null;
       const request = state.nukeWantSlots;
       if (request?.pendingLaunches === true) return null;
       const requiredCapacity = Number(request?.need);

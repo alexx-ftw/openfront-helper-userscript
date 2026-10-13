@@ -787,7 +787,11 @@ const enemyTeam = {
   isAlive: () => true,
   gold: () => 5_000_000n,
   units: (type) => {
-    if (type === UNIT.SAMLauncher) return [makeUnit(501, enemyTeamSamLevel)];
+    if (type === UNIT.SAMLauncher) {
+      const sam = makeUnit(501, enemyTeamSamLevel);
+      sam.owner = () => enemyTeam;
+      return [sam];
+    }
     if (type === UNIT.MissileSilo) return [makeUnit(502, 1)];
     return [];
   },

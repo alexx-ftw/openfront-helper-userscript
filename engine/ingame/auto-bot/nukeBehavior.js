@@ -685,7 +685,7 @@
         selectedNuke,
         silos,
         difficulty,
-        candidates,
+        { candidates, excludedTarget: liveDemandTarget },
       );
       if (
         !valueFallback ||
@@ -815,7 +815,10 @@
       }
       // Hydrogen finisher runs before the ladder's next ordinary decision so
       // the freshly-cleared cluster is harvested at maximum blast radius.
-      if (currentDifficulty() === Difficulty.Legendary) {
+      // Raw equality never fires in production: currentDifficulty() maps the
+      // Legendary UI tier to the engine's Impossible enum. Use the received
+      // difficulty through the union gate like every sibling gate here.
+      if (isLegendaryDifficulty(difficulty)) {
         ordinaryAction = await this.maybeFirePostSalvoHydrogen() || ordinaryAction;
       }
       return ordinaryAction;
@@ -868,7 +871,11 @@
     // (team profiles among them) exit at the FIRST mode comparison.
     freezeGiantStrikeTarget() {
       if (state.settings.winFixes !== true) return null;
-      if (currentDifficulty() !== Difficulty.Legendary) return null;
+      // Production bridge: currentDifficulty() maps the Legendary UI tier to
+      // the engine's Impossible enum, so the raw spelling never arms this
+      // lane (same dead-comparison class as the recent-penalty fix). Union
+      // gate keeps the tier requirement while matching both spellings.
+      if (!isLegendaryDifficulty(currentDifficulty())) return null;
       const ourTroops = this.freezeGiantOwnTroops();
       if (ourTroops === null) return null;
       const { giant, giantTroops } = this.largestHostileGiant();
@@ -929,7 +936,7 @@
         this.samDemandMatchesTarget(target)
       ) return { list, retargeted: null };
       const retried = await this.retryWithHigherValueTarget(
-        target, selectedNuke, silos, difficulty, list,
+        target, selectedNuke, silos, difficulty, { candidates: list },
       );
       if (retried === null) return { list, retargeted: null };
       return {
@@ -939,37 +946,42 @@
     }
 
     // Legendary value-directed retry: the ordinary target ladder picks by
-    // relation/crown, not wealth — measured as targets whose whole candidate
-    // set scores ~0 while structure-rich enemies sit untargeted (3 ready
-    // silos, 26MM gold, zero launches). When the chosen target cannot pay
-    // for the bomb, retry once against the highest absolute structure-value
-    // owner before standing down. Returns {target, candidates} or null.
-    async retryWithHigherValueTarget(target, selectedNuke, silos, difficulty, candidates) {
-      const valueTarget = this.findHighestValueNukeTarget(target);
-      if (valueTarget === null) return null;
-      if (await this.shouldDeferNukeForEconomy(valueTarget, selectedNuke.cost)) {
-        return null;
-      }
+    // relation/crown, not wealth. Walk eligible structure-value targets in
+    // rank order until one improves the candidate score; otherwise stand down.
+    // Returns {target, candidates} or null.
+    async retryWithHigherValueTarget(
+      target,
+      selectedNuke,
+      silos,
+      difficulty,
+      { candidates, excludedTarget = null },
+    ) {
+      const currentCandidateValue = this.bestCandidateValue(candidates);
       // Wealth-directed retarget: engage whenever the ladder target holds
       // less than half the treasure of the value leader — not only when the
       // ladder found nothing at all. Conquest eats structure wealth fast, so
       // waiting for a total miss wastes the window in which a 5MM harvest
       // is still possible.
-      const ladderValue = this.playerStructureValue(target);
-      const valueTargetValue = this.playerStructureValue(valueTarget);
-      if (
-        this.bestCandidateValue(candidates) > 0 &&
-        valueTargetValue < Math.max(1_500_000, ladderValue * 2)
-      ) {
-        return null;
+      const ladderValue = currentCandidateValue > 0
+        ? this.playerStructureValue(target)
+        : 0;
+      const minimumRetargetValue = currentCandidateValue > 0
+        ? Math.max(1_500_000, ladderValue * 2)
+        : 0;
+      for (const { target: valueTarget, value: valueTargetValue } of
+        this.findValueRankedNukeTargets(target)) {
+        if (excludedTarget?.smallID() === valueTarget.smallID()) continue;
+        if (await this.shouldDeferNukeForEconomy(valueTarget, selectedNuke.cost)) return null;
+        if (valueTargetValue < minimumRetargetValue) break;
+        if (!this.isEligibleNukeTarget(valueTarget)) continue;
+        const retryCandidates = await this.collectNukeCandidates(
+          valueTarget, selectedNuke.type, silos, difficulty,
+        );
+        if (!this.isEligibleNukeTarget(valueTarget)) continue;
+        if (this.bestCandidateValue(retryCandidates) <= currentCandidateValue) continue;
+        return { target: valueTarget, candidates: retryCandidates };
       }
-      const retryCandidates = await this.collectNukeCandidates(
-        valueTarget, selectedNuke.type, silos, difficulty,
-      );
-      if (this.bestCandidateValue(retryCandidates) <= this.bestCandidateValue(candidates)) {
-        return null;
-      }
-      return { target: valueTarget, candidates: retryCandidates };
+      return null;
     }
 
     playerStructureValue(player) {
@@ -988,23 +1000,30 @@
         : 0;
     }
 
-    // Highest ABSOLUTE nuke structure value among alive, attackable,
-    // non-teammate players — the density fallback ranks per-tile, which
-    // favors compact small owners over big treasure troves. Memoized per
-    // (tick, excluded target): the conquest-spare hook calls this for every
-    // sendAttack on an attack-crossing tick and the winner cannot change
-    // within one tick.
     findHighestValueNukeTarget(exclude) {
+      return this.findValueRankedNukeTargets(exclude)[0]?.target ?? null;
+    }
+
+    // Rank eligible hostile owners by absolute structure value, highest first.
+    // Cache per tick and excluded target because ownership/value cannot change
+    // between two decisions on the same game tick.
+    findValueRankedNukeTargets(exclude) {
       const tick = this.game.ticks();
       const excludeKey = exclude ? String(exclude.smallID()) : "-";
       const cacheKey = `${tick}:${excludeKey}`;
-      if (this._highestValueTargetCacheKey === cacheKey) {
-        return this._highestValueTargetCache;
+      if (this._valueRankedTargetCacheKey === cacheKey) {
+        return this._valueRankedTargetCache;
       }
-      const resolved = this.computeHighestValueNukeTarget(exclude);
-      this._highestValueTargetCacheKey = cacheKey;
-      this._highestValueTargetCache = resolved;
-      return resolved;
+      const ranked = [];
+      for (const other of this.game.players()) {
+        if (!this.isHighestValueNukeTargetCandidate(other, exclude)) continue;
+        const value = this.playerStructureValue(other);
+        if (value > 0) ranked.push({ target: other, value });
+      }
+      ranked.sort((a, b) => b.value - a.value);
+      this._valueRankedTargetCacheKey = cacheKey;
+      this._valueRankedTargetCache = ranked;
+      return ranked;
     }
 
     isHighestValueNukeTargetCandidate(other, exclude) {
@@ -1014,24 +1033,6 @@
         other.isAlive?.() !== false &&
         !playersArePermanentTeammates(this.player, other) &&
         this.attackBehavior.shouldAttack(other) !== false;
-    }
-
-    computeHighestValueNukeTarget(exclude) {
-      let best = null;
-      let bestValue = 0;
-      for (const other of this.game.players()) {
-        if (!this.isHighestValueNukeTargetCandidate(other, exclude)) continue;
-        const structures = unitsOfTypes(other);
-        const value = structures.reduce(
-          (total, structure) => total + this.nukeStructureValue(structure),
-          0,
-        );
-        if (value > bestValue) {
-          best = other;
-          bestValue = value;
-        }
-      }
-      return best;
     }
 
     async nukeHasPositiveExpectedValue(candidate, target, selectedNuke, silos) {

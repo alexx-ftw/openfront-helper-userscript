@@ -102,7 +102,8 @@ function makeFinisher({ gold, target: resolvedTarget = target }) {
   assert.ok(pending(), "the pending finisher survives a transient cost block");
   behavior.player.gold = () => 9_000_000n;
   assert.equal(await behavior.maybeFirePostSalvoHydrogen(), true);
-  assert.deepEqual(sent, [[555, UNIT.HydrogenBomb, target]]);
+  // Production dispatches the finisher with an explicit waitTicks 0.
+  assert.deepEqual(sent, [[555, UNIT.HydrogenBomb, target, 0]]);
   assert.equal(pending(), null, "a successful dispatch clears the schedule");
 }
 

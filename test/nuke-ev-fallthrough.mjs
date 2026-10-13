@@ -18,9 +18,11 @@ const sandbox = {
   Relation: { Hostile: "Hostile" },
   PlayerType: { Bot: "Bot" },
   state: { settings: { winFixes: true }, stats: { nukes: 0 }, recentMirvHits: [] },
-  currentDifficulty: () => sandbox.Difficulty.Legendary,
+  // Production bridge semantics: currentDifficulty() maps the Legendary UI
+  // tier to the engine's Impossible enum; it never returns the raw string.
+  currentDifficulty: () => sandbox.Difficulty.Impossible,
   isAtLeastHardDifficulty: () => true,
-  isLegendaryDifficulty: (difficulty) => difficulty === "Legendary",
+  isLegendaryDifficulty: (difficulty) => difficulty === "Legendary" || difficulty === "Impossible",
   console,
 };
 sandbox.globalThis = sandbox;
@@ -80,6 +82,7 @@ function makeCrossTargetBehavior(
   behavior.selectAffordableNuke = async () => selectedNuke;
   behavior.shouldDeferNukeForEconomy = () => false;
   behavior.findHighestValueNukeTarget = () => targetB;
+  behavior.findValueRankedNukeTargets = () => [{ target: targetB, value: 3_000_000 }];
   behavior.playerStructureValue = (target) => (target === targetA ? 1_000_000 : 3_000_000);
   behavior.collectNukeCandidates = async (target) => {
     const candidates = candidatesByTarget.get(target);
@@ -231,11 +234,16 @@ const poorerButEvPassing = { tile: 20, value: 1_000_000 };
   );
   assert.deepEqual(sent, [], "a fully rejected list fires nothing");
   assert.equal(tail.sam, 1, "the anti-SAM tail still runs after total rejection");
+  assert.equal(
+    tail.hydrogen,
+    1,
+    "the production Legendary tier (Impossible enum) arms the hydrogen finisher tail",
+  );
 }
 
 // 4. Non-Legendary keeps the faithful single-pick path (no walk).
 {
-  const { behavior, sent } = makeBehavior({
+  const { behavior, sent, tail } = makeBehavior({
     clear: [richButEvFailing, poorerButEvPassing],
     expectedValueMin: 1_000_000,
   });
@@ -244,9 +252,14 @@ const poorerButEvPassing = { tile: 20, value: 1_000_000 };
     target,
     { type: UNIT.AtomBomb, cost: 750_000n },
     [],
-    "Impossible",
+    "Hard",
   );
-  assert.deepEqual(sent, [], "non-Legendary still fires nothing when its single pick fails EV");
+  assert.deepEqual(sent, [], "Hard still fires nothing when its single pick fails EV");
+  assert.deepEqual(
+    tail,
+    { sam: 1, hydrogen: 0 },
+    "below the Legendary tier the hydrogen finisher tail stays dormant",
+  );
 }
 
 // 5. A higher-value Legendary retry that fails EV stands down (no
@@ -304,5 +317,94 @@ assert.deepEqual(
   crossTargetGuardRejected.finalSendGuards.filter((guard) => guard.startsWith("destination:")),
   ["destination:10"],
 );
+
+// 10. A missing shot against the highest-value target falls through to the
+// next eligible rival; a richer but ineligible rival is never probed.
+{
+  const targetA = { label: "A", smallID: () => 7, team: () => null, isAlive: () => true };
+  let targetBAlive = true;
+  const targetB = {
+    label: "B",
+    smallID: () => 8,
+    team: () => null,
+    isAlive: () => targetBAlive,
+  };
+  const targetC = { label: "C", smallID: () => 9, team: () => null, isAlive: () => true };
+  const targetD = { label: "D", smallID: () => 10, team: () => null, isAlive: () => true };
+  const candidateC = { tile: 30, score: 50_000 };
+  const values = new Map([
+    [targetA, 1_000_000],
+    [targetB, 9_000_000],
+    [targetC, 4_000_000],
+    [targetD, 20_000_000],
+  ]);
+  const candidates = new Map([
+    [targetB, []],
+    [targetC, [candidateC]],
+    [targetD, []],
+  ]);
+  const probedTargets = [];
+  const { behavior } = makeBehavior({ clear: [], expectedValueMin: 0 });
+  behavior.player = { smallID: () => 1, team: () => null };
+  behavior.game = {
+    ticks: () => 100,
+    players: () => [targetA, targetB, targetC, targetD],
+  };
+  behavior.attackBehavior = { shouldAttack: (player) => player !== targetD };
+  behavior.playerStructureValue = (player) => values.get(player) ?? 0;
+  behavior.samDemandMatchesTarget = () => false;
+  behavior.shouldDeferNukeForEconomy = () => false;
+  behavior.collectNukeCandidates = async (player) => {
+    probedTargets.push(player);
+    return candidates.get(player) ?? [];
+  };
+
+  const result = await behavior.collectCandidatesWithRetry(
+    targetA,
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [],
+    "Impossible",
+  );
+  assert.equal(result.retargeted, targetC, "the next eligible target with a shot is selected");
+  assert.deepEqual(
+    probedTargets,
+    [targetA, targetB, targetC],
+    "the ineligible highest-value rival is skipped",
+  );
+  assert.deepEqual(result.list, [candidateC]);
+
+  probedTargets.length = 0;
+  const afterDemand = await behavior.retryWithHigherValueTarget(
+    targetA,
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [],
+    "Impossible",
+    { candidates: [], excludedTarget: targetB },
+  );
+  assert.equal(afterDemand?.target, targetC);
+  assert.deepEqual(probedTargets, [targetC], "a serviced live-demand target is skipped");
+
+  probedTargets.length = 0;
+  candidates.set(targetB, [{ tile: 40, score: 60_000 }]);
+  behavior.collectNukeCandidates = async (player) => {
+    probedTargets.push(player);
+    const result = candidates.get(player) ?? [];
+    if (player === targetB) targetBAlive = false;
+    return result;
+  };
+  const afterElimination = await behavior.retryWithHigherValueTarget(
+    targetA,
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [],
+    "Impossible",
+    { candidates: [] },
+  );
+  assert.equal(afterElimination?.target, targetC);
+  assert.deepEqual(
+    probedTargets,
+    [targetB, targetC],
+    "a target eliminated during collection is skipped",
+  );
+}
 
 process.stdout.write("nuke-ev-fallthrough tests passed\n");

@@ -65,12 +65,6 @@
       "error": 1
     }
   },
-  "engine/ingame/auto-bot/context.js": {
-    "complexity": {
-      "warning": 0,
-      "error": 1
-    }
-  },
   "engine/ingame/auto-bot/nukeBehavior.js": {
     "complexity": {
       "warning": 0,

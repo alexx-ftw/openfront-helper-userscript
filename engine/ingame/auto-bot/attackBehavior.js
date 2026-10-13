@@ -891,6 +891,15 @@
     }
     return best;
   }
+  // DIVERGENCE (Legendary survival pacing, not in src): a conquest pause arms
+  // when owned territory falls this fraction below its recent-peak sample
+  // (absolute tile floor suppresses opening noise), observed over this many
+  // attack decisions. Thresholds are provisional, from the measured
+  // baikal-nuke-wars collapse (kept conquering from 52% share to death).
+  const ATTACK_LEAD_PAUSE_SHRINK_FRACTION = 0.08;
+  const ATTACK_LEAD_PAUSE_MIN_TILES = 64;
+  const ATTACK_LEAD_PAUSE_SAMPLE_COUNT = 8;
+
   class AttackBehavior {
     constructor(...args) {
       const {
@@ -3492,6 +3501,7 @@
       if (this.player === null || this.allianceBehavior === undefined) {
         throw new Error("not initialized");
       }
+      this.observeAttackLeadTrajectory();
       this.observeHybridStrategyDuo();
       this.enforceSameClanNukeTerrainSafety();
       profileAttackSync(profile, "attack-intent-reconcile", () =>
@@ -9997,13 +10007,68 @@
       return silos.some((silo) => silo?.isUnderConstruction?.() !== true);
     }
 
+    // DIVERGENCE: Legendary-only survival pacing (not in src). The gate sits
+    // in sendAttackTargetIsAuthorized next to the win-pacing spare: while
+    // owned territory keeps shrinking below its recent-peak sample, new
+    // discretionary player conquests are refused so troops defend and
+    // reconsolidate. Forced retaliation/defense, in-flight conquest
+    // reinforcement, Terra Nullius growth, and nuclear dispatch stay
+    // unchanged; the ring buffer releases the pause once territory
+    // stabilizes (no pause while growing).
+    observeAttackLeadTrajectory() {
+      const tiles = Number(this.player?.numTilesOwned?.() ?? NaN);
+      if (!Number.isFinite(tiles) || tiles <= 0) return;
+      const tick = this.currentAttackDecisionTick();
+      let samples = this.attackLeadSamples;
+      if (!Array.isArray(samples)) samples = this.attackLeadSamples = [];
+      const last = samples[samples.length - 1];
+      if (last && last.tick === tick) {
+        last.tiles = tiles;
+        return;
+      }
+      samples.push({ tick, tiles });
+      while (samples.length > ATTACK_LEAD_PAUSE_SAMPLE_COUNT) samples.shift();
+    }
+
+    attackLeadShrinking() {
+      const samples = this.attackLeadSamples;
+      if (!Array.isArray(samples) || samples.length === 0) return false;
+      let peak = 0;
+      for (const sample of samples) peak = Math.max(peak, sample.tiles);
+      const tiles = samples[samples.length - 1].tiles;
+      return (
+        peak - tiles >=
+        Math.max(ATTACK_LEAD_PAUSE_MIN_TILES, peak * ATTACK_LEAD_PAUSE_SHRINK_FRACTION)
+      );
+    }
+
+    attackLeadPauseSparesConquest(options) {
+      if (
+        typeof currentDifficulty !== "function" ||
+        currentDifficulty() !== "Legendary" ||
+        state.settings?.winFixes !== true
+      ) {
+        return false;
+      }
+      const target = options.target;
+      if (target?.isPlayer?.() !== true) return false;
+      if (
+        this.getLiveOutboundAttackTroopsForTarget(target) > 0 ||
+        this.getPendingOutboundAttackTroopsForTarget(target) > 0
+      ) {
+        return false;
+      }
+      return this.attackLeadShrinking();
+    }
+
     // Authorization tail shared by every sendAttack: tribe cluster policy,
-    // the nuclear-harvest conquest spare, and the win-pacing commerce stall
-    // (both metric hooks defer to forced retaliation).
+    // the nuclear-harvest conquest spare, the win-pacing commerce stall, and
+    // the attack-lead shrink pause (all spares defer to forced retaliation).
     sendAttackTargetIsAuthorized(options, force) {
       if (!this.tribeAttackIsAuthorized(options)) return false;
       if (!force && this.nukeHarvestSparesTarget(options.target)) return false;
       if (!force && this.winPacingSparesConquest(options)) return false;
+      if (!force && this.attackLeadPauseSparesConquest(options)) return false;
       return true;
     }
 

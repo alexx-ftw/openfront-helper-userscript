@@ -9437,3 +9437,196 @@ the conquest to Luna 21 while two late invasion beachheads stayed unrecaptured.
 The anti-SAM aim filter still requires the SAM strictly inside the blast
 (deliberately conservative); water-nuke boundary scoring stays approximate.
 No win-rate claim.
+
+## Defense Post lead-guard paired result (2026-10-13, 1.13.4)
+
+Same `scenario-baikal-nuke-wars` seed and current bundle, with intent logging:
+the live lead guard lost at tick 15807 after building 10 Defense Posts; a
+temporary bundle with only `leadGuardDefensePostThreat` disabled lost at tick
+4434 after building 5. Both runs failed to win, so this single paired seed
+supports a survival extension, not a win-rate claim. The attack-pause
+ablation produced an identical result to the live bundle. Of 671 attacks sent
+to Nomadic Souffles, 669 coincided with an incoming attack from that player;
+these were forced counterattacks, not evidence of offensive target lock.
+
+Paired `luna-nuke-wars` runs show the full guard lost to Luna 21 at tick 9021
+with 197,130 tiles and 9 Defense Posts; no guard lost at tick 12951 with
+244,659 tiles and 3 late Posts. The cap-2 candidate lost at tick 9731 with
+239,461 tiles and 2 Posts. Thus cap 2 improved on the full guard but remained
+behind no guard on this seed. On Baikal the cap-2 candidate stayed alive to
+the 25,000-tick ceiling with 959,129 tiles and 9 Posts, but did not win. These
+single-seed comparisons support survival/territory observations only, not a
+win-rate claim.
+
+After those matches, the hard-reserve Defense Post lane gained a narrow
+fallback for a validated SAM-overwhelm Silo request after a failed Post attempt
+or during its retry cooldown. Its existing nuke-demand budget preserves the
+economic, SAM, and Defense Post reserves; discretionary Silo construction
+remains deferred by the lead guard. Unit and native SAM-demand scenarios pass.
+Same-seed Baikal and Luna reruns after this fallback produced identical
+gameplay counters to the cap-2 baseline. Both runs recorded six Silo upgrades
+on SAM-covered targets (Baikal ticks 660, 680, 700, 720, 755, 844; Luna ticks
+684, 704, 724, 744, 768, 836). Baikal remained alive through tick 25000 but
+did not win (25 Atom / 7 Hydrogen launches, 23 / 6 detonations); Luna 21 won at
+tick 9731 (bot alive, 29 / 1 launches, 24 / 1 detonations, 2 Defense Posts).
+The SAM-driven Silo upgrades are observed, while the new hard-reserve fallback
+made no measurable difference on these seeds. No victory improvement is
+claimed. An intent-logged Baikal replay recorded 60 attacks on Nomadic Souffles,
+56 alongside an incoming attack from that Nation, then only 3 attacks on the
+surviving leader Ballistic Cyclops Missile (ticks 11288, 18788, 24488). At
+those three decisions the rival had about 14.8M troops and the bot committed
+about 8.3–9.0M. This points to army-capacity/attack-conversion as the next
+diagnostic area, but does not isolate the cause: reachability and other attack
+gates may also limit target frequency. The same match recorded 125 SAM upgrades
+and 35 SAM builds, so reducing defensive investment requires separate survival
+evidence. A candidate City-capacity pressure signal, enabled only when a
+bordering rival's troop ceiling exceeded the bot's, emitted three City upgrades
+in Baikal (ticks 2188, 2208, 2228) but left final tiles and victory unchanged;
+own structures nuked rose from 13 to 22. Luna's result was identical to its
+baseline. The candidate was reverted because it did not improve victory or
+territory and carried worse survival evidence.
+
+## Silo-demand priority rechecks (2026-10-13, 1.13.5)
+
+The target-specific SAM-overwhelm Silo lane now rechecks urgent missile defense
+after its asynchronous upgrade probe. The route-clear new-Silo gate performs the
+same check before and after its placement probe, so a newly arrived missile
+threat keeps the response action and gold available. A rejected stale Silo
+action preserves the live SAM demand for a later tick.
+
+The landlocked first-Silo backstop now uses the same lead-Defense-Post guard as
+the main Legendary construction ladder. It defers discretionary Arsenal
+spending while the lead guard has an exposed-front coverage shortfall; the
+target-specific SAM-demand upgrade lane remains independent. Both regressions
+were observed red before the fix and pass in their focused fixtures. The
+same-seed Baikal run immediately before this patch survived to tick 25,000 but
+did not win, so this priority correction carries no match-level victory claim.
+
+The October 9 public-history snapshot has 313 recorded Silo-upgrade intents in
+40 of 106 records, but it stores requested intents rather than accepted
+upgrades. These counts inform future replay work and do not validate an outcome.
+
+## Lever probed and rejected: Legendary saturation-divergence activation (2026-10-13)
+
+The dead raw-equality gate in isScorableNukeTile
+(`difficulty === Difficulty.Legendary`, unreachable because
+currentDifficulty() maps the Legendary UI tier to the engine's Impossible
+enum) was probed with the declared union fix
+(isLegendaryDifficulty) plus a regression-first fixture. The saturation
+divergence then engaged: SAM-interceptable tiles stayed scorable and the
+covered salvo lane received ordinary-collection candidates.
+
+Paired receipts, same tree, single-line delta (artifacts under
+/tmp/ofh-gate-samfix-*/):
+
+- sam-salvo-overwhelm (seed A): pre-fix max_ticks draw at 25,000 with the
+  bot alive at 936,129 tiles (2nd, 0 own structures nuked); post-fix the
+  match concluded at 15,571 with Chechnya conquering and the bot alive at
+  295,947 tiles (2 own structures nuked). Draw -> conquest loss, territory
+  -68%: REJECT.
+- sam-salvo-overwhelm-b (seed B): pre-fix bot_dead at 8,491 (0 tiles,
+  9 own structures nuked); post-fix bot_dead at 5,108 (0 tiles, 0 own
+  structures nuked). Death moved 3,383 ticks earlier: REJECT.
+- baikal-nuke-wars (no-harm observation): identical outcome both sides —
+  max_ticks at 25,000, bot 2nd at 959,129 tiles; the fix was neutral here.
+
+Per the victories-and-survival criterion the lever fails the no-harm gate
+on both SAM regimes and is reverted (production byte-identical to the
+1.13.5 artifact). The fixture now pins the dead comparison as a decision
+record (same pattern as the 2026-10-09 starvation-release closure), while
+two production-alignment corrections stay: the test sandbox
+isLegendaryDifficulty stub now matches portutil's union semantics, and the
+Impossible atom-fallback assertion follows the production gate
+(isLegendaryDifficulty(currentDifficulty())) instead of the narrower stub
+semantics. Any future lever that wants covered-trajectory scoring must
+pair the scoring change with its own state scoping and pass both SAM
+seeds plus the baikal no-harm observation.
+
+## Freeze-giant survival lane armed on the production Legendary tier (2026-10-13, 1.13.6)
+
+The FFA endgame survival strike's tier gate used the raw spelling
+(`currentDifficulty() !== Difficulty.Legendary`), which never fires in
+production because currentDifficulty() maps the Legendary UI tier to the
+engine's Impossible enum — the lane built for the measured 2026-08-24
+static death modes could never arm. The fixture now pins the production
+bridge semantics (Impossible arms the lane with the full signature; Hard
+stays dormant) and the gate uses the sanctioned isLegendaryDifficulty
+union.
+
+No-harm paired receipts, same tree, single-gate delta (artifacts under
+/tmp/ofh-gate-fg-*/): all three gate regimes are counter-identical to
+their pre-fix baselines — baikal-nuke-wars max_ticks 25,000 (bot 2nd,
+959,129 tiles, 13 own structures nuked), sam-salvo-overwhelm max_ticks
+25,000 (bot 936,129 tiles, 0 own nuked), sam-salvo-overwhelm-b bot_dead
+8,491 (0 tiles, 9 own nuked). The lane never armed in these regimes (its
+signature — our troops frozen at cap plus a >= 1.5x hostile giant in FFA
+after every ordinary lane declined — did not occur), so the change is
+inert there while live for the endgame modes it was built for. Same-class
+audit note: the 12cc77b9 exact-match Legendary set (attack/warship/
+alliance/structure levers) stays deliberately dead per the portutil
+record; the remaining live-intent candidates (post-salvo hydrogen
+finisher nukeBehavior.js:818, maritime retaliation tier, quiet-preemptive
+Post gate, structure-upgrade random chance, crown-lead threshold) each
+need their own pre-declared paired cycle.
+
+## Post-salvo Hydrogen finisher armed on Legendary (2026-10-13, 1.13.7)
+
+fireNukeFromCandidates used the raw comparison
+`currentDifficulty() === Difficulty.Legendary` around the only consumer of
+`state.postSalvoHydrogen`. The schedule is created after a completed
+SAM-saturating salvo, but production's Legendary tier is the engine's
+Impossible enum, so the finisher never ran. The gate now uses the received
+difficulty through `isLegendaryDifficulty`, preserving the Hard single-pick
+path. Regression coverage in nuke-ev-fallthrough pins Impossible as the
+production Legendary spelling and Hard as the dormant control. The
+hydrogen-finisher-retention fixture also now matches the production's
+explicit `sendNuke(..., 0)` wait argument.
+
+Paired receipts, same source tree with only the finisher gate toggled
+(2026-10-13; raw match logs were in /tmp and the host reboot removed the
+SAM/Baikal logs, so this decision record preserves their measured summaries):
+
+- sam-salvo-overwhelm seed A: pre-fix max_ticks at 25,000, bot alive in
+  2nd with 936,129 tiles; post-fix won at 12,691, bot alive with 2,043,577
+  tiles, 57 Atom / 7 Hydrogen launches, 56 / 6 detonations, and 0 own
+  structures nuked. A prior documented draw became a win.
+- sam-salvo-overwhelm-b seed B: pre-fix bot_dead at 8,491 with 9 own
+  structures nuked; post-fix bot_dead at 6,050 with 10 Atom / 4 Hydrogen
+  launches (9 Atom / 4 Hydrogen detonations) and 0 own structures nuked.
+  Observed Hydrogen aims occurred at ticks 2,923–3,287, with bot death at
+  6,050; this timing does not establish causality. Death came 2,441 ticks
+  earlier, although nuclear self-damage fell to zero.
+- Baikal: max_ticks at 25,000 on both sides, bot 2nd with 959,129 tiles;
+  own nuclear structure damage fell from 13 to 11.
+- Luna: pre-fix lost at tick 9,731 with 29 Atom / 1 Hydrogen launch and
+  239,461 tiles; post-fix lost at 12,921 with 25 Atom / 4 Hydrogen,
+  234,088 tiles, 1 own structure nuked, and eliminated the third rival.
+
+The finisher changes the SAM seed-A draw into a win and extends survival
+in Luna, while seed B dies earlier despite avoiding own-structure nuke
+damage. This is promising but mixed n=1-per-seed evidence: no win-rate
+claim; keep the exact receipts and continue paired-seed follow-up before
+broad tuning. Version 1.13.7; build parity and focused nuclear tests pass.
+
+## Pre-declaration 38: ranked nuke-target fallthrough (2026-10-13, 1.13.8)
+
+The Legendary value retry previously probed only the richest eligible rival.
+If that rival had no launch candidates or failed to improve the selected
+candidate score, the retry stopped without probing the next rival. The retry
+now checks eligible rivals in descending structure value and selects the first
+whose candidate score improves the original; it rechecks target eligibility
+after asynchronous collection and skips a live SAM-demand target already
+serviced by the incoming fallback.
+
+The regression fixture pins the empty richest target followed by a viable
+lower-ranked target, an ineligible richer target, an already-serviced demand
+target, and a target eliminated during collection. It does not demonstrate a
+gameplay win. The cached 1.13.8 artifact was inspected and already contains
+this fallthrough, so it is not a valid pre-change baseline. For an efficacy
+claim, build a control from the same source state with only ranked fallthrough
+disabled, then compare both bundles on the same fixed seeds:
+`sam-salvo-overwhelm`, `sam-salvo-overwhelm-b`, `baikal-nuke-wars`, and
+`luna-nuke-wars`. Prioritize win count, then survival ticks and ending
+territory; record own structures nuked and nuke launches / detonations to
+explain changes. Report each seed and both bundle hashes; until that control
+exists, treat the evidence as correctness-only and make no efficacy claim.

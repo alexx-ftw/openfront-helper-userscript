@@ -176,6 +176,57 @@ function makeWorld({ gold, upgradeCost, routes, canUpgrade = true, stubSpawn = t
   assert.equal(emitted.length, 1, "the stale snapshot does not emit a duplicate upgrade");
 }
 
+// A missile threat that appears while the async upgrade probe is pending takes
+// priority over the completed Silo-demand decision.
+{
+  const { behavior, state, emitted } = makeWorld({
+    gold: 5000n,
+    upgradeCost: 4000n,
+    routes: [{ id: () => 1 }],
+  });
+  behavior.game.ticks = () => 0;
+  let resolveProbe;
+  behavior.buildableForUnits = () =>
+    new Promise((resolve) => {
+      resolveProbe = resolve;
+    });
+
+  const pendingUpgrade = behavior.maybeUpgradeSiloForNukeDemand();
+  behavior.legendaryMissileDefenseUrgent = () => true;
+  resolveProbe([{ canUpgrade: true, cost: 4000n }]);
+
+  assert.equal(await pendingUpgrade, false, "urgent missile defense cancels the stale upgrade");
+  assert.equal(emitted.length, 0, "the delayed probe emits no Silo upgrade");
+  assert.equal(state.nukeWantSlots?.targetSamId, "sam1", "keep the demand for later");
+}
+
+// The route-clear Silo build gate is called both before and after its async
+// tile probe, so it must read missile urgency afresh each time.
+{
+  const { behavior, state } = makeWorld({
+    gold: 5000n,
+    upgradeCost: 4000n,
+    routes: [],
+  });
+  const request = state.nukeWantSlots;
+  behavior.missileSiloPhysicalCapReached = () => false;
+  behavior.hasStructureUnderConstruction = () => false;
+  behavior.nukeDemandScopedSilos = () => [];
+  behavior.nukeSiloUpgradeBudgetAvailable = () => true;
+  assert.equal(
+    behavior.nukeDemandSiloSpawnAllowed(request),
+    true,
+    "a live demand can spawn before the new threat appears",
+  );
+  behavior.legendaryMissileDefenseUrgent = () => true;
+  assert.equal(
+    behavior.nukeDemandSiloSpawnAllowed(request, 42),
+    false,
+    "the post-probe check cancels Silo construction for urgent defense",
+  );
+  assert.equal(state.nukeWantSlots?.targetSamId, "sam1", "keep the demand for later");
+}
+
 // Every silo is route-blocked: the route-clear new silo remains the fallback.
 {
   const { behavior, emitted, spawn } = makeWorld({ gold: 5000n, upgradeCost: 4000n, routes: [] });

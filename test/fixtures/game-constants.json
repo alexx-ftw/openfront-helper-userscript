@@ -960,6 +960,36 @@
     "initializerPreview": "1"
   },
   {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:ATTACK_LEAD_PAUSE_SHRINK_FRACTION#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "ATTACK_LEAD_PAUSE_SHRINK_FRACTION",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "36819111cffb9e1e90eb1fb7c0c29b56a1bc148d41478af66a3de0e5486bb688",
+    "initializerLength": 4,
+    "initializerPreview": "0.08"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:ATTACK_LEAD_PAUSE_MIN_TILES#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "ATTACK_LEAD_PAUSE_MIN_TILES",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "a68b412c4282555f15546cf6e1fc42893b7e07f271557ceb021821098dd66c1b",
+    "initializerLength": 2,
+    "initializerPreview": "64"
+  },
+  {
+    "id": "engine/ingame/auto-bot/attackBehavior.js:ATTACK_LEAD_PAUSE_SAMPLE_COUNT#1",
+    "file": "engine/ingame/auto-bot/attackBehavior.js",
+    "name": "ATTACK_LEAD_PAUSE_SAMPLE_COUNT",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3",
+    "initializerLength": 1,
+    "initializerPreview": "8"
+  },
+  {
     "id": "engine/ingame/auto-bot/attackBehavior.js:TIMEOUT#1",
     "file": "engine/ingame/auto-bot/attackBehavior.js",
     "name": "TIMEOUT",

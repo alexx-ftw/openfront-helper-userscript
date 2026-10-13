@@ -169,6 +169,7 @@ function makeWorld({
   behavior.safeStructureCost = () => 1n;
   behavior.availableGoldAfterReserve = () => 10n;
   behavior.nukeSiloUpgradeBudgetAvailable = () => true;
+  behavior.legendaryMissileDefenseUrgent = () => false;
 
   assert.equal(
     behavior.nukeDemandSiloSpawnAllowed(request),
