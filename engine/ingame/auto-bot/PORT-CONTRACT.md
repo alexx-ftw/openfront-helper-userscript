@@ -8,6 +8,16 @@ orders that the unchanged sender already rejects; it never removes reserve,
 capture-floor, Defense Post, legality or rate checks. Nonfinite payloads fail
 closed. Diagnostic exceptions propagate and cannot skip safety cleanup.
 
+Hybrid observations may include a reinforcement only when all pre-existing
+target commitments are accounted for by visible, unique native attack IDs and
+finite positive troop amounts. Pending intents, in-flight transports, missing
+IDs and duplicate IDs remain excluded. Native land reinforcement creates a new
+ID, absorbs same-target attacks and deletes their old IDs. The old IDs are retained
+as the observation baseline and cannot confirm the new intent. The reward still
+spans the remaining target commitment; it is not the reinforcement's marginal
+conquest. Raw records retain `preexistingCommitmentTroops` and
+`commitmentScope:remaining-target-commitment`. Sender guards and payloads are unchanged.
+
 The explicit headless `coverage-wait-v1` collector is a separate training policy,
 not production shadow ranking or cold learned control. In shadow learning mode
 it may choose a real WAIT at a funded, feature-valid opportunity only with
@@ -277,8 +287,10 @@ comparisons with `a.smallID() === b.smallID()`, and `owner === player` with a
 
 ### Attack objects (from incomingAttacks()/outgoingAttacks())
 Each has `troops()`, `attacker()` (wrapped player), `target()` (wrapped player),
-`retreating()`, `id()`, `sourceTile()` (TileRef or null). (src AttackUpdate uses the
-same accessors.)
+`retreating()`, `id()`, `sourceTile()` (TileRef or null), and `hasSourceTile()`.
+The browser's AttackUpdate omits sourceTile: `hasSourceTile()` is false and the
+null fallback does not establish a land origin. The native harness exposes the
+actual value. Do not infer attribution from the browser fallback alone.
 
 ### Unit objects (from units()/game.units())
 `type()`, `tile()`, `level()`, `id()`, `owner()` (wrapped), `isActive()`,

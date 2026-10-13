@@ -24,6 +24,15 @@ a causal estimate, a terminal win reward, or proof of improved play. Wait exampl
 require a legal strategic candidate. Other activity during the interval can still
 affect that proxy, so promote only on independent completed-game evaluation.
 
+Reinforcement can now be observed when every existing target commitment is
+covered by a visible native attack ID and troop amount. The original IDs cannot
+confirm the new intent: native reinforcement creates a replacement ID, which must
+actually be observed. Pending troops, boats and incomplete or duplicate receipts
+remain excluded. Outcomes record the pre-existing troop amount and the
+`remaining-target-commitment` scope; the reward includes that remaining front,
+not only the reinforcement's marginal effect. This expands real observation
+coverage without changing attack funding, reserves, legality or payloads.
+
 The feature contract uses troop-capacity ratios, own/target land fractions,
 incoming pressure, relative armies, capture budget and existing commitments. It
 has no fixed opponent slots or wait sentinel inside a truncated list. A unit ridge

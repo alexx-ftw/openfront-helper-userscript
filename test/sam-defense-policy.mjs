@@ -2645,6 +2645,7 @@ own.sams = [];
 behavior.maybeSpawnStructure = originalMaybeSpawnStructure;
 
 const originalReactiveUpgrade = behavior.maybeUpgradeMissileDefenseSam;
+const originalSiloDemandUpgrade = behavior.maybeUpgradeSiloForNukeDemand;
 const originalParityUpgrade = behavior.maybeUpgradeSamForSiloParity;
 const originalSamGap = behavior.samLevelParityGap;
 const originalShouldBuildHostileSam = behavior.shouldBuildHostileSiloSam;
@@ -2658,6 +2659,7 @@ let fullPathTick = 2_000;
 behavior.game.ticks = () => fullPathTick;
 behavior.game.config = () => ({ isUnitDisabled: () => true });
 behavior.maybeUpgradeMissileDefenseSam = async () => false;
+behavior.maybeUpgradeSiloForNukeDemand = async () => false;
 behavior.maybeUpgradeSamForSiloParity = async () => false;
 behavior.samLevelParityGap = () => 1;
 behavior.shouldBuildHostileSiloSam = () => true;
@@ -2682,6 +2684,7 @@ assert.equal(
   "A failed async hostile-Silo placement cannot be duplicated when the game tick advances during probing",
 );
 behavior.maybeUpgradeMissileDefenseSam = originalReactiveUpgrade;
+behavior.maybeUpgradeSiloForNukeDemand = originalSiloDemandUpgrade;
 behavior.maybeUpgradeSamForSiloParity = originalParityUpgrade;
 behavior.samLevelParityGap = originalSamGap;
 behavior.shouldBuildHostileSiloSam = originalShouldBuildHostileSam;

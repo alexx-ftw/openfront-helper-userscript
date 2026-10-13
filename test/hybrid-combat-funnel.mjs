@@ -220,8 +220,13 @@ const receipt = accepted.exportLedger().entries.find((row) => row.kind === "rece
 assert.equal(receipt.decisionStep, proposal.step);
 assert.equal(receipt.decisionSequence, proposal.sequence);
 assert.equal(receipt.acceptedSequence, acceptance.sequence);
+const knownReinforcement = accepted.actionObservation(callback, a);
+assert.ok(knownReinforcement);
+assert.deepEqual(Array.from(knownReinforcement.attackIds), ["receipt"]);
+callback.botAttackPendingIntentCommitments = [{ target: a, targetKey: "2", troops: 10 }];
 assert.equal(accepted.actionObservation(callback, a), null);
 assert.equal(accepted.exportLedger().entries.at(-1).reason, "ambiguous-commitment");
+callback.botAttackPendingIntentCommitments = [];
 attacks = [];
 tick++;
 accepted.observe(callback);
@@ -555,6 +560,7 @@ const windowPlayer = {
 };
 const nativeGame = { ticks: () => tick, players: () => [windowPlayer, windowEnemy] };
 const ingressBehavior = {
+  observeAttackLeadTrajectory: () => ingressTrace.push("lead"),
   observeHybridStrategyDuo,
   game: { __src: nativeGame },
   player: windowPlayer,

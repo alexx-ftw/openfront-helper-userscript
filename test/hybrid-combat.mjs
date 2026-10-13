@@ -181,6 +181,96 @@ assert.equal(
   0,
   "unknown funding cannot authorize a learned candidate",
 );
+{
+  const policy = new Policy({ storage: null });
+  let attacks = [{ target: a, targetKey: "2", id: "old-attack", troops: 40 }];
+  let ships = [];
+  const reinforcementBehavior = {
+    ...behavior,
+    getOutboundAttackSnapshot: () => attacks,
+    getOutboundTransportSnapshot: () => ships,
+    outboundTransportTargets: new Map(),
+    botAttackPendingIntentCommitments: [],
+  };
+  const observation = policy.actionObservation(reinforcementBehavior, a);
+  assert.ok(observation, "a visible prior attack does not hide an observable reinforcement");
+  assert.deepEqual(Array.from(observation.attackIds), ["old-attack"]);
+  assert.equal(observation.preexistingCommitmentTroops, 40);
+  policy.recordAcceptedAction(reinforcementBehavior, a, observation, policy.generation);
+  tick++;
+  policy.observe(reinforcementBehavior);
+  assert.equal(
+    Boolean(policy.pending.confirmed),
+    false,
+    "the existing ID is excluded from confirmation",
+  );
+  assert.equal(
+    policy.diagnostics().lastOutcome,
+    null,
+    "the old receipt cannot confirm the new intent",
+  );
+  attacks = [{ target: a, targetKey: "2", id: "replacement-attack", troops: 60 }];
+  tick++;
+  policy.observe(reinforcementBehavior);
+  assert.equal(policy.pending.receiptID, "replacement-attack");
+  assert.equal(
+    policy.diagnostics().samples.act,
+    0,
+    "a live remaining commitment has no outcome yet",
+  );
+  attacks = [];
+  tick++;
+  tiles = 12;
+  policy.observe(reinforcementBehavior);
+  assert.equal(policy.diagnostics().lastOutcome.receiptID, "replacement-attack");
+  assert.equal(policy.diagnostics().lastOutcome.preexistingCommitmentTroops, 40);
+  assert.equal(policy.diagnostics().lastOutcome.commitmentScope, "remaining-target-commitment");
+  assert.equal(policy.diagnostics().lastOutcome.reward, 12 / 100 - 10 / 100);
+  assert.equal(policy.diagnostics().samples.act, 1);
+  assert.equal(policy.diagnostics().samples.target, 1);
+
+  attacks = [{ target: a, targetKey: "2", id: "old-attack", troops: 40 }];
+  reinforcementBehavior.botAttackPendingIntentCommitments = [
+    { target: a, targetKey: "2", troops: 20 },
+  ];
+  assert.equal(
+    policy.actionObservation(reinforcementBehavior, a),
+    null,
+    "pending troops remain unattributed",
+  );
+  reinforcementBehavior.botAttackPendingIntentCommitments = [];
+  ships = [{ id: "boat", troops: 20 }];
+  reinforcementBehavior.outboundTransportTargets.set("boat", a);
+  assert.equal(
+    policy.actionObservation(reinforcementBehavior, a),
+    null,
+    "in-flight boats remain unattributed",
+  );
+  ships = [];
+  attacks = [{ target: a, targetKey: "2", troops: 40 }];
+  assert.equal(
+    policy.actionObservation(reinforcementBehavior, a),
+    null,
+    "an ID-less commitment is not a receipt",
+  );
+  attacks = [{ target: a, targetKey: "2", id: {}, troops: 40 }];
+  assert.equal(
+    policy.actionObservation(reinforcementBehavior, a),
+    null,
+    "an object coerced to a string is not a native attack ID",
+  );
+  attacks = [
+    { target: a, targetKey: "2", id: "duplicate", troops: 20 },
+    { target: a, targetKey: "2", id: "duplicate", troops: 20 },
+  ];
+  assert.equal(
+    policy.actionObservation(reinforcementBehavior, a),
+    null,
+    "duplicate receipt IDs cannot establish coverage",
+  );
+  tick = 10;
+  tiles = 10;
+}
 const unstable = new Policy({ storage: null });
 const unstableModel = unstable.exportModel();
 for (const entry of Object.values(unstableModel.models)) entry.samples = entry.weights.length;
@@ -314,12 +404,24 @@ assert.ok(
 shadow.observe(behavior);
 assert.equal(shadow.diagnostics().samples.act, 1, "outcome is consumed once");
 commitments = [{ target: a, targetKey: "2", targetIsPlayer: true }];
+const reinforcementObservation = shadow.actionObservation(behavior, a);
+assert.ok(reinforcementObservation);
+shadow.recordAcceptedAction(behavior, a, reinforcementObservation, shadow.generation);
+tick++;
+shadow.observe(behavior);
 assert.equal(
-  shadow.actionObservation(behavior, a),
-  null,
+  Boolean(shadow.pending.confirmed),
+  false,
   "an old attack cannot confirm a new land intent",
 );
 commitments = [];
+shadow.observe(behavior);
+assert.equal(shadow.diagnostics().lastOutcome.confirmed, false);
+assert.equal(
+  shadow.diagnostics().samples.act,
+  1,
+  "an unconfirmed reinforcement cannot train an action",
+);
 behavior.outboundTransportTargets.set("boat-1", a);
 transports = [{ id: "boat-1", troops: 40, targetTile: 99 }];
 assert.equal(
@@ -386,6 +488,7 @@ assert.equal(sentAfterReset.length, 1, "a changed configuration aborts the old r
 const reinforcement = new Policy({ storage: null });
 await reinforcement.decide(behavior, [a]);
 commitments = [{ target: a, targetKey: "2", targetIsPlayer: true }];
+behavior.botAttackPendingIntentCommitments = [{ ...commitments[0], troops: 40 }];
 assert.equal(reinforcement.actionObservation(behavior, a), null);
 reinforcement.recordAcceptedAction(behavior, a, null, reinforcement.generation);
 tick++;
@@ -395,6 +498,7 @@ assert.equal(
   0,
   "unlabeled reinforcement cannot teach waiting",
 );
+behavior.botAttackPendingIntentCommitments = [];
 commitments = [{ target: a, targetKey: "2", targetIsPlayer: true }];
 assert.equal(
   controlled.allowsAttack(behavior, b),

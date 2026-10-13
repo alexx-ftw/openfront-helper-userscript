@@ -574,6 +574,8 @@ class HybridCombatPolicy {
 
   outcomeFeatures(pending) {
     return { features: pending.features ?? null, geometry: pending.geometry ?? null,
+      preexistingCommitmentTroops: pending.preexistingCommitmentTroops ?? null,
+      commitmentScope: pending.commitmentScope ?? null,
       featureVersion: this.compactContract?.schema ?? HYBRID_COMBAT_SCHEMA,
       normalizer: this.compactContract?.normalizer ?? null, modelIdentity: pending.modelIdentity ?? null };
   }
@@ -617,8 +619,14 @@ class HybridCombatPolicy {
     if (force) return this.omitObservation("forced-action");
     if (!this.isStrategicTarget(behavior, target)) return this.omitObservation(
       target?.type?.() === PlayerType.Bot ? "tribe-target" : "non-strategic-target");
-    // Existing land/boat commitments make a new intent's receipt ambiguous.
-    if (this.commitmentTroops(behavior, target) > 0) return this.omitObservation("ambiguous-commitment", { targetSmallID: target.smallID() });
+    const committed = this.commitmentTroops(behavior, target);
+    const known = this.landAttacks(behavior, target).filter(attack =>
+      typeof attack.id === "string" && attack.id.length > 0 && Number.isFinite(attack.troops) && attack.troops > 0);
+    const knownTroops = known.reduce((total, attack) => total + attack.troops, 0);
+    // Native reinforcement replaces old IDs; pending intents and boats still lack attributable receipts.
+    if (committed > 0 && (knownTroops !== committed || new Set(known.map(attack => String(attack.id))).size !== known.length)) {
+      return this.omitObservation("ambiguous-commitment", { targetSmallID: target.smallID() });
+    }
     return this.captureActionObservation(behavior, target);
   }
 
@@ -634,6 +642,8 @@ class HybridCombatPolicy {
     if (!features) return this.omitObservation(gate ? featureReason || "target-features-unavailable" : "gate-features-unavailable", { targetSmallID, tick });
     this.observations.captured++;
     return features ? { gate, features, geometry, share: gate[2], tick, targetSmallID,
+      preexistingCommitmentTroops: this.commitmentTroops(behavior, target),
+      commitmentScope: "remaining-target-commitment",
       actorSmallID: behavior.player.smallID?.() ?? null,
       episodeId: this.episodeId, generation: this.generation,
       modelIdentity: this.backend === "compact-tanh-v1" ? JSON.stringify(this.exportModel()) : null,
