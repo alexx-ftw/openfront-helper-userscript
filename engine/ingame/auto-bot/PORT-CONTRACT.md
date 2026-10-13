@@ -81,12 +81,15 @@ trajectory-aware SAM coverage.
 `// DIVERGENCE:` Legendary adaptive construction ranks City/Factory/Port
 candidates on landlocked as well as water-access maps. Without an existing
 route, only the deterministic two-owner seed on mutually tradeable shared water
-is admitted; no third-owner duplicate is eligible. On truly landlocked maps the
-first two Cities carry their own cost as baseline value, because a founding
-City has no rail cluster to price otherwise. Other difficulty tiers keep the
+is admitted; no third-owner duplicate is eligible. On truly landlocked maps
+City value requires a profiled paid-stop route or binding troop-cap relief; a
+founding City receives no baseline value without either. Other difficulty tiers keep the
 native fixed structure order. The inherited first-two-Cities flag does not
 bypass the positive-value gate or displace a higher-value positive economy
-action. City capacity value is available only under troop-cap pressure.
+action. City capacity value is available only under troop-cap pressure, and a
+cap-only City remains eligible after the async legality probe only while that
+pressure persists. A City selected for paid-stop income is repriced against its
+current route after the probe.
 Stop pools value only team-member payouts: a trade stop between two non-team
 allies carries zero team gold by design and still dilutes the uniform visit
 share, which models the real visit cost of ally-ally stops on a shared cluster.
@@ -109,12 +112,22 @@ completion: the client view hides remaining construction ticks, so the estimate
 conservatively waits the full live `unitInfo().constructionDuration`. The
 train-spawn denominator is the level-sum `unitCount(Factory)` that
 `TrainStationExecution` reads, and a Factory upgrade raises it by one level.
+A successful train spawn creates two engines and five cars; all seven count as
+`Train` units in the global spawn denominator. The expected fleet therefore
+adds seven units per consist, not one.
 A completed source Port may earn from a different-owner destination Port while
 that destination is still under construction; the arrival pays both owners, and
 travel begins when the source can send. A newly built source still waits for its
 own construction. When no Port route exists, one deterministic pair of mutually
 tradeable owners is selected per shared-water component by stable owner ID; the
 estimate conservatively delays that seed stream until both Ports are complete.
+The pair is admitted only when the selected partner has a legal placement and
+projected team value pays both owners' live quoted costs. Once one side is
+under construction, that cost is sunk and the remaining owner is repriced
+alone; the builder still needs its own cash after reserve.
+When several seed pairs are possible, selection maximizes projected net team
+gold over the remaining horizon after preserving committed construction; raw
+per-arrival payout is only a compatibility fallback for older candidate shapes.
 Port upgrades use the target Port's actual level and need a completed source
 with a valid route; the destination may still be under construction. Allied City
 income follows a per-source, per-stop timeline: each destination switches to
@@ -126,7 +139,15 @@ For each new Legendary economic structure, the ROI-ranked placement is carried
 through the asynchronous buildability probe; a Port cannot be emitted on a
 different tile or fall back to an unprofiled site. Candidate construction cost
 uses the live structure price, while upgrades retain their authoritative probe
-cost.
+cost. After the probe, City and Port builds are repriced against the fresh
+network, current Config rates and saturation, remaining horizon, and quoted
+cost; they are rejected if their exact route is no longer positive. The selected
+two-owner Port seed can start before either stream pays only when the pair's
+projected net value is positive after both live costs. Factory builds receive
+the same fresh route and cost check. Factory
+and Port throughput upgrades also refresh their productive route and ROI after
+the upgrade probe, and City capacity upgrades require the 0.9 cap-pressure gate
+to remain active after their probe.
 Once the selected seed route is complete, other owners can use it for ordinary
 route valuation.
 
@@ -135,11 +156,13 @@ source is profiled with its current destination list and again with the new
 destination/level. The policy counts the marginal change in expected team
 payout, including arrivals paid to the destination owner, rather than treating
 all existing source traffic as new income. Port build and inbound source
-construction delays are included. Teammate structures count toward team value
-and saturation, never toward the builder's own affordability. Factory values
-apply the owner's global Factory level sum across every rail cluster, so a
-build or upgrade also scores the spawn-rate loss of the owner's other clusters.
-The denominator includes the level-one Factory under construction, matching
+construction delays are included, and a candidate subtracts saturation losses
+from the builder's other productive Ports. Teammate structures count toward
+team value and saturation, never toward the builder's own affordability.
+Factory values apply the owner's global Factory level sum across every rail
+cluster, so a build or upgrade also scores the spawn-rate loss of the owner's
+other clusters and eligible teammates' paid Factory routes. The denominator
+includes the level-one Factory under construction, matching
 `PlayerImpl.unitCount`; only completed source Factories spawn trains. City
 values are the pool-mean delta over each source owner's eligible, completed,
 uniformly sampled trade stops (new share minus displaced shares); the average is
@@ -157,13 +180,38 @@ before emission, and compete with construction by net team-gold value. City cap
 relief remains limited to the existing 0.9 troop-cap pressure.
 
 // DIVERGENCE (explicit conservative decision): a CANDIDATE Factory's ROI
-prices only already-stationed paid stops of its reachable rail clusters. The
-engine would additionally promote stationless City/Port units within
-trainStationMaxRange on the Factory's first tick (FactoryExecution), but the
-promoted stops' resulting rail-cluster membership is decided by the live rail
-segment grid plus the half-resolution minimap A* pathfinder, which the client
-does not expose; projecting them could silently misprice routes, so they are
-excluded until they actually gain stations.
+prices already-stationed paid stops of its reachable rail clusters and may
+also compare a bounded seed route. The engine promotes nearby stationless
+City/Port units on a Factory's first tick (FactoryExecution), but the resulting
+rail membership depends on the live rail grid and half-resolution minimap A*
+pathfinder, which the client does not expose. A seed is therefore priced only
+for completed, stationless own/team/allied City/Port stops with positive team
+payout whose tiles are endpoints of a placement-time Factory
+BuildableUnit.ghostRailPaths path. If other stations exist, the candidate must
+map to no current rail cluster and be farther than live trainStationMaxRange
+from every known station; its ghost path must not cross a known station tile.
+This lets a profitable seed compete with a separate factoryless rail cluster
+without pretending to join or extend a network whose topology is unknown. The
+rail proof accepts the live typed railroad buffer only when its length matches
+the full map; missing, empty, or truncated buffers fail closed, while a
+full-sized all-zero buffer means no existing rail. The
+estimate uses the mean per-spawn team payout, the configured maximum station
+span divided by TrainExecution's two-tile-per-tick speed as a route-delay proxy,
+and a payout timeline that drops non-team allied stops at their live
+alliance expiry. Pending stops are excluded until construction completes and
+the candidate is repriced. Before construction, every selected stop must still
+be active and stationless, its current team payout must be at least the scored
+payout, and fresh ghost paths must still reach every selected paid-stop
+endpoint. A failed probe, changed stop, reduced payout, missing endpoint, or
+empty path list is rejected. Empty paths also occur for snap-to-existing-rail
+sites, so those potentially productive sites fail closed until the client
+exposes paid-stop component proof. After the async build quote, a fresh check
+revalidates a seed's stops and rail isolation, or resolves an ordinary
+factoryless rail-cluster route again. Both paths use current Config rates, live
+global spawn saturation, current route payouts and alliance expiry, remaining
+horizon, and the quoted build cost; either build is rejected if its repriced
+marginal team-gold value is no longer positive. Existing route profiles and
+isolated seed profiles compete by the same marginal team-gold evaluator.
 
 The Legendary horizon also uses the live Doomsday Clock deadline while the
 player is flagged: `rotDeathSeconds` minus `doomsdayClockTicks()` caps projected
@@ -171,13 +219,13 @@ payback. Recovery or a disabled territory-rot deadline restores the ordinary
 match-timer horizon. This is a deterministic at-risk deadline, not a general
 combat-loss prediction.
 The horizon baseline is elapsed match time: the client GameView
-ticksSinceStart() when available (it already subtracts the spawn-phase start
-tick), falling back to the raw tick for fixtures without the method.
+`ticksSinceStart()` is forwarded through `gameApi` when available (it already
+subtracts the spawn-phase start tick), falling back to the raw tick otherwise.
 
 // DIVERGENCE: the engine's per-train tradeStopsVisited counter is not exposed
 by the client. Economy pricing forwards a known count and defaults unknown
 trains to Config's 10-stop rate; payouts remain sourced from live Config.
-Global saturation is modeled through live spawn-rate denominators.
+Global fleet saturation is projected from live Config spawn-rate denominators.
 
 Economic construction cost reproduces the costWrapper exactly at the client
 surface: recordUnitConstructed fires on every build AND upgrade
@@ -189,19 +237,46 @@ would be lower; the client cannot distinguish them).
 `TradeShipExecution`'s smoothed `WaterPathFinder`, nor each Port's current pity
 counter. Rail stops therefore use the engine's equal-weight endpoint choice,
 and Port distance uses bounded water BFS; routes beyond the search budget are
-excluded from the estimate. Incoming Port source rates use the live global
-trade-ship count as fixed for the horizon. Matching PortExecution's
+excluded from the estimate. Matching PortExecution's
 destination selection (no under-construction filter), the destination mix now
 includes pending destination Ports; they pay only after their construction
-delay, and a pending source likewise waits its full construction duration.
-The estimate does not forecast later fleet saturation or per-Port pity state.
+delay (TradeShipExecution checks `isActive()`, not construction), and a pending
+source likewise waits its full construction duration. A Port candidate that
+activates an otherwise idle source Port also feeds that source into the global
+saturation projection.
+Global train and trade-ship saturation uses a deterministic mean-field
+projection, advancing one native tick at a time and querying current
+`Config.trainSpawnRate` / `Config.tradeShipSpawnRate` at each projected fleet
+size. Fractional expected counts linearly interpolate Config-derived rates at
+the adjacent integer counts. Producer inputs come from live owner/unit APIs;
+Factory spawn denominators use the level sum from live unit views, matching
+`PlayerImpl.unitCount(Factory)` including inactive or deletion-marked levels,
+while only active, non-deletion-marked Factories add future births. The client
+cannot verify every opponent Factory's paid rail
+route, so every exposed live Factory is conservatively treated as productive;
+this can overstate future train saturation and understate investment value.
+Port producer supply is narrower: a live Port must have a currently tradeable,
+different-owner Port on shared usable water. Payout-route sources remain a
+separate, verified set. A new Factory enters its owner's denominator when
+construction begins and adds train births when construction completes; route
+travel delays its payouts, not fleet saturation. An upgrade's extra level
+affects the denominator and producer rate at the action's effective tick, while
+its route payout can still be delayed. The projection does not model each
+Port's private pity counter. Future train units leave the projected stock after
+their arrival delay; routed trade ships leave after their weighted water-route
+distance. The client does not expose train in-flight ages, so train lifetime
+uses the live `trainStationMaxRange` divided by TrainExecution speed as a
+deterministic proxy when no explicit lifetime is available; this can
+underestimate curved rail routes. Unrouted legacy fixtures retain birth-only
+stock.
 Port route weights follow the engine's selection list: a non-team alliance adds
 its friendly selection weight only until expiry, and the post-expiry mix
 reweights remaining destinations while endpoint payouts continue (`canTrade`
-is embargo-only). Train travel delay uses the live station-range limit as a
-conservative tick proxy because the client does not expose the station path's
-rail-tile length or TrainExecution motion plan. Live Config rates supply the
-spawn model. These estimates can understate or misprice a specific route, so
+is embargo-only). Train travel delay uses the live station-range limit divided
+by the engine's two-tile-per-tick movement speed because the client does not
+expose the actual station path length or TrainExecution motion plan; curved
+routes may take longer. Live Config rates supply the spawn model. These
+estimates can understate or misprice a specific route, so
 the exact engine route APIs are the upgrade path if the client later exposes
 them.
 

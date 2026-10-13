@@ -1685,8 +1685,8 @@
     "name": "HYBRID_COMBAT_REASONS",
     "declarationKind": "const",
     "initializerKind": "CallExpression",
-    "initializerHash": "c667912d3a6ac188a5a17bf65df4b3a41e10a099fbe505bcfb433f427b0018c0",
-    "initializerLength": 1422,
+    "initializerHash": "0efa9bf1d74c72f10f18522239b2d14f724d18dfd415a87effeec52212619958",
+    "initializerLength": 1449,
     "initializerPreview": "Object.freeze([\n    \"gate-features-unavailable\", \"no-native-eligible-target\", \"no-funded-native-target\", \"target-features-unavailable\",\n    \"geometry-unavailable\", \"geometry-stale\", \"frontier-invalid\", \"numerical-failure\", \"model-not-rea..."
   },
   {

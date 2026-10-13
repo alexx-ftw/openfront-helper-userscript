@@ -1508,6 +1508,7 @@ for (const suite of [
   "hybrid-training-workflow",
   "hybrid-window-observations",
   "hybrid-cancelled-outcome",
+  "hybrid-tribe-ranking",
 ])
   await import(`./${suite}.mjs`);
 const trajectory = await import("./hybrid-trajectory-contract.mjs");

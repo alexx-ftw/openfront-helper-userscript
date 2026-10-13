@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./legendary-train-outflow.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
@@ -441,6 +442,244 @@ assert.equal(
     { gold: 2_000_000n },
   )[0]?.type,
   "City",
+);
+const nonlinearFleetConfig = {
+  unitInfo: () => ({ constructionDuration: 0 }),
+  trainSpawnRate: (_factories, trains) => (trains < 1 ? 2 : 200),
+  tradeShipSpawnRate: (_rejections, ships) => (ships < 1 ? 2 : 200),
+};
+const futureTrainFactoryInputs = {
+  factoryPaidStops: 1,
+  factoryTeamGoldPerTrain: 50_000,
+  factoryRouteProfiles: [
+    {
+      teamGoldPerSpawn: 50_000,
+      postTeamGoldPerSpawn: 50_000,
+      teamGoldAfterPendingPerSpawn: 50_000,
+      postTeamGoldAfterPendingPerSpawn: 50_000,
+    },
+  ],
+  ownFactoryCount: 0,
+  ownProductiveFactoryLevels: [],
+  trainCount: 0,
+  fleetProducerSupply: {
+    trainOwners: [
+      {
+        isBuilder: false,
+        factoryCount: 1,
+        factories: [{ level: 1, readyAtTicks: 0 }],
+      },
+    ],
+    portOwners: [],
+  },
+};
+const projectedFactoryValue = (horizonTicks) =>
+  plannerSandbox.legendaryEconomyNetGold("Factory", {
+    cost: 1,
+    horizonTicks,
+    inputs: futureTrainFactoryInputs,
+    config: nonlinearFleetConfig,
+  });
+const shortProjectedFactory = projectedFactoryValue(5);
+const longProjectedFactory = projectedFactoryValue(1_000);
+assert.ok(
+  shortProjectedFactory.incomePerTick > longProjectedFactory.incomePerTick * 2,
+  "the long-horizon Factory value integrates lower Config-derived throughput as the projected train fleet saturates",
+);
+const rankProjectedFactory = (horizonTicks, value) =>
+  plannerSandbox.rankLegendaryConstructionActions(
+    [
+      {
+        type: "Factory",
+        cost: 1n,
+        netTeamGold: BigInt(Math.round(value.netTeamGold)),
+      },
+      {
+        type: "City",
+        cost: 1n,
+        netTeamGold: BigInt(horizonTicks * 1_000),
+      },
+    ],
+    { gold: 10_000_000n },
+  )[0]?.type;
+assert.equal(
+  rankProjectedFactory(5, shortProjectedFactory),
+  "Factory",
+  "a short-horizon Factory with unsaturated live Config throughput beats the fixed benchmark",
+);
+assert.equal(
+  rankProjectedFactory(1_000, longProjectedFactory),
+  "City",
+  "future train saturation lowers the long-horizon Factory ranking below the same per-tick benchmark",
+);
+const futureTradePortInputs = {
+  hasCompletedTradePartner: true,
+  tradeShipCount: 0,
+  portRoutes: [
+    {
+      weight: 1,
+      distance: 0,
+      teamGoldPerArrival: 50_000,
+      postAllianceGoldPerArrival: 50_000,
+      allianceTicksRemaining: Infinity,
+    },
+  ],
+  fleetProducerSupply: {
+    trainOwners: [],
+    portOwners: [
+      {
+        isBuilder: false,
+        ports: [{ level: 1, readyAtTicks: 0 }],
+      },
+    ],
+  },
+};
+const projectedPortValue = (horizonTicks) =>
+  plannerSandbox.legendaryEconomyNetGold("Port", {
+    cost: 1,
+    horizonTicks,
+    inputs: futureTradePortInputs,
+    config: nonlinearFleetConfig,
+  });
+const shortProjectedPort = projectedPortValue(5);
+const longProjectedPort = projectedPortValue(1_000);
+assert.ok(
+  shortProjectedPort.incomePerTick > longProjectedPort.incomePerTick * 2,
+  "the long-horizon Port value integrates lower Config-derived throughput as the projected trade-ship fleet saturates",
+);
+assert.equal(
+  plannerSandbox.rankLegendaryConstructionActions(
+    [
+      {
+        type: "Port",
+        cost: 1n,
+        netTeamGold: BigInt(Math.round(shortProjectedPort.netTeamGold)),
+      },
+      { type: "City", cost: 1n, netTeamGold: 5_000n },
+    ],
+    { gold: 10_000_000n },
+  )[0]?.type,
+  "Port",
+  "a short-horizon Port with unsaturated live Config throughput ranks above the benchmark",
+);
+assert.equal(
+  plannerSandbox.rankLegendaryConstructionActions(
+    [
+      {
+        type: "Port",
+        cost: 1n,
+        netTeamGold: BigInt(Math.round(longProjectedPort.netTeamGold)),
+      },
+      { type: "City", cost: 1n, netTeamGold: 1_000_000n },
+    ],
+    { gold: 10_000_000n },
+  )[0]?.type,
+  "City",
+  "future trade-ship saturation lowers the long-horizon Port ranking below the same per-tick benchmark",
+);
+const timingConfig = {
+  trainSpawnRate: (factories) => 1 + factories * 4,
+  tradeShipSpawnRate: (_rejections, ships) => 100 + ships * 10,
+};
+const timingFactoryInputs = {
+  trainCount: 0,
+  fleetProducerSupply: {
+    trainOwners: [
+      {
+        isBuilder: true,
+        factoryCount: 2,
+        factories: [{ level: 2, readyAtTicks: 0 }],
+      },
+    ],
+    portOwners: [],
+  },
+};
+const pendingFactoryProjection = plannerSandbox.legendaryProjectEconomyFleets(
+  timingFactoryInputs,
+  timingConfig,
+  5,
+  {
+    factoryCountReadyAt: 0,
+    factoryReadyAt: 2,
+    builderFactoryCount: 2,
+  },
+);
+const factoryRateAtCount = (level, count) =>
+  plannerSandbox.legendaryExpectedTrainRatePerTick(level, timingConfig.trainSpawnRate(count, 0));
+const trainUnitsPerConsist = 7;
+assert.equal(
+  pendingFactoryProjection.after.trainCounts[1],
+  trainUnitsPerConsist * factoryRateAtCount(2, 3),
+  "a new Factory enters unitCount while pending, slowing existing producers immediately",
+);
+assert.equal(
+  pendingFactoryProjection.after.trainCounts[2],
+  trainUnitsPerConsist * factoryRateAtCount(2, 3) * 2,
+  "a pending Factory adds no train producer before construction completes",
+);
+assert.ok(
+  Math.abs(
+    pendingFactoryProjection.after.trainCounts[3] -
+      trainUnitsPerConsist * (factoryRateAtCount(2, 3) * 3 + factoryRateAtCount(1, 3)),
+  ) < 1e-12,
+  "a constructed Factory begins spawning before route travel finishes delaying its payouts",
+);
+const upgradeFactoryProjection = plannerSandbox.legendaryProjectEconomyFleets(
+  timingFactoryInputs,
+  timingConfig,
+  5,
+  {
+    factoryCountReadyAt: 0,
+    factoryReadyAt: 0,
+    factoryUpgradeLevel: 2,
+    builderFactoryCount: 2,
+  },
+);
+assert.ok(
+  Math.abs(
+    upgradeFactoryProjection.after.trainCounts[1] -
+      upgradeFactoryProjection.before.trainCounts[1] -
+      trainUnitsPerConsist * (factoryRateAtCount(3, 3) - factoryRateAtCount(2, 2)),
+  ) < 1e-12,
+  "a Factory upgrade immediately adds one denominator level and one producer level",
+);
+const timingPortInputs = {
+  tradeShipCount: 0,
+  fleetProducerSupply: {
+    trainOwners: [],
+    portOwners: [
+      {
+        isBuilder: true,
+        ports: [{ level: 2, readyAtTicks: 0 }],
+      },
+    ],
+  },
+};
+const upgradePortProjection = plannerSandbox.legendaryProjectEconomyFleets(
+  timingPortInputs,
+  timingConfig,
+  5,
+  { portReadyAt: 3, portUpgradeLevel: 2 },
+);
+const shipsAtPortUpgradeReadiness = upgradePortProjection.before.tradeShipCounts[3];
+const shipRateAtLevel = (level) =>
+  plannerSandbox.legendaryExpectedTradeRateAtFleet(
+    level,
+    shipsAtPortUpgradeReadiness,
+    timingConfig,
+  );
+assert.equal(
+  upgradePortProjection.after.tradeShipCounts[3],
+  upgradePortProjection.before.tradeShipCounts[3],
+  "a Port upgrade does not add trade-ship throughput before its effective tick",
+);
+assert.ok(
+  Math.abs(
+    upgradePortProjection.after.tradeShipCounts[4] -
+      upgradePortProjection.before.tradeShipCounts[4] -
+      (shipRateAtLevel(3) - shipRateAtLevel(2)),
+  ) < 1e-12,
+  "a Port upgrade adds only the marginal +1 level at readiness",
 );
 assert.deepEqual(roiTrainRateCalls.splice(0), [
   [2, 0],
@@ -1830,6 +2069,7 @@ const structureSandbox = {
   legendaryMissileDefenseSchedule: plannerSandbox.legendaryMissileDefenseSchedule,
   UniversalPathFinding: null,
   state: { settings: { winFixes: true } },
+  randTerritoryTileArray: () => [],
   withTimeout: async (promise) => promise,
   WORKER_TIMEOUT_MS: 1,
 };
@@ -1975,6 +2215,11 @@ const networkOwner = (smallId, teamId, unitsByType, isPlayer = true) => ({
   hasEmbargoAgainst: () => false,
   isOnSameTeam: (other) => other?.teamId === teamId,
   isAlliedWith: () => false,
+  unitCount: (type) =>
+    (unitsByType[type] ?? []).reduce(
+      (total, unit) => total + Math.max(1, Number(unit.level?.() ?? 1)),
+      0,
+    ),
   units: (...types) => types.flatMap((type) => unitsByType[type] ?? []),
 });
 const networkCity = networkStation(30, 10, 1);
@@ -2049,6 +2294,53 @@ assert.deepEqual(Array.from(pendingRailSource.productiveFactoryLevels), [2]);
 assert.deepEqual(Array.from(pendingRailSource.pendingFactoryLevels), [1]);
 assert.equal(pendingRailSource.factoryConstructionDelayTicks, 100);
 assert.equal(inProgressNetworkInputs.teamFactoryLevels, 3);
+const activeFleetFactory = networkStation(35, 25, 2);
+const inactiveFleetFactory = {
+  ...networkStation(36, 26, 3),
+  isActive: () => false,
+};
+const deletedFleetFactory = {
+  ...networkStation(37, 27, 4),
+  isMarkedForDeletion: () => true,
+};
+let observedFleetUnitCount = 0;
+const denominatorOwner = networkOwner(33, 7, {
+  Factory: [activeFleetFactory, inactiveFleetFactory, deletedFleetFactory],
+});
+denominatorOwner.unitCount = (type) => {
+  if (type === "Factory")
+    observedFleetUnitCount = denominatorOwner
+      .units(type)
+      .reduce((total, unit) => total + unit.level(), 0);
+  return observedFleetUnitCount;
+};
+const fleetDenominatorBehavior = Object.create(networkEconomyBehavior);
+Object.assign(fleetDenominatorBehavior, {
+  game: {
+    ...networkEconomyBehavior.game,
+    players: () => [networkActor, denominatorOwner],
+  },
+});
+const fleetDenominatorInputs = fleetDenominatorBehavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 1,
+});
+const denominatorOwnerSupply = fleetDenominatorInputs.fleetProducerSupply.trainOwners.find(
+  (owner) => !owner.isBuilder,
+);
+assert.equal(
+  denominatorOwnerSupply.factoryCount,
+  9,
+  "the fleet denominator mirrors unitCount(Factory), including inactive and deletion-marked levels",
+);
+assert.deepEqual(
+  Array.from(denominatorOwnerSupply.factories, (factory) => factory.level),
+  [2],
+  "only active, non-deletion-marked Factories contribute projected train births",
+);
 const clusterAFactory = networkStation(51, 51, 1);
 const clusterACity = networkStation(52, 52, 1);
 const clusterBFactory = networkStation(53, 61, 1);
@@ -2210,6 +2502,86 @@ assert.equal(
   })?.refused,
   true,
   "removing every reachable paid stop makes the first Factory unprofitable",
+);
+const stationlessPaidStopNetwork = makePaidStopNetwork({
+  City: [networkStation(56, 30, 1, false, false)],
+});
+const stationlessPaidStopInputs = stationlessPaidStopNetwork.behavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 0,
+});
+assert.equal(stationlessPaidStopInputs.factoryStationEntries.length, 0);
+assert.equal(stationlessPaidStopInputs.factoryRouteProfiles.length, 0);
+assert.deepEqual(
+  Array.from(stationlessPaidStopInputs.factorySeedStops, (stop) => ({
+    tile: stop.tile,
+    teamGoldPerSpawn: stop.teamGoldPerSpawn,
+    pending: stop.pending,
+    isTeam: stop.isTeam,
+  })),
+  [{ tile: 30, teamGoldPerSpawn: 100_000, pending: false, isTeam: true }],
+  "a stationless teammate City is retained as a paid stop the first Factory can activate",
+);
+const mixedSeedStopNetwork = makePaidStopNetwork({
+  City: [networkStation(58, 30, 1, false, false), networkStation(59, 31, 1)],
+});
+const mixedSeedStopInputs = mixedSeedStopNetwork.behavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 1,
+});
+assert.deepEqual(
+  Array.from(mixedSeedStopInputs.factorySeedStops, (stop) => Number(stop.tile)),
+  [30],
+  "the Factory seed list excludes teammate Cities that already have stations in another rail network",
+);
+const changingSeedCity = networkStation(60, 32, 1, false, false);
+let changingSeedCityHasStation = false;
+changingSeedCity.hasTrainStation = () => changingSeedCityHasStation;
+const changingSeedNetwork = makePaidStopNetwork({ City: [changingSeedCity] });
+assert.equal(
+  changingSeedNetwork.behavior.legendaryEconomyInputs({
+    trainCount: 0,
+    tradeShipCount: 0,
+    hasTradePartner: false,
+    hasCompletedTradePartner: false,
+    connectedStops: 0,
+  }).factorySeedStops.length,
+  1,
+  "a completed teammate City can initially be selected as a stationless Factory seed",
+);
+changingSeedCityHasStation = true;
+assert.equal(
+  changingSeedNetwork.behavior.legendaryEconomyInputs({
+    trainCount: 0,
+    tradeShipCount: 0,
+    hasTradePartner: false,
+    hasCompletedTradePartner: false,
+    connectedStops: 1,
+  }).factorySeedStops.length,
+  0,
+  "a City that gains a station is removed from the current Factory seed supply",
+);
+const pendingSeedStopNetwork = makePaidStopNetwork({
+  City: [networkStation(57, 30, 1, true, false)],
+});
+const pendingSeedStop = pendingSeedStopNetwork.behavior.legendaryEconomyInputs({
+  trainCount: 0,
+  tradeShipCount: 0,
+  hasTradePartner: false,
+  hasCompletedTradePartner: false,
+  connectedStops: 0,
+}).factorySeedStops[0];
+assert.equal(pendingSeedStop.pending, true);
+assert.equal(
+  pendingSeedStop.constructionDelayTicks,
+  100,
+  "a stationless in-progress teammate stop waits for its live Config construction duration",
 );
 const pendingRailFactory = networkStation(42, 20, 1);
 const pendingStopNetwork = makePaidStopNetwork(
@@ -3152,6 +3524,8 @@ assert.equal(
 let routeDistanceReads = 0;
 let capacityUpgradeGold = 1_000_000n;
 let capacityUpgradeSends = 0;
+let capacityUpgradePressure = true;
+let dropCityCapPressureAfterProbe = false;
 const capacitySandbox = {
   ...structureSandbox,
   legendaryBigInt: plannerSandbox.legendaryBigInt,
@@ -3198,12 +3572,18 @@ Object.assign(capacityUpgrade, {
   player: {
     units: () => [capacityCity],
     gold: () => capacityUpgradeGold,
-    troops: () => 95,
+    troops: () => (capacityUpgradePressure ? 95 : 50),
   },
   safeMaxTroops: () => 100,
   legendaryAtomWarChest: () => 750_000n,
   _legendaryCityUpgradeCostCache: new Map(),
-  buildableForUnits: async () => [{ canUpgrade: 19, cost: 500_000n }],
+  buildableForUnits: async () => {
+    if (dropCityCapPressureAfterProbe) {
+      dropCityCapPressureAfterProbe = false;
+      capacityUpgradePressure = false;
+    }
+    return [{ canUpgrade: 19, cost: 500_000n }];
+  },
 });
 const capacityCandidate = { upgradeStructureId: 19, cost: 500_000n };
 assert.equal(
@@ -3215,6 +3595,14 @@ assert.equal(capacityUpgradeSends, 0);
 capacityUpgradeGold = 1_250_000n;
 assert.equal(await capacityUpgrade.maybeUpgradeLegendaryCityCapacity(capacityCandidate), true);
 assert.equal(capacityUpgradeSends, 1, "exactly the unreserved surplus can fund an upgrade");
+capacityUpgradePressure = true;
+dropCityCapPressureAfterProbe = true;
+assert.equal(
+  await capacityUpgrade.maybeUpgradeLegendaryCityCapacity(capacityCandidate),
+  false,
+  "a City capacity upgrade is canceled if cap pressure ends during its async probe",
+);
+assert.equal(capacityUpgradeSends, 1, "the no-longer-pressured City is not upgraded");
 capacityUpgradeGold = 1_000_000n;
 assert.equal(
   capacityUpgrade.genericStructureUpgradeAllowed({ bu: { cost: 500_000n } }, "City"),
@@ -3228,6 +3616,12 @@ assert.equal(
 );
 let throughputRouteActive = false;
 let throughputAvailableGold = 100_000n;
+let throughputSaturationChange = false;
+let throughputSaturated = false;
+const throughputActuationConfig = {
+  ...roiConfig,
+  trainSpawnRate: (_factories, trains) => (trains > 0 ? 1_000_000_000 : 100),
+};
 const liveThroughputFactory = {
   id: () => 79,
   level: () => 1,
@@ -3235,7 +3629,7 @@ const liveThroughputFactory = {
 };
 const throughputActuation = Object.create(capacitySandbox.StructureBehavior.prototype);
 Object.assign(throughputActuation, {
-  game: { ticks: () => 101, config: () => roiConfig },
+  game: { ticks: () => 101, config: () => throughputActuationConfig },
   player: {
     units: (type) => (type === "Factory" ? [liveThroughputFactory] : []),
     gold: () => throughputAvailableGold,
@@ -3244,7 +3638,7 @@ Object.assign(throughputActuation, {
   legendaryConstructionState: () => ({
     economyHorizonTicks: 1_000,
     economyInputs: {
-      trainCount: 0,
+      trainCount: throughputSaturated ? 1 : 0,
       ownFactoryCount: 2,
       ownProductiveFactoryLevels: [1],
       factoryPaidStops: 1,
@@ -3263,7 +3657,13 @@ Object.assign(throughputActuation, {
       portUpgradeTargetIds: [],
     },
   }),
-  buildableForUnits: async () => [{ canUpgrade: 79, cost: 25_000n }],
+  buildableForUnits: async () => {
+    if (throughputSaturationChange) {
+      throughputSaturationChange = false;
+      throughputSaturated = true;
+    }
+    return [{ canUpgrade: 79, cost: 25_000n }];
+  },
   availableGoldAfterReserve: () => throughputAvailableGold,
 });
 const sendsBeforeThroughputUpgrade = capacityUpgradeSends;
@@ -3313,6 +3713,22 @@ assert.equal(
   factoryUpgradeActuationInputs?.portUpgradeProfile,
   undefined,
   "Factory upgrade actuation never substitutes a Port profile",
+);
+throughputSaturationChange = true;
+const sendsBeforeStaleFactoryUpgrade = capacityUpgradeSends;
+assert.equal(
+  await throughputActuation.maybeUpgradeLegendaryThroughput({
+    type: "Factory",
+    upgradeStructureId: 79,
+    upgradeCost: 25_000n,
+  }),
+  false,
+  "a Factory upgrade is vetoed when current train saturation removes its positive value during probing",
+);
+assert.equal(
+  capacityUpgradeSends,
+  sendsBeforeStaleFactoryUpgrade,
+  "a stale Factory upgrade never reaches the build intent",
 );
 capacitySandbox.legendaryEconomyNetGold = originalEconomyEvaluator;
 capacitySandbox.isLegendaryDifficulty = () => true;
@@ -4670,6 +5086,7 @@ const seedRankSandbox = {
     Warship: "Warship",
   },
   state: { settings: { winFixes: true } },
+  randTerritoryTileArray: () => [],
   globalThis: null,
   currentDifficulty: () => "Legendary",
   getBuildMenu: () => ({ sendBuildOrUpgrade() {} }),
@@ -4687,7 +5104,12 @@ executeClassicScript(
   { filename: "structureBehavior-seed-rank.js" },
 );
 const makeSeedRankOwner = (id, units) => ({
-  buildables: async () => [],
+  buildables: async (tile, types) =>
+    Array.from(types ?? [], (type) => ({
+      type,
+      cost: 125_000n,
+      canBuild: tile ?? true,
+    })),
   id: () => id,
   smallID: () => id,
   isPlayer: () => true,
@@ -4816,10 +5238,10 @@ const uncommittedSeedPort = uncommittedSeedRank.candidates.find(
 );
 assert.ok(
   committedSeedPort?.netTeamGold > 0n &&
-    uncommittedSeedPort?.netTeamGold === 0n &&
+    uncommittedSeedPort?.netTeamGold > 0n &&
     uncommittedSeedPort?.seedPair === true &&
     uncommittedSeedPort.netTeamGold < committedSeedPort.netTeamGold,
-  "without a committed partner Port the seed prices zero income but survives as a strategic seed",
+  "an uncommitted seed is admitted only when the pair pays both live Port costs",
 );
 assert.equal(
   uncommittedSeedPort?.portPlacementTile,
@@ -5114,6 +5536,123 @@ assert.equal(
   "a snapped City buildable on another rail cluster cannot spend ROI priced for city-A",
 );
 assert.equal(mismatchedPortEmissions, 0);
+
+const lateSaturationCityConfig = {
+  unitInfo: () => ({ constructionDuration: 0 }),
+  trainSpawnRate: (_factories, trains) => (trains > 0 ? 1_000_000_000 : 1),
+};
+let lateSaturationCityProbe = false;
+let lateSaturationCityEmissions = 0;
+const lateSaturationCityBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+Object.assign(lateSaturationCityBehavior, {
+  game: { config: () => lateSaturationCityConfig },
+  player: { units: () => [] },
+  structureSpawnEligible: () => true,
+  economicStructureSpawnPending: () => false,
+  constructionCostForOptions: () => 100n,
+  availableGoldAfterReserve: () => 1_000n,
+  buildableCostOrFallback: (buildable, fallback) => buildable.cost ?? fallback,
+  hasAnyShoreBorderTile: () => false,
+  computeTroopCapPressure: () => false,
+  structureCandidateTiles: () => ["city-A"],
+  assignRailClusters: (entries) =>
+    entries.map(({ tile }) => (tile === "station-A" || tile === "city-A" ? "rail#A" : null)),
+  legendaryConstructionState: () => ({
+    economyHorizonTicks: 100,
+    economyInputs: {
+      ...cityRouteInputs,
+      cityRouteProfiles: [{ clusterId: "rail#A", trainSources: [cityRouteSource(100_000)] }],
+      trainCount: lateSaturationCityProbe ? 1 : 0,
+    },
+  }),
+  structureSpawnBuildable: async () => {
+    lateSaturationCityProbe = true;
+    return { canBuild: "city-A", cost: 100n };
+  },
+  emitStructureBuildable: () => {
+    lateSaturationCityEmissions++;
+    return true;
+  },
+});
+assert.ok(
+  plannerSandbox.legendaryEconomyNetGold("City", {
+    cost: 100,
+    horizonTicks: 100,
+    inputs: {
+      ...cityRouteInputs,
+      cityRouteProfiles: [{ clusterId: "rail#A", trainSources: [cityRouteSource(100_000)] }],
+      trainSources: [cityRouteSource(100_000)],
+      trainCount: 0,
+    },
+    config: lateSaturationCityConfig,
+  }).netTeamGold > 0,
+  "the selected City route starts with positive marginal team gold",
+);
+assert.equal(
+  await lateSaturationCityBehavior.maybeSpawnStructure(structureSandbox.UNIT.City, {
+    useActualCost: true,
+    legendaryEconomyCostQuote: 100n,
+    legendaryEconomyCityTile: "city-A",
+  }),
+  false,
+  "a City whose route loses positive value to live train saturation during probing is vetoed",
+);
+assert.equal(lateSaturationCityEmissions, 0);
+
+let cityCapPressureAfterProbe = true;
+let staleCapCityEmissions = 0;
+const staleCapCityBehavior = Object.create(structureSandbox.StructureBehavior.prototype);
+Object.assign(staleCapCityBehavior, {
+  game: { config: () => lateSaturationCityConfig },
+  player: { units: () => [] },
+  structureSpawnEligible: () => true,
+  economicStructureSpawnPending: () => false,
+  constructionCostForOptions: () => 100n,
+  availableGoldAfterReserve: () => 1_000n,
+  buildableCostOrFallback: (buildable, fallback) => buildable.cost ?? fallback,
+  hasAnyShoreBorderTile: () => false,
+  computeTroopCapPressure: () => cityCapPressureAfterProbe,
+  legendaryConstructionState: () => ({ economyHorizonTicks: 100, economyInputs: {} }),
+  structureSpawnBuildable: async () => {
+    cityCapPressureAfterProbe = false;
+    return { canBuild: "generic-city", cost: 100n };
+  },
+  emitStructureBuildable: () => {
+    staleCapCityEmissions++;
+    return true;
+  },
+});
+assert.equal(
+  await staleCapCityBehavior.maybeSpawnStructure(structureSandbox.UNIT.City, {
+    useActualCost: true,
+    legendaryEconomyCostQuote: 100n,
+    legendaryEconomyCityCapRelief: true,
+  }),
+  false,
+  "a cap-only City without a profiled tile is vetoed when 0.9 pressure ends during probing",
+);
+assert.equal(staleCapCityEmissions, 0);
+
+let capCityActionOptions;
+const capCityActionDispatch = Object.create(structureSandbox.StructureBehavior.prototype);
+capCityActionDispatch.maybeSpawnStructure = async (_type, options) => {
+  capCityActionOptions = options;
+  return true;
+};
+assert.equal(
+  await capCityActionDispatch.legendaryConstructionActionGroupResult(
+    [{ type: structureSandbox.UNIT.City, cost: 100n, capacity: 1 }],
+    [],
+    0,
+  ),
+  "built",
+);
+assert.equal(
+  capCityActionOptions?.legendaryEconomyCityCapRelief,
+  true,
+  "the cap-only City candidate carries its pressure gate through the generic placement path",
+);
+
 const rejectedBuildableProbe = Object.create(structureSandbox.StructureBehavior.prototype);
 const rejectedBuildableError = new Error("worker rejected buildability probe");
 rejectedBuildableProbe.player = {

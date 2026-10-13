@@ -155,7 +155,12 @@ function validateOptions(options) {
     assert.equal(options.policy, "compact-neural", "Feature profile requires compact-neural");
   }
   if (options["control-profile"] !== undefined) {
-    assert.equal(options["control-profile"], "target-value-v1", "Unsupported control profile");
+    assert.ok(
+      ["target-value-v1", "tribe-ranking-v1", "tribe-only-terminal-v1"].includes(
+        options["control-profile"],
+      ),
+      "Unsupported control profile",
+    );
     assert.equal(options.policy, "compact-neural", "Control profile requires compact-neural");
   }
   assert.ok(!options.frozenReplay || options.collect, "--frozen-replay requires --collect");

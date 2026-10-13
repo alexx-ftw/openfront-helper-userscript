@@ -82,12 +82,12 @@ function makeBehavior() {
   return behavior;
 }
 
-function scoreWithRecentStrikes(recentlySentNukes) {
+function scoreWithRecentStrikes(recentlySentNukes, survival = false) {
   const behavior = makeBehavior();
   behavior.recentlySentNukes = recentlySentNukes;
   const target = { type: () => UNIT.City, level: () => 1, tile: () => 10 };
   const silo = { tile: () => 10 };
-  return behavior.nukeTileScore(10, [silo], [target], UNIT.AtomBomb);
+  return behavior.nukeTileScore(10, [silo], [target], UNIT.AtomBomb, survival);
 }
 
 // One recent strike inside the inner radius: city value 25k. The bridge
@@ -115,4 +115,11 @@ assert.equal(
   scoreWithRecentStrikes([[0, 10, UNIT.AtomBomb]]),
   25_000 - 1_000_000,
   "Hard keeps the faithful 1M recent-strike penalty",
+);
+
+difficulty = "Impossible";
+assert.equal(
+  scoreWithRecentStrikes([[0, 10, UNIT.AtomBomb]], true),
+  25_000,
+  "active invasion survival can re-strike cratered enemy land without the recent-strike penalty",
 );

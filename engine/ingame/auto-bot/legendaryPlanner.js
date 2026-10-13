@@ -369,6 +369,605 @@ function legendaryExpectedTradeShipRatePerTick(level, tradeShipCount, config) {
   return expectedCycles > 0 ? 1 / (expectedCycles * 10) : 0;
 }
 
+const LEGENDARY_ECONOMY_RATE_CACHES = new WeakMap();
+const LEGENDARY_TRAIN_UNITS_PER_CONSIST = 7;
+
+function legendaryEconomyRateCaches(supply, config) {
+  if (
+    supply === null || typeof supply !== "object" ||
+    config === null || typeof config !== "object"
+  ) {
+    return {
+      train: new Map(),
+      trade: new Map(),
+      baseline: new Map(),
+      candidates: new Map(),
+      tradePrefixes: new WeakMap(),
+      tradeDeltaPrefixes: new WeakMap(),
+    };
+  }
+  let bySupply = LEGENDARY_ECONOMY_RATE_CACHES.get(config);
+  if (!bySupply) {
+    bySupply = new WeakMap();
+    LEGENDARY_ECONOMY_RATE_CACHES.set(config, bySupply);
+  }
+  let caches = bySupply.get(supply);
+  if (!caches) {
+    caches = {
+      train: new Map(),
+      trade: new Map(),
+      baseline: new Map(),
+      candidates: new Map(),
+      tradePrefixes: new WeakMap(),
+      tradeDeltaPrefixes: new WeakMap(),
+    };
+    bySupply.set(supply, caches);
+  }
+  return caches;
+}
+
+function legendaryExpectedTrainRateAtFleet(
+  level,
+  factoryCount,
+  expectedTrainCount,
+  config,
+  rateCache,
+) {
+  const count = Math.max(0, Number(expectedTrainCount) || 0);
+  const lower = Math.floor(count);
+  const fraction = count - lower;
+  const rateAt = (trains) => {
+    const key = `${level}:${factoryCount}:${trains}`;
+    if (rateCache?.has(key)) return rateCache.get(key);
+    const rate = legendaryExpectedTrainRatePerTick(
+      level,
+      Math.max(1, Number(config?.trainSpawnRate?.(factoryCount, trains)) || 1),
+    );
+    rateCache?.set(key, rate);
+    return rate;
+  };
+  const lowerRate = rateAt(lower);
+  return lowerRate + fraction * (rateAt(lower + 1) - lowerRate);
+}
+
+function legendaryExpectedTradeRateAtFleet(level, expectedTradeShipCount, config, rateCache) {
+  const count = Math.max(0, Number(expectedTradeShipCount) || 0);
+  const lower = Math.floor(count);
+  const fraction = count - lower;
+  const rateAt = (ships) => {
+    const key = `${level}:${ships}`;
+    if (rateCache?.has(key)) return rateCache.get(key);
+    const rate = legendaryExpectedTradeShipRatePerTick(level, ships, config);
+    rateCache?.set(key, rate);
+    return rate;
+  };
+  const lowerRate = rateAt(lower);
+  return lowerRate + fraction * (
+    rateAt(lower + 1) - lowerRate
+  );
+}
+
+function legendaryNormalizedTradeRoutes(routes) {
+  const validRoutes = (Array.isArray(routes) ? routes : []).filter((route) =>
+    Number(route?.weight) > 0 &&
+    Number.isFinite(Number(route?.distance)) &&
+    Number(route.distance) >= 0,
+  );
+  const totalWeight = validRoutes.reduce(
+    (total, route) => total + Number(route.weight),
+    0,
+  );
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) return [];
+  return validRoutes.map((route) => ({
+    travelTicks: Math.max(1, Math.ceil(Number(route.distance))),
+    weight: Number(route.weight) / totalWeight,
+  }));
+}
+
+function legendaryTradePortCohorts(portOwners) {
+  const cohorts = new Map();
+  for (const owner of portOwners) {
+    for (const port of owner.ports) {
+      const key = `${port.level}:${port.readyAtTicks}`;
+      let cohort = cohorts.get(key);
+      if (!cohort) {
+        cohort = {
+          level: port.level,
+          readyAtTicks: port.readyAtTicks,
+          count: 0,
+          routes: new Map(),
+        };
+        cohorts.set(key, cohort);
+      }
+      cohort.count += port.count;
+      for (const route of port.routes) {
+        cohort.routes.set(
+          route.travelTicks,
+          (cohort.routes.get(route.travelTicks) ?? 0) + route.weight * port.count,
+        );
+      }
+    }
+  }
+  return [...cohorts.values()].map((cohort) => ({
+    level: cohort.level,
+    readyAtTicks: cohort.readyAtTicks,
+    count: cohort.count,
+    routes: [...cohort.routes].map(([travelTicks, weight]) => ({ travelTicks, weight })),
+  }));
+}
+
+function legendaryCachedRatePrefix(cache, path, key, rateAtTick) {
+  if (!Array.isArray(path) || path.length === 0) return null;
+  let byKey = cache.get(path);
+  if (!byKey) {
+    byKey = new Map();
+    cache.set(path, byKey);
+  }
+  let prefix = byKey.get(key);
+  if (prefix) return prefix;
+  prefix = new Float64Array(path.length);
+  for (let tick = 0; tick < path.length - 1; tick++) {
+    prefix[tick + 1] = prefix[tick] + Math.max(0, Number(rateAtTick(tick)) || 0);
+  }
+  byKey.set(key, prefix);
+  return prefix;
+}
+
+function legendaryTradeRatePrefix(path, level, options) {
+  const { fallback, config, rateCache, prefixCache } = options;
+  return legendaryCachedRatePrefix(prefixCache, path, level, (tick) =>
+    legendaryExpectedTradeRateAtFleet(
+      level,
+      path[tick] ?? fallback,
+      config,
+      rateCache,
+    ),
+  );
+}
+
+function legendaryTradeRateDeltaPrefix(
+  afterPath,
+  beforePath,
+  afterLevel,
+  beforeLevel,
+  options,
+) {
+  const { fallback, config, rateCache, deltaPrefixCache } = options;
+  if (!Array.isArray(afterPath) || !Array.isArray(beforePath)) return null;
+  let byBeforePath = deltaPrefixCache.get(afterPath);
+  if (!byBeforePath) {
+    byBeforePath = new WeakMap();
+    deltaPrefixCache.set(afterPath, byBeforePath);
+  }
+  let byLevel = byBeforePath.get(beforePath);
+  if (!byLevel) {
+    byLevel = new Map();
+    byBeforePath.set(beforePath, byLevel);
+  }
+  const key = `${afterLevel}:${beforeLevel}`;
+  let prefix = byLevel.get(key);
+  if (prefix) return prefix;
+  prefix = new Float64Array(afterPath.length);
+  for (let tick = 0; tick < afterPath.length - 1; tick++) {
+    const afterRate = legendaryExpectedTradeRateAtFleet(
+      afterLevel,
+      afterPath[tick] ?? fallback,
+      config,
+      rateCache,
+    );
+    const beforeRate = legendaryExpectedTradeRateAtFleet(
+      beforeLevel,
+      beforePath[tick] ?? fallback,
+      config,
+      rateCache,
+    );
+    prefix[tick + 1] = prefix[tick] + Math.max(0, afterRate - beforeRate);
+  }
+  byLevel.set(key, prefix);
+  return prefix;
+}
+
+function legendaryRatePrefixRangeSum(prefix, startTick, endTick) {
+  if (
+    !prefix || !Number.isFinite(startTick) || !Number.isFinite(endTick) ||
+    endTick <= startTick
+  ) {
+    return 0;
+  }
+  const last = prefix.length - 1;
+  const start = Math.max(0, Math.min(last, Math.floor(startTick)));
+  const end = Math.max(start, Math.min(last, Math.floor(endTick)));
+  return prefix[end] - prefix[start];
+}
+
+function legendaryProjectedTradeRateRangeSum(context, startTick, endTick) {
+  if (!Number.isFinite(startTick) || !Number.isFinite(endTick) || endTick <= startTick) {
+    return 0;
+  }
+  if (!context.prefix) {
+    context.prefix = context.upgrade
+      ? legendaryTradeRateDeltaPrefix(
+        context.path,
+        context.beforePath,
+        context.level + 1,
+        context.level,
+        context,
+      )
+      : legendaryTradeRatePrefix(context.path, context.level, context);
+  }
+  return legendaryRatePrefixRangeSum(context.prefix, startTick, endTick);
+}
+
+// One native game tick per step. Integer Config inputs are linearly mixed at
+// fractional expected fleet sizes; this mean-field projection is deterministic
+// and avoids assuming a fixed future spawn rate or a guessed ROI constant.
+function legendaryProjectEconomyFleets(inputs, config, horizon, candidate) {
+  const supply = inputs?.fleetProducerSupply;
+  if (!supply || typeof supply !== "object") return null;
+  const ticks = Math.max(0, Math.ceil(horizon));
+  const rateCaches = legendaryEconomyRateCaches(supply, config);
+  const tradeRateCache = rateCaches.trade;
+  const trainRateCache = rateCaches.train;
+  // A consist is two engines plus five cars, and all seven count as Train
+  // units for Config.trainSpawnRate and disappear when the consist arrives.
+  const configuredLifetime = inputs.trainLifetimeTicks ?? supply.trainLifetimeTicks ??
+    (typeof config?.trainStationMaxRange === "function"
+      ? Math.ceil(Number(config.trainStationMaxRange()) / 2)
+      : 0);
+  // shortcut: max station span divided by TrainExecution speed underestimates
+  // curved rail routes; upgrade when the client exposes route paths and train ages.
+  const trainLifetime = Math.max(0, Math.ceil(Number(configuredLifetime) || 0));
+  const trainOwners = (supply.trainOwners ?? []).map((owner) => {
+    const groups = new Map();
+    for (const factory of owner.factories ?? []) {
+      const level = Number(factory.level) || 0;
+      const readyAtTicks = Math.max(0, Number(factory.readyAtTicks) || 0);
+      const key = `${level}:${readyAtTicks}`;
+      const group = groups.get(key);
+      if (group) group.count++;
+      else groups.set(key, { level, readyAtTicks, count: 1 });
+    }
+    return { ...owner, factories: [...groups.values()] };
+  });
+  const portOwners = (supply.portOwners ?? []).map((owner) => {
+    const groups = new Map();
+    for (const port of owner.ports ?? []) {
+      const level = Number(port.level) || 0;
+      const readyAtTicks = Math.max(0, Number(port.readyAtTicks) || 0);
+      const sourceRoutes = Array.isArray(port.routes) ? port.routes : [];
+      const routes = legendaryNormalizedTradeRoutes(sourceRoutes);
+      const routeKey = sourceRoutes.map((route) =>
+        `${Number(route?.weight)}:${Number(route?.distance)}`,
+      ).join(",");
+      const key = `${level}:${readyAtTicks}:${routeKey}`;
+      const group = groups.get(key);
+      if (group) group.count++;
+      else groups.set(key, { level, readyAtTicks, routes, count: 1 });
+    }
+    return { ...owner, ports: [...groups.values()] };
+  });
+  const tradePortCohorts = legendaryTradePortCohorts(portOwners);
+  const candidatePortRoutes = legendaryNormalizedTradeRoutes(candidate?.portRoutes);
+  const candidateInboundPortCohorts = (candidate?.portInboundSources ?? []).length > 0
+    ? legendaryTradePortCohorts([{
+        ports: candidate.portInboundSources.flatMap((source) => {
+          const routes = legendaryNormalizedTradeRoutes(source.routes).map(
+            ({ travelTicks, weight }) => ({ travelTicks, weight }),
+          );
+          return routes.length > 0
+            ? [{
+                level: Math.max(1, Number(source.level) || 1),
+                readyAtTicks: Math.max(0, Number(source.readyAtTicks) || 0),
+                routes,
+                count: 1,
+              }]
+            : [];
+        }),
+      }])
+    : [];
+  const candidateTradeReplacements = (candidate?.portInboundSources ?? [])
+    .map((source) => {
+      const routes = legendaryNormalizedTradeRoutes(source.routes);
+      const beforeRoutes = legendaryNormalizedTradeRoutes(source.beforeRoutes);
+      if (routes.length === 0 || beforeRoutes.length === 0) return null;
+      const level = Math.max(1, Number(source.level) || 1);
+      const readyAtTicks = Math.max(0, Number(source.readyAtTicks) || 0);
+      return {
+        routes,
+        beforeKey: `${level}:${readyAtTicks}:` +
+          beforeRoutes.map((route) => `${route.travelTicks}:${route.weight}`).join(","),
+      };
+    })
+    .filter(Boolean);
+  const project = (includeCandidate, only = null) => {
+    const includeTrains = only !== "trade";
+    const includeTradeShips = only !== "train";
+    // Replace an already-productive source's cohort only when it is alone in
+    // its level/readiness cohort; merged cohorts keep the old schedule.
+    const activeTradePortCohorts = !includeCandidate ||
+        candidateTradeReplacements.length === 0
+      ? tradePortCohorts
+      : tradePortCohorts.filter((cohort) =>
+          cohort.count !== 1 ||
+          !candidateTradeReplacements.some((replacement) =>
+            replacement.beforeKey === `${cohort.level}:${cohort.readyAtTicks}:` +
+              cohort.routes.map((route) => `${route.travelTicks}:${route.weight}`).join(","),
+          ),
+        );
+    const trainCounts = includeTrains ? new Array(ticks + 1) : null;
+    const tradeShipCounts = includeTradeShips ? new Array(ticks + 1) : null;
+    const trainArrivals = includeTrains && trainLifetime > 0
+      ? new Float64Array(ticks + 1)
+      : null;
+    const tradeShipArrivals = includeTradeShips ? new Float64Array(ticks + 1) : null;
+    const scheduleTradeShipArrivals = (births, routes, tick) => {
+      if (!(births > 0) || routes.length === 0) return;
+      for (const route of routes) {
+        const arrivalTick = tick + route.travelTicks;
+        if (arrivalTick <= ticks) {
+          tradeShipArrivals[arrivalTick] += births * route.weight;
+        }
+      }
+    };
+    let trains = Math.max(0, Number(inputs.trainCount) || 0);
+    let tradeShips = Math.max(0, Number(inputs.tradeShipCount) || 0);
+    for (let tick = 0; tick <= ticks; tick++) {
+      if (trainArrivals !== null && tick > 0) {
+        trains = Math.max(0, trains - trainArrivals[tick]);
+      }
+      if (includeTradeShips && tick > 0) {
+        tradeShips = Math.max(0, tradeShips - tradeShipArrivals[tick]);
+      }
+      if (includeTrains) trainCounts[tick] = trains;
+      if (includeTradeShips) tradeShipCounts[tick] = tradeShips;
+      if (tick === ticks) break;
+      if (includeTrains) {
+        let trainBirths = 0;
+        for (const owner of trainOwners) {
+          const factoryCount = Math.max(0, Number(owner.factoryCount) || 0) +
+            (includeCandidate && candidate?.factoryCountReadyAt !== undefined &&
+                owner.isBuilder === true && tick >= candidate.factoryCountReadyAt
+              ? 1
+              : 0);
+          for (const factory of owner.factories) {
+            const readyAt = Math.max(0, Number(factory.readyAtTicks) || 0);
+            if (tick >= readyAt) {
+              trainBirths += factory.count * legendaryExpectedTrainRateAtFleet(
+                factory.level,
+                factoryCount,
+                trains,
+                config,
+                trainRateCache,
+              );
+            }
+          }
+          if (
+            includeCandidate &&
+            candidate?.factoryReadyAt !== undefined &&
+            owner.isBuilder === true &&
+            tick >= candidate.factoryReadyAt
+          ) {
+            const upgradedLevel = Number(candidate.factoryUpgradeLevel);
+            trainBirths += Number.isFinite(upgradedLevel) && upgradedLevel > 0
+              ? Math.max(
+                  0,
+                  legendaryExpectedTrainRateAtFleet(
+                    upgradedLevel + 1,
+                    factoryCount,
+                    trains,
+                    config,
+                    trainRateCache,
+                  ) - legendaryExpectedTrainRateAtFleet(
+                    upgradedLevel,
+                    factoryCount,
+                    trains,
+                    config,
+                    trainRateCache,
+                  ),
+                )
+              : legendaryExpectedTrainRateAtFleet(
+                  1,
+                  factoryCount,
+                  trains,
+                  config,
+                  trainRateCache,
+                );
+          }
+        }
+        if (
+          includeCandidate &&
+          candidate?.factoryReadyAt !== undefined &&
+          !trainOwners.some((owner) => owner.isBuilder === true) &&
+          tick >= candidate.factoryReadyAt
+        ) {
+          const factoryCount = Math.max(0, Number(candidate.builderFactoryCount) || 0) +
+            Number(tick >= candidate.factoryCountReadyAt);
+          const upgradedLevel = Number(candidate.factoryUpgradeLevel);
+          trainBirths += Number.isFinite(upgradedLevel) && upgradedLevel > 0
+            ? Math.max(
+                0,
+                legendaryExpectedTrainRateAtFleet(
+                  upgradedLevel + 1,
+                  factoryCount,
+                  trains,
+                  config,
+                  trainRateCache,
+                ) - legendaryExpectedTrainRateAtFleet(
+                  upgradedLevel,
+                  factoryCount,
+                  trains,
+                  config,
+                  trainRateCache,
+                ),
+              )
+            : legendaryExpectedTrainRateAtFleet(
+                1,
+                factoryCount,
+                trains,
+                config,
+                trainRateCache,
+              );
+        }
+        const trainUnitsBorn = trainBirths * LEGENDARY_TRAIN_UNITS_PER_CONSIST;
+        trains += trainUnitsBorn;
+        if (trainArrivals !== null && trainBirths > 0) {
+          const arrivalTick = tick + trainLifetime;
+          if (arrivalTick <= ticks) trainArrivals[arrivalTick] += trainUnitsBorn;
+        }
+      }
+
+      if (includeTradeShips) {
+        let tradeShipBirths = 0;
+        for (const port of [...activeTradePortCohorts, ...(
+          includeCandidate ? candidateInboundPortCohorts : []
+        )]) {
+          const readyAt = Math.max(0, Number(port.readyAtTicks) || 0);
+          if (tick >= readyAt) {
+            const birthsPerPort = legendaryExpectedTradeRateAtFleet(
+              port.level,
+              tradeShips,
+              config,
+              tradeRateCache,
+            );
+            tradeShipBirths += birthsPerPort * port.count;
+            scheduleTradeShipArrivals(birthsPerPort, port.routes, tick);
+          }
+        }
+        if (
+          includeCandidate &&
+          candidate?.portReadyAt !== undefined &&
+          tick >= candidate.portReadyAt
+        ) {
+          const upgradedLevel = Number(candidate.portUpgradeLevel);
+          const candidateBirths = Number.isFinite(upgradedLevel) && upgradedLevel > 0
+            ? Math.max(
+                0,
+                legendaryExpectedTradeRateAtFleet(
+                  upgradedLevel + 1,
+                  tradeShips,
+                  config,
+                  tradeRateCache,
+                ) - legendaryExpectedTradeRateAtFleet(
+                  upgradedLevel,
+                  tradeShips,
+                  config,
+                  tradeRateCache,
+                ),
+              )
+            : legendaryExpectedTradeRateAtFleet(
+                1,
+                tradeShips,
+                config,
+                tradeRateCache,
+              );
+          tradeShipBirths += candidateBirths;
+          scheduleTradeShipArrivals(candidateBirths, candidatePortRoutes, tick);
+        }
+        tradeShips += tradeShipBirths;
+      }
+    }
+    return { trainCounts, tradeShipCounts };
+  };
+  const baselineKey = [
+    ticks,
+    Number(inputs.trainCount) || 0,
+    Number(inputs.tradeShipCount) || 0,
+    trainLifetime,
+  ].join(":");
+  let before = rateCaches.baseline.get(baselineKey);
+  if (!before) {
+    before = project(false);
+    rateCaches.baseline.set(baselineKey, before);
+  }
+  const hasCandidateProducer = candidate?.factoryReadyAt !== undefined ||
+    candidate?.portReadyAt !== undefined;
+  let after = before;
+  if (hasCandidateProducer) {
+    const routeKey = (candidate.portRoutes ?? []).map((route) =>
+      `${Number(route?.weight)}:${Number(route?.distance)}`,
+    ).join(",");
+    const inboundRouteKey = (candidate.portInboundSources ?? []).map((source) =>
+      `${Number(source?.level)}:${Number(source?.readyAtTicks)}:` +
+      (source?.routes ?? []).map((route) =>
+        `${Number(route?.weight)}:${Number(route?.distance)}`,
+      ).join(",") +
+      `|${(source?.beforeRoutes ?? []).map((route) =>
+        `${Number(route?.weight)}:${Number(route?.distance)}`,
+      ).join(",")}`,
+    ).join(";");
+    const candidateKey = [
+      baselineKey,
+      candidate.factoryReadyAt,
+      candidate.factoryCountReadyAt,
+      candidate.factoryUpgradeLevel,
+      candidate.builderFactoryCount,
+      candidate.portReadyAt,
+      candidate.portUpgradeLevel,
+      routeKey,
+      inboundRouteKey,
+    ].join(":");
+    after = rateCaches.candidates.get(candidateKey);
+    if (!after) {
+      if (candidate.factoryReadyAt !== undefined && candidate.portReadyAt === undefined) {
+        after = {
+          trainCounts: project(true, "train").trainCounts,
+          tradeShipCounts: before.tradeShipCounts,
+        };
+      } else if (candidate.portReadyAt !== undefined && candidate.factoryReadyAt === undefined) {
+        after = {
+          trainCounts: before.trainCounts,
+          tradeShipCounts: project(true, "trade").tradeShipCounts,
+        };
+      } else {
+        after = project(true);
+      }
+      rateCaches.candidates.set(candidateKey, after);
+    }
+  }
+  return {
+    before,
+    after,
+    tradeRateCache,
+    trainRateCache,
+    tradeRatePrefixes: rateCaches.tradePrefixes,
+    tradeRateDeltaPrefixes: rateCaches.tradeDeltaPrefixes,
+  };
+}
+
+function legendaryProjectedCountAt(path, tick, fallback) {
+  if (!Array.isArray(path) || path.length === 0) return Math.max(0, Number(fallback) || 0);
+  const bounded = Math.max(0, Math.min(path.length - 1, Number(tick) || 0));
+  const lower = Math.floor(bounded);
+  const upper = Math.min(path.length - 1, lower + 1);
+  const fraction = bounded - lower;
+  return path[lower] + fraction * (path[upper] - path[lower]);
+}
+
+function legendaryIntegrateProjectedPayout(
+  source,
+  key,
+  startAt,
+  endAt,
+  fallbackRates,
+  rateAtTick,
+) {
+  const start = Math.max(0, Number(startAt) || 0);
+  const end = Math.max(start, Number(endAt) || 0);
+  let total = 0;
+  for (let tick = Math.floor(start); tick < end; tick++) {
+    const overlap = Math.max(0, Math.min(end, tick + 1) - Math.max(start, tick));
+    if (overlap <= 0) continue;
+    total += overlap * rateAtTick(tick) * legendaryPayoutTimelineValue(
+      source,
+      key,
+      tick,
+      Array.isArray(source?.payoutTimeline) ? source.payoutTimeline : [],
+      fallbackRates,
+    );
+  }
+  return total;
+}
+
 function legendaryPortFallbackRoute(profile, fallbackDistance) {
   const activeGold = profile?.teamGoldPerArrival ?? profile?.portTradeGoldPerArrival ?? 0;
   return {
@@ -386,7 +985,7 @@ function legendaryPortFallbackRoute(profile, fallbackDistance) {
 }
 
 // A seed pair already spending gold on construction must never lose its slot
-// to a higher-raw-value uncommitted pair on another water component.
+// to a higher-value uncommitted pair on another water component.
 function legendarySeedCandidateBeats(candidate, bestSeed) {
   if (bestSeed === null) return true;
   const commitRank = (seed) =>
@@ -394,8 +993,13 @@ function legendarySeedCandidateBeats(candidate, bestSeed) {
   if (commitRank(candidate) !== commitRank(bestSeed)) {
     return commitRank(candidate) > commitRank(bestSeed);
   }
-  if (candidate.value !== bestSeed.value) {
-    return candidate.value > bestSeed.value;
+  const useNetTeamGold =
+    Number.isFinite(candidate.expectedNetTeamGold) &&
+    Number.isFinite(bestSeed.expectedNetTeamGold);
+  const candidateValue = useNetTeamGold ? candidate.expectedNetTeamGold : candidate.value;
+  const bestValue = useNetTeamGold ? bestSeed.expectedNetTeamGold : bestSeed.value;
+  if (candidateValue !== bestValue) {
+    return candidateValue > bestValue;
   }
   return candidate.routeDelay < bestSeed.routeDelay;
 }
@@ -405,6 +1009,34 @@ function legendaryPortRoutes(profile, fallbackDistance) {
   return Array.isArray(routes) && routes.length > 0
     ? routes
     : [legendaryPortFallbackRoute(profile, fallbackDistance)];
+}
+
+function legendaryPortCandidateProjectionSignature(profile) {
+  const routeSignature = (routes) => legendaryNormalizedTradeRoutes(routes)
+    .map((route) => `${route.travelTicks}:${route.weight}`)
+    .join(",");
+  const inboundSignatures = (profile?.inboundSources ?? [])
+    .map((source) =>
+      `${Number(source.level) || 1}:${Number(source.constructionDelayTicks) || 0}:` +
+      routeSignature(source.afterProfile?.routes) +
+      ":" + routeSignature(source.beforeProfile?.routes),
+    )
+    .sort();
+  return `${routeSignature(profile?.routes ?? profile?.portRoutes)}|${inboundSignatures.join(";")}`;
+}
+
+function legendaryPortCandidateInboundSources(inboundSources) {
+  return (inboundSources ?? [])
+    .map((source) => ({
+      level: source.level,
+      readyAtTicks: source.constructionDelayTicks,
+      routes: source.afterProfile?.routes ?? [],
+      ...(Array.isArray(source.beforeProfile?.routes) &&
+          source.beforeProfile.routes.length > 0
+        ? { beforeRoutes: source.beforeProfile.routes }
+        : {}),
+    }))
+    .filter((source) => Array.isArray(source.routes) && source.routes.length > 0);
 }
 
 function legendaryPortRate(level, upgrade, tradeShipCount, config) {
@@ -422,6 +1054,99 @@ function legendaryPortRate(level, upgrade, tradeShipCount, config) {
     : currentRate;
 }
 
+function legendaryPortPartialTickGold(
+  rate,
+  tick,
+  start,
+  end,
+  activeEnd,
+  activeRate,
+  postAllianceRate,
+) {
+  const overlap = Math.max(0, Math.min(end, tick + 1) - Math.max(start, tick));
+  if (overlap <= 0) return 0;
+  const active = tick + overlap / 2 < activeEnd;
+  return overlap * rate(tick) * (active ? activeRate : postAllianceRate);
+}
+
+function legendaryPortPrefixGold(
+  rateRangeSum,
+  startTick,
+  endTick,
+  activeEnd,
+  activeRate,
+  postAllianceRate,
+) {
+  if (!(endTick > startTick)) return 0;
+  const activeEndTick = Number.isNaN(activeEnd)
+    ? startTick
+    : activeEnd === Infinity
+    ? endTick
+    : activeEnd === -Infinity
+    ? startTick
+    : Math.ceil(activeEnd - 0.5);
+  const split = Math.max(startTick, Math.min(endTick, activeEndTick));
+  return rateRangeSum(startTick, split) * activeRate +
+    rateRangeSum(split, endTick) * postAllianceRate;
+}
+
+function legendaryPortRouteGoldWithPrefix(
+  rate,
+  rateRangeSum,
+  start,
+  end,
+  activeEnd,
+  activeRate,
+  postAllianceRate,
+) {
+  const firstTick = Math.floor(start);
+  const lastTick = Math.floor(end);
+  if (firstTick === lastTick) {
+    return legendaryPortPartialTickGold(
+      rate,
+      firstTick,
+      start,
+      end,
+      activeEnd,
+      activeRate,
+      postAllianceRate,
+    );
+  }
+  let total = 0;
+  const fullStart = start > firstTick ? firstTick + 1 : firstTick;
+  if (start > firstTick) {
+    total += legendaryPortPartialTickGold(
+      rate,
+      firstTick,
+      start,
+      end,
+      activeEnd,
+      activeRate,
+      postAllianceRate,
+    );
+  }
+  total += legendaryPortPrefixGold(
+    rateRangeSum,
+    fullStart,
+    lastTick,
+    activeEnd,
+    activeRate,
+    postAllianceRate,
+  );
+  if (end > lastTick) {
+    total += legendaryPortPartialTickGold(
+      rate,
+      lastTick,
+      start,
+      end,
+      activeEnd,
+      activeRate,
+      postAllianceRate,
+    );
+  }
+  return total;
+}
+
 function legendaryPortRouteGold(
   route,
   rate,
@@ -429,6 +1154,7 @@ function legendaryPortRouteGold(
   postAllianceTotalWeight,
   startDelayTicks,
   horizon,
+  rateRangeSum,
 ) {
   const weight = Math.max(0, Number(route.weight) || 0) / totalWeight;
   const postAllianceWeight = Math.max(
@@ -447,6 +1173,32 @@ function legendaryPortRouteGold(
     0,
     Number(route.postAllianceGoldPerArrival ?? activeGold),
   );
+  if (typeof rate === "function") {
+    let total = 0;
+    const start = Math.max(0, startDelayTicks + delay);
+    const end = Math.min(horizon, start + routeTicks);
+    const activeEnd = start + activeTicks;
+    const activeRate = weight * activeGold;
+    const postAllianceRate = postAllianceWeight * postGold;
+    if (typeof rateRangeSum === "function") {
+      return legendaryPortRouteGoldWithPrefix(
+        rate,
+        rateRangeSum,
+        start,
+        end,
+        activeEnd,
+        activeRate,
+        postAllianceRate,
+      );
+    }
+    for (let tick = Math.floor(start); tick < end; tick++) {
+      const overlap = Math.max(0, Math.min(end, tick + 1) - Math.max(start, tick));
+      if (overlap <= 0) continue;
+      const active = tick + overlap / 2 < activeEnd;
+      total += overlap * rate(tick) * (active ? activeRate : postAllianceRate);
+    }
+    return total;
+  }
   return rate * (
     weight * activeGold * activeTicks +
       postAllianceWeight * postGold * (routeTicks - activeTicks)
@@ -466,12 +1218,14 @@ function legendaryPortExpectedGold(profile, options) {
     0,
   );
   if (postAllianceTotalWeight <= 0) return 0;
-  const rate = legendaryPortRate(
-    options.level,
-    options.upgrade,
-    options.tradeShipCount,
-    options.config,
-  );
+  const rate = typeof options.rateAtTick === "function"
+    ? options.rateAtTick
+    : legendaryPortRate(
+        options.level,
+        options.upgrade,
+        options.tradeShipCount,
+        options.config,
+      );
   return routes.reduce(
     (total, route) =>
       total + legendaryPortRouteGold(
@@ -481,6 +1235,7 @@ function legendaryPortExpectedGold(profile, options) {
         postAllianceTotalWeight,
         options.startDelayTicks,
         options.horizon,
+        options.rateRangeSum,
       ),
     0,
   );
@@ -589,6 +1344,96 @@ function legendaryEconomyNetGold(
       );
   if (productiveTicks <= 0) return { refused: true };
 
+  const actionReadyTicks = constructionDelayTicks + routeDelayTicks;
+  let candidateFleetSupply;
+  let portProjectionProfile;
+  if (type === "Factory" && Number(inputs.factoryPaidStops ?? 0) > 0) {
+    const upgrade = inputs.upgradeAction === true ? inputs.factoryUpgrade : null;
+    const upgradeLevels = Array.isArray(upgrade?.productiveFactoryLevels)
+      ? upgrade.productiveFactoryLevels
+      : [];
+    const upgradeIndex = Math.floor(Number(upgrade?.upgradeFactoryIndex));
+    candidateFleetSupply = {
+      // Construction adds a level to unitCount immediately; route travel only
+      // delays its payouts, while production starts when construction ends.
+      factoryCountReadyAt: 0,
+      factoryReadyAt: upgrade ? 0 : constructionDelayTicks,
+      factoryUpgradeLevel: upgrade && upgradeIndex >= 0 && upgradeIndex < upgradeLevels.length
+        ? Math.max(1, Number(upgradeLevels[upgradeIndex]) || 1)
+        : undefined,
+      builderFactoryCount: inputs.ownFactoryCount,
+    };
+  } else if (type === "Port") {
+    let portReadyAt;
+    if (inputs.upgradeAction === true && portHasRouteProfiles) {
+      portReadyAt = actionReadyTicks;
+    } else if (inputs.hasCompletedTradePartner === true || portHasRouteProfiles) {
+      portReadyAt = constructionDelayTicks;
+    } else if (
+      inputs.portSeedPartnerCommitted === true &&
+      Array.isArray(inputs.portSeedSources) && inputs.portSeedSources.length > 0
+    ) {
+      portReadyAt = Math.max(
+        constructionDelayTicks,
+        ...inputs.portSeedSources.map((source) =>
+          Math.max(0, Number(source.constructionDelayTicks ?? constructionDelayTicks) || 0),
+        ),
+      );
+    }
+    if (portReadyAt !== undefined) {
+      const upgradeId = String(inputs.upgradeStructureId ?? "");
+      const upgradeProfile = inputs.portUpgradeProfile ??
+        inputs.portUpgradeProfiles?.[upgradeId];
+      portProjectionProfile = inputs.upgradeAction === true
+        ? upgradeProfile
+        : inputs.portProjectionProfile ?? inputs.portCandidateProfiles?.[0];
+      const ownSeedRoutes = Array.isArray(inputs.portSeedSources)
+        ? inputs.portSeedSources.find((source) => source.portSeedStream === "own")?.routes
+        : undefined;
+      const inboundPortSources = legendaryPortCandidateInboundSources(
+        portProjectionProfile?.inboundSources,
+      );
+      if (inputs.portSeedPartnerCommitted === true) {
+        const pairReadyTicks = Math.max(
+          portReadyAt,
+          ...(inputs.portSeedSources ?? []).map((source) =>
+            Math.max(0, Number(source.constructionDelayTicks ?? 0) || 0),
+          ),
+        );
+        for (const source of inputs.portSeedSources ?? []) {
+          if (source.portSeedStream !== "partner") continue;
+          inboundPortSources.push({
+            level: source.level,
+            readyAtTicks: pairReadyTicks,
+            routes: source.routes,
+          });
+        }
+      }
+      candidateFleetSupply = {
+        portReadyAt,
+        portRoutes: portProjectionProfile?.routes ?? inputs.portRoutes ?? ownSeedRoutes,
+        portInboundSources: inboundPortSources,
+        portUpgradeLevel: inputs.upgradeAction === true
+          ? Math.max(1, Math.floor(Number(inputs.portUpgradeLevel) || 1))
+          : undefined,
+      };
+    }
+  }
+  let fleetProjection = legendaryProjectEconomyFleets(
+    inputs,
+    config,
+    horizon,
+    type === "Port" && inputs.upgradeAction !== true ? null : candidateFleetSupply,
+  );
+  const projectedTrainRate = (level, factoryCount, path, tick) =>
+    legendaryExpectedTrainRateAtFleet(
+      level,
+      factoryCount,
+      legendaryProjectedCountAt(path, tick, inputs.trainCount),
+      config,
+      fleetProjection?.trainRateCache,
+    );
+
   let incomePerTick;
   let portPlacementTile;
   let factoryPlacementTile;
@@ -597,7 +1442,7 @@ function legendaryEconomyNetGold(
     const trainCount = Math.max(0, Math.floor(Number(inputs.trainCount ?? 0)));
     const sources = Array.isArray(inputs.trainSources) ? inputs.trainSources : [];
     const actionReadyTicks = constructionDelayTicks + routeDelayTicks;
-      if (type === "Factory") {
+    if (type === "Factory") {
       const destinations = Math.max(
         0,
         Math.floor(Number(inputs.factoryPaidStops ?? 0)),
@@ -641,21 +1486,35 @@ function legendaryEconomyNetGold(
               after,
           ) || 0,
         );
-        const beforeStopGold = legendaryIntegratePayoutTimeline(
-          cluster,
+        const integrate = (key, from, to, rates) => typeof productionDelta === "function"
+          ? legendaryIntegrateProjectedPayout(
+              cluster,
+              key,
+              from,
+              to,
+              rates,
+              productionDelta,
+            )
+          : productionDelta * legendaryIntegratePayoutTimeline(
+              cluster,
+              key,
+              from,
+              to,
+              rates,
+            );
+        const beforeStopGold = integrate(
           "teamGoldPerSpawn",
           start,
           Math.min(horizon, stopsReady),
           { current: before, post: beforePost },
         );
-        const afterStopGold = legendaryIntegratePayoutTimeline(
-          cluster,
+        const afterStopGold = integrate(
           "teamGoldAfterPendingPerSpawn",
           Math.max(start, stopsReady),
           horizon,
           { current: after, post: afterPost },
         );
-        return productionDelta * (beforeStopGold + afterStopGold);
+        return beforeStopGold + afterStopGold;
       };
       const denominatorFor = (factoryCount) =>
         Math.max(1, Number(config.trainSpawnRate(factoryCount, trainCount)) || 1);
@@ -694,7 +1553,148 @@ function legendaryEconomyNetGold(
         }];
       const beforeDenominator = denominatorFor(ownerFactoryCount);
       const afterDenominator = denominatorFor(ownerFactoryCount + 1);
-      if (upgrade) {
+      if (fleetProjection) {
+        const factoryCountReadyAt = candidateFleetSupply?.factoryCountReadyAt ?? Infinity;
+        const afterFactoryCountAt = (tick) => ownerFactoryCount +
+          Number(tick >= factoryCountReadyAt);
+        const beforeRateAt = (level, tick) => projectedTrainRate(
+          level,
+          ownerFactoryCount,
+          fleetProjection.before.trainCounts,
+          tick,
+        );
+        const afterRateAt = (level, tick) => projectedTrainRate(
+          level,
+          afterFactoryCountAt(tick),
+          fleetProjection.after.trainCounts,
+          tick,
+        );
+        const upgradeLevels = upgrade && Array.isArray(upgrade.productiveFactoryLevels)
+          ? upgrade.productiveFactoryLevels
+          : [];
+        const upgradeIndex = upgrade
+          ? Math.floor(Number(upgrade.upgradeFactoryIndex))
+          : -1;
+        if (upgrade && (upgradeIndex < 0 || upgradeIndex >= upgradeLevels.length)) {
+          return { refused: true };
+        }
+        const targetCluster = upgrade
+          ? upgrade.clusterId === undefined
+            ? ownerClusters.find((cluster) => cluster.isTarget) ?? ownerClusters[0]
+            : ownerClusters.find(
+                (cluster) => String(cluster.clusterId) === String(upgrade.clusterId),
+              )
+          : null;
+        if (upgrade && !targetCluster) return { refused: true };
+        const structureReadyAt = candidateFleetSupply?.factoryCountReadyAt ?? 0;
+        const deltaForLevels = (cluster, target, levels, tick) => levels.reduce(
+          (sum, level, index) => {
+            const beforeLevel = Math.max(1, Number(level) || 1);
+            const afterLevel = target && index === upgradeIndex &&
+                tick >= actionReadyTicks
+              ? beforeLevel + 1
+              : beforeLevel;
+            return sum + afterRateAt(afterLevel, tick) - beforeRateAt(beforeLevel, tick);
+          },
+          0,
+        );
+        incomePerTick = ownerClusters.reduce((total, cluster) => {
+          const target = cluster === targetCluster;
+          const levels = target
+            ? upgradeLevels
+            : Array.isArray(cluster.productiveFactoryLevels)
+              ? cluster.productiveFactoryLevels
+              : [];
+          const pending = target
+            ? Array.isArray(upgrade.pendingFactoryLevels)
+              ? upgrade.pendingFactoryLevels
+              : ownPendingLevels
+            : Array.isArray(cluster.pendingFactoryLevels)
+              ? cluster.pendingFactoryLevels
+              : [];
+          const completedDelta = (tick) => deltaForLevels(cluster, target, levels, tick);
+          const pendingDelta = (tick) => deltaForLevels(cluster, false, pending, tick);
+          const pendingStart = Math.max(
+            structureReadyAt,
+            Math.max(0, Number(
+              cluster.factoryConstructionDelayTicks ??
+                inputs.ownPendingFactoryDelayTicks ??
+                0,
+            ) || 0),
+          );
+          return total +
+            factoryGoldForTicks(cluster, completedDelta, structureReadyAt) +
+            factoryGoldForTicks(cluster, pendingDelta, pendingStart);
+        }, 0);
+        if (fleetProjection) {
+          incomePerTick += (inputs.otherFactoryStreams ?? []).reduce(
+            (total, stream) => {
+              const factoryCount = Math.max(
+                0,
+                Math.floor(Number(stream.factoryCount) || 0),
+              );
+              const routeReadyAt = Math.max(
+                0,
+                Number(stream.routeReadyTicks) || 0,
+              );
+              const deltaForLevels = (levels, readyAt) =>
+                (Array.isArray(levels) ? levels : []).reduce(
+                  (gold, level) => gold + factoryGoldForTicks(
+                    stream,
+                    (tick) => projectedTrainRate(
+                      level,
+                      factoryCount,
+                      fleetProjection.after.trainCounts,
+                      tick,
+                    ) - projectedTrainRate(
+                      level,
+                      factoryCount,
+                      fleetProjection.before.trainCounts,
+                      tick,
+                    ),
+                    Math.max(routeReadyAt, readyAt),
+                  ),
+                  0,
+                );
+              return total + deltaForLevels(
+                stream.productiveFactoryLevels,
+                0,
+              ) + deltaForLevels(
+                stream.pendingFactoryLevels,
+                Math.max(0, Number(stream.factoryConstructionDelayTicks) || 0),
+              );
+            },
+            0,
+          );
+        }
+        if (!upgrade) {
+          const factoryRouteProfiles = Array.isArray(inputs.factoryRouteProfiles)
+            ? inputs.factoryRouteProfiles
+            : [];
+          const fallbackProfile = {
+            teamGoldPerSpawn: goldPerTrain,
+            postTeamGoldPerSpawn: goldPerTrain,
+            teamGoldAfterPendingPerSpawn: goldPerTrain,
+            postTeamGoldAfterPendingPerSpawn: goldPerTrain,
+          };
+          let selectedRoute = null;
+          for (const profile of factoryRouteProfiles.length > 0
+            ? factoryRouteProfiles
+            : [fallbackProfile]) {
+            const routeGold = factoryGoldForTicks(
+              profile,
+              (tick) => afterRateAt(1, tick),
+              actionReadyTicks,
+            );
+            if (selectedRoute === null || routeGold > selectedRoute.gold) {
+              selectedRoute = { profile, gold: routeGold };
+            }
+          }
+          incomePerTick += selectedRoute?.gold ?? 0;
+          factoryPlacementTile = selectedRoute?.profile?.placementTile;
+        }
+        incomePerTick /= productiveTicks;
+      } else if (upgrade) {
         const levels = Array.isArray(upgrade.productiveFactoryLevels)
           ? upgrade.productiveFactoryLevels
           : [];
@@ -815,7 +1815,7 @@ function legendaryEconomyNetGold(
         }
         incomePerTick = (existingFactoryGold + newFactoryGold) / productiveTicks;
       }
-      } else {
+    } else {
       if (sources.length === 0) return { refused: true };
         // TrainStationExecution samples the destination uniformly from the
         // cluster's tradeable stops, so a City's marginal value is the change
@@ -832,6 +1832,107 @@ function legendaryEconomyNetGold(
           0,
           Math.floor(Number(source.factoryCount ?? 0)),
         );
+        if (fleetProjection) {
+          const stopShare = (value) => {
+            const destinations = Math.max(
+              1,
+              Math.floor(Number(source.paidStopsAfterBuild ?? 1)),
+            );
+            return Math.max(0, Number(value) || 0) * (destinations - 1) / destinations;
+          };
+          const beforePerSpawn = source.beforeTeamGoldPerSpawn === undefined
+            ? stopShare(source.teamGoldPerStop)
+            : Math.max(0, Number(source.beforeTeamGoldPerSpawn) || 0);
+          const afterPerSpawn = Math.max(0, Number(source.teamGoldPerStop ?? 0));
+          const beforePostPerSpawn = source.beforePostAllianceTeamGoldPerSpawn === undefined
+            ? stopShare(
+                source.postAllianceTeamGoldPerStop ?? source.teamGoldPerStop ?? 0,
+              )
+            : Math.max(0, Number(source.beforePostAllianceTeamGoldPerSpawn) || 0);
+          const afterPostPerSpawn = Math.max(
+            0,
+            Number(source.postAllianceTeamGoldPerStop ?? source.teamGoldPerStop ?? 0),
+          );
+          const beforeAfterPending = Math.max(
+            0,
+            Number(source.beforeTeamGoldAfterPendingPerSpawn ?? beforePerSpawn) || 0,
+          );
+          const afterAfterPending = Math.max(
+            0,
+            Number(source.teamGoldAfterPendingPerSpawn ?? afterPerSpawn) || 0,
+          );
+          const beforePostAfterPending = Math.max(
+            0,
+            Number(
+              source.beforePostAllianceTeamGoldAfterPendingPerSpawn ?? beforePostPerSpawn,
+            ) || 0,
+          );
+          const afterPostAfterPending = Math.max(
+            0,
+            Number(source.postAllianceTeamGoldAfterPendingPerSpawn ?? afterPostPerSpawn) || 0,
+          );
+          const pendingStopsReadyTicks = Math.max(
+            0,
+            Number(source.pendingStopDelayTicks ?? 0),
+          );
+          const rateAt = (levelsAtTick, tick) => levelsAtTick.reduce(
+            (sum, level) => sum + projectedTrainRate(
+              level,
+              factoryCount,
+              fleetProjection.after.trainCounts,
+              tick,
+            ),
+            0,
+          );
+          const integrateDelta = (keys, start, end, afterRates, beforeRates, levelsAtTick) => {
+            const rate = (tick) => rateAt(levelsAtTick, tick);
+            return legendaryIntegrateProjectedPayout(
+              source,
+              keys.after,
+              start,
+              end,
+              afterRates,
+              rate,
+            ) - legendaryIntegrateProjectedPayout(
+              source,
+              keys.before,
+              start,
+              end,
+              beforeRates,
+              rate,
+            );
+          };
+          const goldFrom = (levelsAtTick, readyAt) => {
+            const candidateReady = Math.max(readyAt, actionReadyTicks);
+            const pendingReady = Math.max(readyAt, pendingStopsReadyTicks);
+            const beforePendingStops = integrateDelta(
+              { after: "teamGoldPerStop", before: "beforeTeamGoldPerSpawn" },
+              candidateReady,
+              Math.min(horizon, pendingReady),
+              { current: afterPerSpawn, post: afterPostPerSpawn },
+              { current: beforePerSpawn, post: beforePostPerSpawn },
+              levelsAtTick,
+            );
+            const afterPendingStops = integrateDelta(
+              {
+                after: "teamGoldAfterPendingPerSpawn",
+                before: "beforeTeamGoldAfterPendingPerSpawn",
+              },
+              Math.max(candidateReady, pendingReady),
+              horizon,
+              { current: afterAfterPending, post: afterPostAfterPending },
+              { current: beforeAfterPending, post: beforePostAfterPending },
+              levelsAtTick,
+            );
+            return beforePendingStops + afterPendingStops;
+          };
+          const sourceReadyTicks = Math.max(
+            actionReadyTicks,
+            Math.max(0, Number(source.factoryConstructionDelayTicks ?? 0)),
+          );
+          return total + goldFrom(levels, actionReadyTicks) +
+            goldFrom(pendingLevels, sourceReadyTicks);
+        }
         const denominator = Math.max(
           1,
           Number(config.trainSpawnRate(factoryCount, trainCount)) || 1,
@@ -957,20 +2058,71 @@ function legendaryEconomyNetGold(
       0,
       Math.floor(Number(inputs.tradeShipCount ?? 0)),
     );
+    const tradeRateAt = (level, countPath, tick) => legendaryExpectedTradeRateAtFleet(
+      level,
+      legendaryProjectedCountAt(countPath, tick, tradeShipCount),
+      config,
+      fleetProjection?.tradeRateCache,
+    );
     const routeIncome = (
       profile,
       level,
       upgrade = false,
       startDelayTicks = constructionDelayTicks,
-    ) => legendaryPortExpectedGold(profile, {
-      level,
-      upgrade,
-      tradeShipCount,
-      config,
-      fallbackDistance: inputs.portRouteDelayTicks ?? 0,
-      startDelayTicks,
-      horizon,
-    });
+      scenario = "after",
+    ) => {
+      const scenarioPath = scenario === "before"
+        ? fleetProjection?.before.tradeShipCounts
+        : fleetProjection?.after.tradeShipCounts;
+      const ratePath = upgrade
+        ? fleetProjection?.after.tradeShipCounts
+        : scenarioPath;
+      const rateContext = fleetProjection
+        ? {
+            path: ratePath,
+            beforePath: upgrade ? fleetProjection.before.tradeShipCounts : null,
+            level,
+            upgrade,
+            fallback: tradeShipCount,
+            config,
+            rateCache: fleetProjection.tradeRateCache,
+            prefixCache: fleetProjection.tradeRatePrefixes,
+            deltaPrefixCache: fleetProjection.tradeRateDeltaPrefixes,
+            prefix: null,
+          }
+        : null;
+      const rateRangeSum = rateContext
+        ? legendaryProjectedTradeRateRangeSum.bind(null, rateContext)
+        : null;
+      return legendaryPortExpectedGold(profile, {
+        level,
+        upgrade,
+        tradeShipCount,
+        config,
+        fallbackDistance: inputs.portRouteDelayTicks ?? 0,
+        startDelayTicks,
+        horizon,
+        rateRangeSum,
+        ...(fleetProjection
+          ? {
+              rateAtTick: (tick) => upgrade
+                ? Math.max(
+                    0,
+                    tradeRateAt(
+                      level + 1,
+                      fleetProjection.after.tradeShipCounts,
+                      tick,
+                    ) - tradeRateAt(
+                      level,
+                      fleetProjection.before.tradeShipCounts,
+                      tick,
+                    ),
+                  )
+                : tradeRateAt(level, scenarioPath, tick),
+            }
+          : {}),
+      });
+    };
     const incomingRouteIncome = (profile) =>
       (profile?.inboundSources ?? []).reduce((total, source) => {
         // A completed source Port already dispatches to a destination that is
@@ -982,22 +2134,73 @@ function legendaryEconomyNetGold(
         );
         const level = Math.max(1, Math.floor(Number(source.level) || 1));
         return total +
-          routeIncome(source.afterProfile, level, false, sourceDelay) -
-          routeIncome(source.beforeProfile, level, false, sourceDelay);
+          routeIncome(source.afterProfile, level, false, sourceDelay, "after") -
+          routeIncome(source.beforeProfile, level, false, sourceDelay, "before");
       }, 0);
     const candidatePortIncome = (profile) =>
       routeIncome(profile, 1) + incomingRouteIncome(profile);
     const selectPortCandidate = (profiles) => {
-      let profile = null;
-      let gold = -Infinity;
-      for (const candidate of profiles) {
-        const candidateGold = candidatePortIncome(candidate);
-        if (profile === null || candidateGold > gold) {
-          profile = candidate;
-          gold = candidateGold;
+      const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+      const ranked = profiles.map((profile) => ({
+        profile,
+        gold: candidatePortIncome(profile),
+        signature: legendaryPortCandidateProjectionSignature(profile),
+      })).sort((left, right) => {
+        if (left.gold !== right.gold) return right.gold > left.gold ? 1 : -1;
+        return compareText(left.signature, right.signature) ||
+          compareText(String(left.profile?.placementTile ?? ""), String(right.profile?.placementTile ?? ""));
+      });
+      const finalists = [];
+      const seenSignatures = new Set();
+      // shortcut: only two route signatures get counterfactual fleet projections; raise after browser timing supports more.
+      for (const candidate of ranked) {
+        if (seenSignatures.has(candidate.signature)) continue;
+        seenSignatures.add(candidate.signature);
+        finalists.push(candidate);
+        if (finalists.length === 2) break;
+      }
+      let best = null;
+      let bestProjection = null;
+      for (const finalist of finalists) {
+        const inboundPortSources = (finalist.profile.inboundSources ?? [])
+          .filter((source) =>
+            !(Array.isArray(source.beforeProfile?.routes) && source.beforeProfile.routes.length > 0),
+          )
+          .map((source) => ({
+            level: source.level,
+            readyAtTicks: source.constructionDelayTicks,
+            routes: source.afterProfile?.routes ?? [],
+          }));
+        if (candidateFleetSupply) {
+          fleetProjection = legendaryProjectEconomyFleets(
+            inputs,
+            config,
+            horizon,
+            {
+              ...candidateFleetSupply,
+              portRoutes: finalist.profile.routes,
+              portInboundSources: inboundPortSources,
+            },
+          );
+        }
+        const gold = candidatePortIncome(finalist.profile);
+        const preferred = best === null || gold > best.gold ||
+          (gold === best.gold && (
+            compareText(finalist.signature, best.signature) < 0 ||
+            (finalist.signature === best.signature &&
+              compareText(
+                String(finalist.profile?.placementTile ?? ""),
+                String(best.profile?.placementTile ?? ""),
+              ) < 0)
+          ));
+        if (preferred) {
+          best = { profile: finalist.profile, gold, signature: finalist.signature };
+          bestProjection = fleetProjection;
         }
       }
-      return { profile, gold };
+      if (bestProjection) fleetProjection = bestProjection;
+      if (best) portProjectionProfile = best.profile;
+      return best ?? { profile: null, gold: -Infinity };
     };
     let totalTeamGold = 0;
     if (inputs.upgradeAction === true) {
@@ -1014,10 +2217,47 @@ function legendaryEconomyNetGold(
     } else if (inputs.hasCompletedTradePartner === true) {
       const candidateProfiles = inputs.portCandidateProfiles ?? [];
       if (candidateProfiles.length > 0) {
-        const selected = selectPortCandidate(candidateProfiles);
-        totalTeamGold = selected.gold;
-        portPlacementTile = selected.profile?.placementTile;
+        let selected = selectPortCandidate(candidateProfiles);
+        for (let pass = 0; pass < 2; pass++) {
+          portPlacementTile = selected.profile?.placementTile;
+          if (!selected.profile || selected.profile === portProjectionProfile || !candidateFleetSupply) {
+            totalTeamGold = selected.gold;
+            break;
+          }
+          const inboundPortSources = legendaryPortCandidateInboundSources(
+            selected.profile.inboundSources,
+          );
+          fleetProjection = legendaryProjectEconomyFleets(
+            inputs,
+            config,
+            horizon,
+            {
+              ...candidateFleetSupply,
+              portRoutes: selected.profile.routes,
+              portInboundSources: inboundPortSources,
+            },
+          );
+          portProjectionProfile = selected.profile;
+          if (pass === 1) {
+            totalTeamGold = candidatePortIncome(selected.profile);
+            break;
+          }
+          const bestUnderProjection = selectPortCandidate(candidateProfiles);
+          if (bestUnderProjection.profile === selected.profile) {
+            totalTeamGold = bestUnderProjection.gold;
+            break;
+          }
+          selected = bestUnderProjection;
+        }
       } else {
+        if (candidateFleetSupply) {
+          fleetProjection = legendaryProjectEconomyFleets(
+            inputs,
+            config,
+            horizon,
+            candidateFleetSupply,
+          );
+        }
         totalTeamGold = candidatePortIncome(inputs);
       }
     } else {
@@ -1033,6 +2273,14 @@ function legendaryEconomyNetGold(
         // the candidate can only survive as a marked strategic seed. Once a
         // partner commits, neither stream pays until the slower Port completes.
         if (inputs.portSeedPartnerCommitted === true) {
+          if (candidateFleetSupply) {
+            fleetProjection = legendaryProjectEconomyFleets(
+              inputs,
+              config,
+              horizon,
+              candidateFleetSupply,
+            );
+          }
           const pairReadyTicks = Math.max(
             constructionDelayTicks,
             ...seedSources.map((source) =>
@@ -1059,10 +2307,57 @@ function legendaryEconomyNetGold(
           totalTeamGold = selected.gold;
           portPlacementTile = selected.profile?.placementTile;
         } else {
+          if (candidateFleetSupply) {
+            fleetProjection = legendaryProjectEconomyFleets(
+              inputs,
+              config,
+              horizon,
+              candidateFleetSupply,
+            );
+          }
           totalTeamGold = candidatePortIncome(inputs);
         }
       } else {
         return { refused: true };
+      }
+    }
+    if (fleetProjection) {
+      const targetId = String(inputs.upgradeStructureId ?? "");
+      const ownPortGroups = new Map();
+      for (const source of inputs.ownPortProducerSources ?? []) {
+        const routes = Array.isArray(source.routes) ? source.routes : [];
+        if (routes.length === 0) continue;
+        const routeKey = routes.map((route) => [
+          route.weight,
+          route.postAllianceWeight,
+          route.distance,
+          route.teamGoldPerArrival,
+          route.postAllianceGoldPerArrival,
+          route.allianceTicksRemaining,
+        ].join(":")).join(",");
+        const key = `${source.level}:${source.readyAtTicks}:${routeKey}`;
+        let group = ownPortGroups.get(key);
+        if (!group) {
+          group = { ...source, count: 0, structureIds: [] };
+          ownPortGroups.set(key, group);
+        }
+        group.count++;
+        group.structureIds.push(String(source.structureId ?? ""));
+      }
+      for (const source of ownPortGroups.values()) {
+        const count = Math.max(
+          0,
+          source.count - Number(
+            inputs.upgradeAction === true && source.structureIds.includes(targetId),
+          ),
+        );
+        if (count === 0) continue;
+        const level = Math.max(1, Math.floor(Number(source.level) || 1));
+        const readyAt = Math.max(0, Number(source.readyAtTicks) || 0);
+        totalTeamGold += count * (
+          routeIncome(source, level, false, readyAt, "after") -
+          routeIncome(source, level, false, readyAt, "before")
+        );
       }
     }
     if (totalTeamGold <= 0) {
@@ -1938,8 +3233,7 @@ function rankLegendaryConstructionActions(candidates, options = {}) {
     if (netTeamGold > 0n) return true;
     return (
       !["City", "Factory", "Port"].includes(candidate.type) ||
-      Number(candidate.capacity ?? 0) > 0 ||
-      candidate.seedPair === true
+      Number(candidate.capacity ?? 0) > 0
     );
   });
   const affordable = valueRanked.filter(

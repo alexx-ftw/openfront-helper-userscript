@@ -305,11 +305,15 @@ function policyEvents(C, snapshot, actions, profile, { emit, events, confirmed }
 export function fixture({
   win = true,
   profile,
+  controlProfile,
   actions = ["wait", "attack", "wait"],
   confirmed = true,
 } = {}) {
   const C = loadNativeContract();
-  const snapshot = C.create(profile ? { featureProfile: profile } : {});
+  const snapshot = C.create({
+    ...(profile ? { featureProfile: profile } : {}),
+    ...(controlProfile ? { controlProfile } : {}),
+  });
   const modelIdentity = JSON.stringify(snapshot);
   const manifest = {
     runID: "native-run-1",
@@ -346,6 +350,12 @@ export function fixture({
       modelIdentity,
       ...values,
     };
+    if (["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(controlProfile)) {
+      if (event.behaviorPolicy != null)
+        event.behaviorPolicy = "deterministic-native-tribe-choice-v1";
+      if (["proposal", "decision"].includes(kind))
+        event.candidateSetSource = "native-leading-land-tribe-plan";
+    }
     events.push(event);
     return event;
   };
@@ -670,8 +680,8 @@ function mixedRunChecks(original) {
   assert.equal(selected.excluded.length, second.dataset.recordCount);
 }
 
-function ambiguousFixture() {
-  const input = fixture({ actions: ["attack", "attack"] });
+export function ambiguousFixture(options = {}) {
+  const input = fixture({ ...options, actions: ["attack", "attack"] });
   const events = input.dataset.records.map((row) => row.event);
   const decision = structuredClone(events[2]);
   const scope = { episodeId: 1, generation: 3, runIdentity: input.selection.manifest.runID };
@@ -691,7 +701,14 @@ function ambiguousFixture() {
       reason: "ambiguous-commitment",
       targetSmallID: 2,
     },
-    { ...decision, sequence: 3, reason: "controlled-attack", fallback: false },
+    {
+      ...decision,
+      sequence: 3,
+      reason: ["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(options.controlProfile)
+        ? "controlled-tribe-choice"
+        : "controlled-attack",
+      fallback: false,
+    },
     { kind: "hybrid-combat-observation-omitted", sequence: 4, reason: "forced-action" },
   ];
   replacements.forEach((replacement, index) => {

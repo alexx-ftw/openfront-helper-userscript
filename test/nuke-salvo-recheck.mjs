@@ -1260,6 +1260,7 @@ for (const lane of ["ordinary", "freeze"]) {
     samRange: () => 150,
     SAMCooldown: () => 300,
     isUnitDisabled: () => false,
+    nukeMagnitudes: () => ({ inner: 5, outer: 10 }),
   });
   behavior.nukeSpawn = () => 5;
   behavior.isTrajectoryInterceptableBySam = (_spawn, _tile, excluded) => !excluded?.has(sam.id());
@@ -1269,9 +1270,11 @@ for (const lane of ["ordinary", "freeze"]) {
     { silo, slots: 2, flightTicks: 20, interceptable: false },
   ];
   const candidates = [{ tile: 20, value: 100 }];
-  const atomCost = lane === "ordinary" ? 20n : 1n;
+  const atomCost = lane === "ordinary" ? 20n : 400_000n;
   const selected = { type: UNIT.AtomBomb, cost: atomCost };
   const emitted = [];
+  const previousRandomTiles = sandbox.randTerritoryTileArray;
+  const previousBoundingBoxTiles = sandbox.boundingBoxTiles;
   const previousBuildMenu = buildMenu;
   buildMenu = {
     sendBuildOrUpgrade(buildable, tile) {
@@ -1304,6 +1307,18 @@ for (const lane of ["ordinary", "freeze"]) {
     construction.legendaryAtomWarChest = () => 0n;
     construction.offensiveNukeDefenseReserve = () => 60n;
     behavior.structureBehavior = construction;
+  } else {
+    player.gold = () => 850_000n;
+    behavior.cost = async () => atomCost;
+    behavior.game.ensureBorderTiles = async () => {};
+    behavior.isValidNukeTile = () => true;
+    behavior.isNukeAlreadyLandingNear = () => false;
+    behavior.enemyLandBlastCoverage = () => 0.2;
+    behavior.nukeTileScore = () => 0;
+    behavior.attackBehavior.findIncomingAttackPlayer = () => null;
+    behavior.isUnderHeavyAttack = () => false;
+    sandbox.randTerritoryTileArray = () => [20];
+    sandbox.boundingBoxTiles = (_game, tile) => [tile];
   }
   try {
     if (lane === "ordinary") {
@@ -1311,8 +1326,44 @@ for (const lane of ["ordinary", "freeze"]) {
     } else {
       behavior.freezeGiantStrikeTarget = () => nukeTarget;
       behavior.selectAffordableNuke = async () => selected;
-      behavior.collectNukeCandidates = async () => candidates;
+      const collectNukeCandidates = behavior.collectNukeCandidates.bind(behavior);
+      let collectedCandidates = null;
+      behavior.collectNukeCandidates = async (...args) => {
+        collectedCandidates = await collectNukeCandidates(...args);
+        return collectedCandidates;
+      };
+      const partitionCandidates = behavior.partitionCandidatesBySamCoverage.bind(behavior);
+      let partitionedCandidates = null;
+      behavior.partitionCandidatesBySamCoverage = (...args) => {
+        partitionedCandidates = partitionCandidates(...args);
+        return partitionedCandidates;
+      };
       await behavior.maybeFreezeGiantStrike([silo], "Legendary");
+      assert.equal(emitted.length, 0, "freeze: 850k does not meet the ordinary 3x reserve");
+      assert.equal(
+        collectedCandidates,
+        null,
+        "freeze: the ordinary reserve holds before candidate collection",
+      );
+      behavior.attackBehavior.findIncomingAttackPlayer = () => nukeTarget;
+      behavior.isUnderHeavyAttack = () => true;
+      await behavior.maybeFreezeGiantStrike([silo], "Legendary");
+      assert.equal(collectedCandidates.length, 1, "freeze: real scoring retains the invasion tile");
+      assert.equal(
+        collectedCandidates[0].value,
+        1,
+        "freeze: positive survival coverage floors zero value to one",
+      );
+      assert.equal(
+        partitionedCandidates.clear.length,
+        0,
+        "freeze: SAM coverage excludes the clear-shot lane",
+      );
+      assert.equal(
+        partitionedCandidates.covered.length,
+        1,
+        "freeze: SAM coverage requires the full salvo lane",
+      );
     }
     assert.equal(emitted.length, 1, `${lane}: launch the first atom now`);
     assert.equal(
@@ -1372,6 +1423,10 @@ for (const lane of ["ordinary", "freeze"]) {
   } finally {
     launchSink = null;
     buildMenu = previousBuildMenu;
+    if (previousRandomTiles === undefined) delete sandbox.randTerritoryTileArray;
+    else sandbox.randTerritoryTileArray = previousRandomTiles;
+    if (previousBoundingBoxTiles === undefined) delete sandbox.boundingBoxTiles;
+    else sandbox.boundingBoxTiles = previousBoundingBoxTiles;
     sandbox.sendAutoBotBuildOrUpgrade = stubBuildSender;
     sandbox.autoBotBuildClaimNukeLaunches = undefined;
     sandbox.autoBotBuildReleaseNukeLaunchClaim = undefined;
@@ -1428,6 +1483,127 @@ sandbox.currentDifficulty = previousSalvoDifficulty;
     "a freeze-giant fallback cannot clear a live SAM demand pinned to another target",
   );
   sandbox.state.nukeWantSlots = null;
+}
+
+{
+  const { game, nukeTarget, behavior } = makeSalvoWorld();
+  const previousDifficulty = sandbox.currentDifficulty;
+  const previousWinFixes = sandbox.state.settings.winFixes;
+  const previousRandomTiles = sandbox.randTerritoryTileArray;
+  const previousBoundingBoxTiles = sandbox.boundingBoxTiles;
+  let coverage = 0.15;
+  sandbox.currentDifficulty = () => "Legendary";
+  sandbox.state.settings.winFixes = true;
+  sandbox.randTerritoryTileArray = () => [20];
+  sandbox.boundingBoxTiles = () => [20];
+  game.ensureBorderTiles = async () => {};
+  game.config = () => ({ nukeMagnitudes: () => ({ outer: 10 }) });
+  behavior.isValidNukeTile = () => true;
+  behavior.isNukeAlreadyLandingNear = () => false;
+  behavior.nukeSpawn = () => 5;
+  behavior.enemyLandBlastCoverage = () => coverage;
+  behavior.isTrajectoryInterceptableBySam = () => false;
+  behavior.isCounterforceSiloTarget = () => false;
+  behavior.nukeTileScore = () => 0;
+  behavior.attackBehavior.findIncomingAttackPlayer = () => nukeTarget;
+  behavior.isUnderHeavyAttack = () => true;
+  try {
+    assert.equal(
+      (await behavior.collectNukeCandidates(nukeTarget, UNIT.AtomBomb, [], "Legendary")).length,
+      1,
+      "active invasion accepts the exact 0.15 atom-coverage floor",
+    );
+    coverage = 0.149;
+    assert.equal(
+      (await behavior.collectNukeCandidates(nukeTarget, UNIT.AtomBomb, [], "Legendary")).length,
+      0,
+      "active invasion rejects atom coverage below 0.15",
+    );
+    behavior.attackBehavior.findIncomingAttackPlayer = () => null;
+    behavior.isUnderHeavyAttack = () => false;
+    coverage = 0.2;
+    assert.equal(
+      (await behavior.collectNukeCandidates(nukeTarget, UNIT.AtomBomb, [], "Legendary")).length,
+      0,
+      "unrelated targets retain the standard 0.25 atom-coverage floor",
+    );
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+    sandbox.state.settings.winFixes = previousWinFixes;
+    if (previousRandomTiles === undefined) delete sandbox.randTerritoryTileArray;
+    else sandbox.randTerritoryTileArray = previousRandomTiles;
+    if (previousBoundingBoxTiles === undefined) delete sandbox.boundingBoxTiles;
+    else sandbox.boundingBoxTiles = previousBoundingBoxTiles;
+  }
+}
+
+{
+  const { nukeTarget, behavior, player } = makeSalvoWorld();
+  const invasionTarget = {
+    smallID: () => 3,
+    team: () => null,
+    isAlive: () => true,
+    isPlayer: () => true,
+    units: () => [],
+  };
+  const request = { need: 4, targetSamId: "other-rival-sam", targetTile: 20 };
+  sandbox.state.nukeWantSlots = request;
+  const previousDifficulty = sandbox.currentDifficulty;
+  const previousWinFixes = sandbox.state.settings.winFixes;
+  sandbox.currentDifficulty = () => "Legendary";
+  sandbox.state.settings.winFixes = true;
+  behavior.attackBehavior.findIncomingAttackPlayer = () => invasionTarget;
+  behavior.isUnderHeavyAttack = () => true;
+  behavior.isEligibleNukeTarget = () => true;
+  behavior.samDemandStrikeTarget = () => nukeTarget;
+  behavior.hasPendingNukeLaunches = () => false;
+  behavior.freezeGiantStrikeTarget = () => null;
+  behavior.selectAffordableNuke = async () => ({ type: UNIT.AtomBomb, cost: 100n });
+  let collectionCount = 0;
+  player.gold = () => 100_099n;
+  behavior.collectNukeCandidates = async (target) => {
+    assert.strictEqual(target, invasionTarget);
+    collectionCount++;
+    return [{ tile: 30, value: 1 }];
+  };
+  behavior.partitionCandidatesBySamCoverage = () => ({
+    clear: [{ tile: 30, value: 1 }],
+    covered: [],
+    routeBlockedTile: null,
+  });
+  behavior.selectBuildableNukeCandidate = async (candidates) => candidates[0];
+  let firedTarget = null;
+  behavior.sendNuke = async (_tile, _type, target) => {
+    firedTarget = target;
+    return true;
+  };
+  behavior.maybeDestroyEnemySam = async () => false;
+  try {
+    await behavior.maybeFreezeGiantStrike([], "Legendary");
+    assert.strictEqual(
+      firedTarget,
+      null,
+      "cost plus 99,999 gold does not pass the survival buffer",
+    );
+    assert.equal(collectionCount, 0, "the below-buffer check exits before collecting targets");
+    player.gold = () => 100_100n;
+    await behavior.maybeFreezeGiantStrike([], "Legendary");
+    assert.strictEqual(
+      firedTarget,
+      invasionTarget,
+      "active invasion survival outranks a pending SAM demand against another rival",
+    );
+    assert.equal(collectionCount, 1, "cost plus the 100,000 gold buffer reaches target collection");
+    assert.strictEqual(
+      sandbox.state.nukeWantSlots,
+      request,
+      "the survival strike leaves the unrelated SAM demand intact",
+    );
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+    sandbox.state.settings.winFixes = previousWinFixes;
+    sandbox.state.nukeWantSlots = null;
+  }
 }
 
 {

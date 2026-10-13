@@ -35,8 +35,11 @@ export function fitTrajectory(trajectory, contract = loadNativeContract()) {
   assert.equal(canonical(trajectory), frozen, "Native trainer mutated frozen input");
   contract.validate(fitted.model);
   assert.equal(fitted.model.reward, "discounted-terminal-win-return-v1");
-  assert.equal(fitted.model.offline?.version, "offline-terminal-return-v1");
-  assert.equal(fitted.model.offline.originModelIdentity, trajectory.selection.modelIdentity);
+  assert.equal(fitted.model.offline?.version, "offline-terminal-return-v2");
+  assert.equal(
+    JSON.stringify(fitted.model.offline.originModel),
+    trajectory.selection.modelIdentity,
+  );
   assert.equal(fitted.summary.complete, true, "Incomplete native training");
   assert.equal(fitted.summary.fitted, trajectory.records.length, "Native fit coverage mismatch");
   assert.equal(fitted.summary.censored, 0, "Native fit silently censored records");

@@ -69,6 +69,7 @@
       this.status = "";
       this.lastSeenTick = -1;
       this.lastProcessedGameTick = null;
+      this.structureActionClaimedTick = null;
       this.incomingDefenseTargetKey = null;
       this.lastIncomingDefenseAttemptTick = -Infinity;
       this.lastIncomingDefenseStructureTick = -Infinity;
@@ -139,6 +140,11 @@
     tickIsCurrent(tickGeneration) {
       return tickGeneration == null ||
         (state.settings.enabled && state.tickGeneration === tickGeneration);
+    }
+
+    hasStructureActionClaimedThisTick() {
+      return this.structureActionClaimedTick != null &&
+        this.structureActionClaimedTick === this.lastProcessedGameTick;
     }
 
     shouldRunNavalInvasion(me, config) {
@@ -325,9 +331,11 @@
       if (typeof this.structureBehavior?.maybeSpawnStructure !== "function") return true;
 
       this.lastOpeningCityAttemptTick = ticks;
-      await autoBotProfileAsyncPhase(profile, "opening-city", () =>
+      const built = await autoBotProfileAsyncPhase(profile, "opening-city", () =>
         this.structureBehavior.maybeSpawnStructure(UNIT.City));
-      return this.tickIsCurrent(tickGeneration);
+      if (!this.tickIsCurrent(tickGeneration)) return false;
+      if (built === true) this.structureActionClaimedTick = ticks;
+      return true;
     }
 
     incomingDefenseKey(attacker) {
@@ -442,7 +450,11 @@
     }
 
     async handleBetweenAttackTicks(thirdCrossed, profile, tickGeneration) {
-      if (thirdCrossed && this.feat("build")) {
+      if (
+        thirdCrossed &&
+        this.feat("build") &&
+        !this.hasStructureActionClaimedThisTick()
+      ) {
         await autoBotProfileAsyncPhase(profile, "structures-between", () =>
           this.structureBehavior.handleStructures(profile));
         if (!this.tickIsCurrent(tickGeneration)) return;
@@ -503,21 +515,29 @@
         // are O(1), and the double call from handleWinFixStructurePriorities
         // is idempotent (one City at a time).
         // DIVERGENCE: one successful structure action must not build again later in this tick.
-        let earlyStructureLaneClaimed = false;
-        if (!(await this.runOptionalAsyncPhase(this.feat("build"), profile, "plateau-city",
-          async () => {
-            const structure = this.structureBehavior;
-            if (structure.legendaryMissileDefenseUrgent?.() === true) return;
-            if (
-              state.settings.winFixes &&
-              (await structure.maybeSpawnPeaceWindowSam?.()) === true
-            ) {
-              earlyStructureLaneClaimed = true;
-              return;
-            }
-            earlyStructureLaneClaimed =
-              (await structure.maybeSpawnPlateauCity?.()) === true;
-          }, tickGeneration))) return;
+        let earlyStructureLaneClaimed = this.hasStructureActionClaimedThisTick();
+        if (
+          !earlyStructureLaneClaimed &&
+          !(await this.runOptionalAsyncPhase(
+            this.feat("build"), profile, "plateau-city",
+            async () => {
+              const structure = this.structureBehavior;
+              if (structure.legendaryMissileDefenseUrgent?.() === true) return;
+              if (
+                state.settings.winFixes &&
+                (await structure.maybeSpawnPeaceWindowSam?.()) === true
+              ) {
+                earlyStructureLaneClaimed = true;
+                return;
+              }
+              earlyStructureLaneClaimed =
+                (await structure.maybeSpawnPlateauCity?.()) === true;
+            },
+            tickGeneration,
+          ))
+        ) {
+          return;
+        }
         if (!(await this.runOptionalAsyncPhase(this.feat("nuke"), profile, "mirv",
           () => this.mirvBehavior.considerMIRV(), tickGeneration))) return;
         const warship = this.feat("warship") && state.settings.warshipAutoSpawn !== false;

@@ -242,8 +242,8 @@ scenario("a: seed pair commits as one pair; no payout until both complete", () =
   );
 });
 
-// ── (f) Payback beyond the probable match horizon or an active doomsday
-// clock: no investment. Long horizon with the reserve intact: a positive-payback
+// ── (f) Payback beyond the deterministic match horizon or an active doomsday
+// deadline: no investment. Long horizon with the reserve intact: a positive-payback
 // investment can win. ──
 scenario("f: horizon gates refuse short-horizon builds; long horizon invests", () => {
   const behavior = makePaidStopNetwork({ City: [networkStation(33, 30, 1)] });
@@ -269,15 +269,19 @@ scenario("f: horizon gates refuse short-horizon builds; long horizon invests", (
     const value = payback(horizonTicks);
     return value.refused === true ? -Infinity : value.netTeamGold;
   };
-  const breakEvenTicks =
-    liveDurationOf("Factory") +
-    Number(inputs.routeDelayTicks ?? 0) +
-    Math.ceil(positiveValue.paybackTicks);
+  let low = liveDurationOf("Factory") + Number(inputs.routeDelayTicks ?? 0) + 1;
+  let high = 50_000;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (paybackAt(middle) >= 0) high = middle;
+    else low = middle + 1;
+  }
+  const breakEvenTicks = low;
   const belowBreakEven = paybackAt(breakEvenTicks - 1);
   const atBreakEven = paybackAt(breakEvenTicks);
   assert.ok(
     belowBreakEven < 0 && atBreakEven >= 0,
-    "net gold crosses zero exactly at the disclosed payback tick",
+    "net gold crosses zero at the first positive cumulative-value horizon",
   );
   assert.equal(
     plannerSandbox.rankLegendaryConstructionActions(
@@ -775,6 +779,137 @@ scenario("c: live saturation flips Factory and Port between low and high global 
   assert.ok(rate(1_000) < rate(0), "the live pity cadence itself is lower on the saturated sea");
 });
 
+scenario("h: candidate saturation charges lost teammate network income", () => {
+  const trainConfig = {
+    ...liveEconomyConfig,
+    trainSpawnRate: (factories, trains) => 100 + 10 * factories + 100 * trains,
+  };
+  const teammateStream = {
+    factoryCount: 1,
+    productiveFactoryLevels: [1],
+    pendingFactoryLevels: [],
+    factoryConstructionDelayTicks: 0,
+    routeReadyTicks: 0,
+    pendingStopDelayTicks: 0,
+    teamGoldPerSpawn: 1_000_000,
+    postTeamGoldPerSpawn: 1_000_000,
+    teamGoldAfterPendingPerSpawn: 1_000_000,
+    postTeamGoldAfterPendingPerSpawn: 1_000_000,
+    payoutTimeline: [
+      {
+        atTicks: 0,
+        teamGoldPerSpawn: 1_000_000,
+        teamGoldAfterPendingPerSpawn: 1_000_000,
+      },
+    ],
+  };
+  const factoryInputs = {
+    trainCount: 0,
+    ownFactoryCount: 0,
+    ownProductiveFactoryLevels: [],
+    ownPendingFactoryLevels: [],
+    factoryPaidStops: 1,
+    factoryTeamGoldPerTrain: 1_000,
+    fleetProducerSupply: {
+      trainOwners: [
+        {
+          isBuilder: false,
+          factoryCount: 1,
+          factories: [{ level: 1, readyAtTicks: 0 }],
+        },
+      ],
+      portOwners: [],
+    },
+    factoryRouteProfiles: [
+      {
+        teamGoldPerSpawn: 1_000,
+        postTeamGoldPerSpawn: 1_000,
+        teamGoldAfterPendingPerSpawn: 1_000,
+        postTeamGoldAfterPendingPerSpawn: 1_000,
+      },
+    ],
+  };
+  const priceFactory = (inputs) =>
+    plannerSandbox.legendaryEconomyNetGold("Factory", {
+      cost: 1,
+      horizonTicks: 1_000,
+      inputs,
+      config: trainConfig,
+    });
+  const withoutTeamStream = priceFactory(factoryInputs);
+  const withTeamStream = priceFactory({
+    ...factoryInputs,
+    otherFactoryStreams: [teammateStream],
+  });
+  assert.ok(
+    withTeamStream.netTeamGold < withoutTeamStream.netTeamGold,
+    "a new Factory subtracts the teammate payout lost to its added global train saturation",
+  );
+  const teammateNetwork = makePaidStopNetwork(
+    {
+      Factory: [networkStation(50, 20, 1)],
+      City: [networkStation(51, 21, 1)],
+    },
+    { actorUnits: { City: [networkStation(49, 19, 1)] } },
+  );
+  const liveNetworkInputs = railEconomyInputs(teammateNetwork);
+  assert.ok(
+    liveNetworkInputs.otherFactoryStreams.some((stream) => stream.teamGoldPerSpawn > 0),
+    "the live team-network scan includes a teammate Factory's paid train stream",
+  );
+
+  const portConfig = {
+    ...liveEconomyConfig,
+    tradeShipSpawnRate: (rejections, ships) => 100 + rejections + ships * 10,
+  };
+  const portRoute = {
+    weight: 1,
+    postAllianceWeight: 1,
+    distance: 10,
+    teamGoldPerArrival: 50_000,
+    postAllianceGoldPerArrival: 50_000,
+    allianceTicksRemaining: Infinity,
+  };
+  const portInputs = {
+    hasCompletedTradePartner: true,
+    tradeShipCount: 0,
+    portRoutes: [portRoute],
+    portCandidateProfiles: [{ routes: [portRoute] }],
+    fleetProducerSupply: {
+      trainOwners: [],
+      portOwners: [
+        {
+          isBuilder: true,
+          ports: [{ level: 1, readyAtTicks: 0, routes: [{ weight: 1, distance: 10 }] }],
+        },
+      ],
+    },
+  };
+  const pricePort = (inputs) =>
+    plannerSandbox.legendaryEconomyNetGold("Port", {
+      cost: 1,
+      horizonTicks: 500,
+      inputs,
+      config: portConfig,
+    });
+  const withoutOwnPort = pricePort(portInputs);
+  const withOwnPort = pricePort({
+    ...portInputs,
+    ownPortProducerSources: [
+      {
+        structureId: "existing-owner-port",
+        level: 1,
+        readyAtTicks: 0,
+        routes: [portRoute],
+      },
+    ],
+  });
+  assert.ok(
+    withOwnPort.netTeamGold < withoutOwnPort.netTeamGold,
+    "a new Port subtracts saturation loss from the builder's productive Port network",
+  );
+});
+
 // ── Rail network harness: a builder without sea access next to one teammate
 // City on the same station cluster (the makePaidStopNetwork fixture shape). ──
 function networkStation(
@@ -907,6 +1042,15 @@ scenario("b: paid-stop Factory beats City; loses without the stop; City wins und
     paidFactory?.refused !== true && paidFactory.netTeamGold > 0,
     "the paid teammate stop makes a first Factory profitable under live Config",
   );
+  const paidPortInputs = railEconomyInputs(
+    makePaidStopNetwork({ Port: [networkStation(34, 31, 1)] }),
+  );
+  assert.equal(paidPortInputs.factoryPaidStops, 1, "a reachable teammate Port is a paid stop");
+  const portFactory = priced("Factory", 40_000, paidPortInputs);
+  assert.ok(
+    portFactory?.refused !== true && portFactory.netTeamGold > 0,
+    "a teammate Port also makes a first Factory profitable under live Config",
+  );
   const paidCity = priced("City", 10_000, paidStopInputs);
   assert.equal(
     paidCity?.refused,
@@ -991,5 +1135,5 @@ scenario("b: paid-stop Factory beats City; loses without the stop; City wins und
 for (const name of scenarios) {
   process.stdout.write(`PASS ${name}\n`);
 }
-assert.equal(scenarios.length, 7, "all seven documented economy scenarios must be registered");
+assert.equal(scenarios.length, 8, "all eight documented economy scenarios must be registered");
 process.stdout.write(`SCENARIOS OK n=${scenarios.length}\n`);

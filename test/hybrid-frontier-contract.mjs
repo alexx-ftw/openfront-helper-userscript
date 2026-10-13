@@ -335,6 +335,24 @@ for (const base of [v2, v3, controlled]) {
   ];
   const originalIdentity = JSON.stringify(base);
   const result = C.fitEpisodeReturns(base, rows, returnContext);
+  // Synthetic independent episodes exercise provenance growth, not native efficacy.
+  let chained = base;
+  const chainedSizes = [];
+  for (let generation = 0; generation < 4; generation++) {
+    const context = {
+      ...returnContext,
+      runID: `${returnContext.runID}-chain-${generation}`,
+      modelIdentity: JSON.stringify(chained),
+    };
+    const records = rows.map((row) => ({ ...row, ...context }));
+    chained = C.fitEpisodeReturns(chained, records, context).model;
+    assert.equal(JSON.stringify(chained.offline.originModel), context.modelIdentity);
+    chainedSizes.push(Buffer.byteLength(JSON.stringify(chained)));
+  }
+  assert.ok(
+    chainedSizes[3] - chainedSizes[2] <= (chainedSizes[1] - chainedSizes[0]) * 1.5,
+    `four return fits must retain one origin chain, not duplicate escaped ancestry: ${chainedSizes}`,
+  );
   assert.equal(JSON.stringify(base), originalIdentity);
   assert.equal(result.summary.fitted, 2);
   assert.equal(result.summary.updates, 3);
@@ -360,9 +378,53 @@ for (const base of [v2, v3, controlled]) {
   }
   assert.equal(result.model.reward, "discounted-terminal-win-return-v1");
   assert.equal(C.learningAllowed(result.model), false);
-  assert.equal(result.model.offline.originModelIdentity, originalIdentity);
+  assert.equal(result.model.offline.version, "offline-terminal-return-v2");
+  assert.equal(JSON.stringify(result.model.offline.originModel), originalIdentity);
   assert.equal(result.model.offline.returnTrainer, "monte-carlo-tanh-sgd-v1");
   C.validate(json(result.model));
+  const legacyReturn = json(result.model);
+  delete legacyReturn.offline.originModel;
+  Object.assign(legacyReturn.offline, {
+    version: "offline-terminal-return-v1",
+    modelIdentity: originalIdentity,
+    originModelIdentity: originalIdentity,
+  });
+  C.validate(legacyReturn);
+  assert.equal(C.learningAllowed(legacyReturn), false);
+  const legacyIdentity = JSON.stringify(legacyReturn);
+  const mixedContext = {
+    ...returnContext,
+    runID: "mixed-legacy-return",
+    modelIdentity: legacyIdentity,
+  };
+  const mixed = C.fitEpisodeReturns(
+    legacyReturn,
+    rows.map((row) => ({ ...row, ...mixedContext })),
+    mixedContext,
+  );
+  assert.equal(JSON.stringify(legacyReturn), legacyIdentity);
+  assert.equal(JSON.stringify(mixed.model.offline.originModel), legacyIdentity);
+  C.validate(json(mixed.model));
+  for (const originModel of [null, [], "{}", { ...base, schema: "unknown" }]) {
+    assert.throws(() =>
+      C.validate({ ...result.model, offline: { ...result.model.offline, originModel } }),
+    );
+  }
+  assert.throws(() =>
+    C.validate({
+      ...result.model,
+      offline: { ...result.model.offline, modelIdentity: originalIdentity },
+    }),
+  );
+  const badOriginCounts = json(result.model);
+  badOriginCounts.offline.originModel.models.wait.samples++;
+  assert.throws(() => C.validate(badOriginCounts));
+  assert.throws(() =>
+    C.validate({
+      ...legacyReturn,
+      offline: { ...legacyReturn.offline, modelIdentity: "{}" },
+    }),
+  );
   assert.equal(result.model.controlProfile, base.controlProfile);
   assert.deepEqual(json(result.model.actions), json(base.actions));
   if (base.controlProfile) {
@@ -536,4 +598,91 @@ for (const base of [v2, v3, controlled]) {
 }
 process.stdout.write(
   "decision coverage: declared gaps preserved, exact partition/import validation and atomic rejection passed\n",
+);
+
+// New conditional profile has no learned strategic macro authority.
+const tribeOnly = C.create({
+  featureProfile: "frontier-v1",
+  controlProfile: "tribe-only-terminal-v1",
+});
+assert.deepEqual(json(tribeOnly.actions), {
+  macro: [],
+  micro: "exact-player-id-land-target",
+  tribeRanking: "native-land-subset-v1",
+  activeHeads: ["target"],
+  inactiveHeads: ["wait", "act"],
+  strategicMacro: "native-legendary-v1",
+  suppressWait: false,
+});
+assert.throws(() => C.create({ controlProfile: "tribe-only-terminal-v1" }), /frontier/);
+for (const actions of [
+  { ...tribeOnly.actions, activeHeads: ["act", "target"] },
+  { ...tribeOnly.actions, inactiveHeads: ["wait"] },
+  { ...tribeOnly.actions, macro: ["wait", "act"] },
+  { ...tribeOnly.actions, strategicMacro: "learned" },
+  { ...tribeOnly.actions, suppressWait: true },
+])
+  assert.throws(() => C.validate({ ...tribeOnly, actions }));
+assert.throws(() => C.validate({ ...tribeOnly, controlProfile: "tribe-ranking-v1" }));
+const tribeOrigin = JSON.stringify(tribeOnly);
+const tribeContext = {
+  ...context,
+  modelIdentity: tribeOrigin,
+  runID: "conditional-tribe-return",
+  configHash: "b".repeat(64),
+  resultHash: "c".repeat(64),
+  gammaTick: 1,
+  terminalTick: 14,
+  terminalWin: true,
+  featureProfile: "frontier-v1",
+};
+const tribeRecord = {
+  ...record,
+  ...tribeContext,
+  controlledAction: "attack",
+  learned: true,
+  behaviorPolicy: "deterministic-native-tribe-choice-v1",
+  decisionStep: 0,
+};
+const tribeReturn = C.fitEpisodeReturns(tribeOnly, [tribeRecord], tribeContext);
+assert.deepEqual(json(tribeReturn.model.offline.headUpdates), { wait: 0, act: 1, target: 1 });
+assert.equal(tribeReturn.model.offline.version, "offline-terminal-return-v2");
+assert.equal(JSON.stringify(tribeReturn.model.offline.originModel), tribeOrigin);
+assert.equal(JSON.stringify(tribeOnly), tribeOrigin);
+assert.deepEqual(json(tribeReturn.model.models.wait), json(tribeOnly.models.wait));
+C.validate(json(tribeReturn.model));
+for (const patch of [
+  {
+    action: "wait",
+    controlledAction: "wait",
+    targetSmallID: null,
+    features: null,
+    geometry: null,
+    receiptID: null,
+  },
+  { behaviorPolicy: "deterministic-wait-act-ranked-target" },
+  { behaviorPolicy: "legendary-unknown" },
+  { behaviorPolicy: undefined },
+]) {
+  assert.throws(
+    () => C.fitEpisodeReturns(tribeOnly, [{ ...tribeRecord, ...patch }], tribeContext),
+    /tribe/,
+  );
+  assert.equal(JSON.stringify(tribeOnly), tribeOrigin);
+}
+assert.throws(() =>
+  C.fitEpisodeReturns(tribeOnly, [tribeRecord], { ...tribeContext, gammaTick: 0.9 }),
+);
+const mixedTribeOrigin = json(tribeReturn.model);
+mixedTribeOrigin.offline.originModel = C.create({
+  featureProfile: "frontier-v1",
+  controlProfile: "tribe-ranking-v1",
+});
+assert.throws(() => C.validate(mixedTribeOrigin), /origin contract/);
+const restamped = json(tribeReturn.model);
+restamped.controlProfile = "tribe-ranking-v1";
+restamped.actions = mixedTribeOrigin.offline.originModel.actions;
+assert.throws(() => C.validate(restamped), /origin contract/);
+process.stdout.write(
+  "conditional tribe terminal contract: metadata, native SGD and provenance rejection passed\n",
 );

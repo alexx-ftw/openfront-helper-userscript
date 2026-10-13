@@ -1046,6 +1046,10 @@
     const api = {
       __src: src,
       ticks: () => src.ticks(),
+      ticksSinceStart: () =>
+        typeof src.ticksSinceStart === "function"
+          ? src.ticksSinceStart()
+          : src.ticks(),
       inSpawnPhase: () => src.inSpawnPhase(),
       isSpawnImmunityActive: (...a) =>
         typeof src.isSpawnImmunityActive === "function"

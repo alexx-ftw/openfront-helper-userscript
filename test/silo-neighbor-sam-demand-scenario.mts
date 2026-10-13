@@ -71,9 +71,38 @@ try {
     (intent) => intent.type === "upgrade_structure" && intent.unit === UnitType.MissileSilo,
   );
   assert.equal(upgrades.length, 1, "neighbour SAM coverage emits one Silo upgrade intent");
+
+  // Keep the direct-call assertions above, then start a clean decision through
+  // the production selector with the same native game state.
+  state.nukeWantSlots = null;
+  bot.intentBuffer.length = 0;
+  bot.nationBot.initializeBehaviors();
+  const normalNuke = bot.nationBot.nukeBehavior;
+  assert.equal(state.nukeWantSlots, null, "normal target selection starts without SAM demand");
+  await normalNuke.maybeSendNuke();
+  assert.equal(
+    state.nukeWantSlots?.targetSamId,
+    neighbourSam.id(),
+    "normal target selection reaches the neighbour SAM covering the rich target",
+  );
+  assert.equal(state.nukeWantSlots?.need, 2, "the selected neighbour SAM still needs two slots");
+  const normalAim = state.nukeWantSlots.targetTile;
+  assert.ok(
+    game.euclideanDistSquared(normalAim, valuableCity.tile()) < blastRadius ** 2,
+    "normal target selection aims the SAM demand at the selected rich City",
+  );
+  assert.ok(
+    game.euclideanDistSquared(normalAim, decoyCity.tile()) >= blastRadius ** 2,
+    "normal target selection does not follow the neighbour's decoy City",
+  );
+  const normalUpgrades = bot.intentBuffer.filter(
+    (intent) => intent.type === "upgrade_structure" && intent.unit === UnitType.MissileSilo,
+  );
+  assert.equal(normalUpgrades.length, 1, "normal nuke selection emits one Silo upgrade intent");
+
   step(bot.intentBuffer);
   bot.intentBuffer.length = 0;
-  assert.equal(silo.level(), 2, "the accepted upgrade adds the required launch slot");
+  assert.equal(silo.level(), 2, "the accepted normal-path upgrade adds the required launch slot");
 } finally {
   bot.harness.window.close();
 }

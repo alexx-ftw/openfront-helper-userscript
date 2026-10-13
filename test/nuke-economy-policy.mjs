@@ -143,6 +143,38 @@ const wrappedGame = gameApiSandbox.__createGameApi({}).game;
     60,
     "candidate comparison reads the ranked blast score, not the raw value",
   );
+
+  const lowValueTarget = { smallID: () => 45 };
+  const borderArmyTarget = { smallID: () => 46 };
+  const survivalTarget = { smallID: () => 47 };
+  const collectedTargets = [];
+  retryBehavior.findValueRankedNukeTargets = () => [
+    { target: richerTarget, value: 3_000_000 },
+    { target: lowValueTarget, value: 500_000 },
+    { target: borderArmyTarget, value: 100_000 },
+    { target: survivalTarget, value: 50_000 },
+  ];
+  retryBehavior.attackBehavior = { findIncomingAttackPlayer: () => survivalTarget };
+  retryBehavior.findStrategicBorderArmyTarget = () => borderArmyTarget;
+  retryBehavior.isInvasionSurvivalTarget = (candidateTarget) => candidateTarget === survivalTarget;
+  retryBehavior.collectNukeCandidates = async (candidateTarget) => {
+    collectedTargets.push(candidateTarget);
+    return candidateTarget === survivalTarget ? [{ tile: 40, value: 1, score: 1 }] : [];
+  };
+  const screenedRetry = await retryBehavior.retryWithHigherValueTarget(
+    ladderTarget,
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [],
+    sandbox.currentDifficulty(),
+    { candidates: [] },
+  );
+  assert.equal(screenedRetry?.target, survivalTarget);
+  assert.deepEqual(
+    collectedTargets,
+    [richerTarget, borderArmyTarget, survivalTarget],
+    "zero-score retries skip targets below one bomb's value but preserve invasion and border-army exceptions",
+  );
+
   sandbox.isLegendaryDifficulty = previousUnion;
   testDifficulty = previousDifficulty;
 }
@@ -908,6 +940,9 @@ assert.equal(
   false,
   "the counterforce expected-value bypass does not leak to an unrelated target",
 );
+const previousSurvivalWinFixes = sandbox.state.settings.winFixes;
+sandbox.state.settings.winFixes = true;
+valueGuard.attackBehavior = { findIncomingAttackPlayer: () => cheapTarget };
 valueGuard.isUnderHeavyAttack = () => true;
 assert.equal(
   await valueGuard.nukeHasPositiveExpectedValue(
@@ -917,9 +952,22 @@ assert.equal(
     [],
   ),
   true,
-  "heavy defense keeps the emergency nuke path available despite negative value",
+  "active-invader survival keeps the emergency nuke path available despite negative value",
 );
+const unrelatedHeavyAttackTarget = { ...cheapTarget, smallID: () => 4 };
+assert.equal(
+  await valueGuard.nukeHasPositiveExpectedValue(
+    { tile: 10, coveringSamLevels: 0 },
+    unrelatedHeavyAttackTarget,
+    { type: UNIT.HydrogenBomb, cost: 5_000_000n },
+    [],
+  ),
+  false,
+  "the active-invasion survival bypass does not spend a bomb on an unrelated target",
+);
+sandbox.state.settings.winFixes = previousSurvivalWinFixes;
 valueGuard.isUnderHeavyAttack = () => false;
+valueGuard.attackBehavior = null;
 valueGuard.isRetaliationNukeTarget = () => true;
 assert.equal(
   await valueGuard.nukeHasPositiveExpectedValue(
@@ -1738,6 +1786,7 @@ sandbox.__UniversalPathFinding.Parabola = () => ({
 });
 behavior.player = { smallID: () => 1 };
 behavior.game = {
+  ticks: () => 124,
   config: () => ({
     defaultNukeSpeed: () => 10,
     defaultNukeTargetableRange: () => 100,

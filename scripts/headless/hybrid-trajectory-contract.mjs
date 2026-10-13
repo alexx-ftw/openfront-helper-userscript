@@ -364,7 +364,33 @@ function validateSequence(selected, selection) {
   }
 }
 
-function validateBehavior(proposal, decision, requireStochastic) {
+function validateBehavior(proposal, decision, requireStochastic, modelIdentity) {
+  const tribeChoice = proposal.behaviorPolicy === "deterministic-native-tribe-choice-v1";
+  const snapshot = JSON.parse(modelIdentity);
+  if (snapshot.controlProfile === "tribe-only-terminal-v1")
+    assert.ok(tribeChoice, "Conditional tribe profile cannot control strategic macro actions");
+  if (tribeChoice) {
+    assert.ok(
+      ["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(snapshot.controlProfile),
+      "Tribe choice requires its original model profile",
+    );
+    assert.equal(
+      snapshot.actions.tribeRanking,
+      "native-land-subset-v1",
+      "Unknown tribe action contract",
+    );
+    assert.equal(
+      proposal.candidateSetSource,
+      "native-leading-land-tribe-plan",
+      "Unknown tribe candidate source",
+    );
+    assert.equal(proposal.action, "attack", "Tribe ranking cannot suppress the planner with WAIT");
+    assert.equal(
+      decision.candidateSetSource,
+      proposal.candidateSetSource,
+      "Changed tribe candidate source",
+    );
+  }
   for (const event of [proposal, decision]) {
     assert.equal(
       event.behaviorProbability,
@@ -374,7 +400,7 @@ function validateBehavior(proposal, decision, requireStochastic) {
     assert.equal(event.logProbability, null, "Deterministic regression must declare null logp");
     assert.equal(
       event.behaviorPolicy,
-      "deterministic-wait-act-ranked-target",
+      tribeChoice ? "deterministic-native-tribe-choice-v1" : "deterministic-wait-act-ranked-target",
       "Unknown behavior policy",
     );
   }
@@ -444,7 +470,7 @@ function controlledProposal(decision, proposals, selection, requireStochastic) {
   );
   assert.equal(proposal.action, decision.controlledAction, "Chosen/controlled action mismatch");
   exact(proposal.gate, decision.gate, "Proposal/control feature mismatch");
-  validateBehavior(proposal, decision, requireStochastic);
+  validateBehavior(proposal, decision, requireStochastic, selection.modelIdentity);
   validateCandidates(proposal, decision);
   return proposal;
 }
@@ -581,9 +607,13 @@ function validateReceipt(outcome, decision, accepted, receipt, seenReceipts) {
 }
 
 function excludeAmbiguousDispatch(decision, proposal, linked, state) {
+  const expectedReason =
+    proposal.behaviorPolicy === "deterministic-native-tribe-choice-v1"
+      ? "controlled-tribe-choice"
+      : "controlled-attack";
   assert.ok(
     decision.controlledAction === "attack" &&
-      decision.reason === "controlled-attack" &&
+      decision.reason === expectedReason &&
       decision.fallback === false &&
       linked.accepted.length === 0 &&
       linked.receipts.length === 0,
@@ -1079,6 +1109,22 @@ export function validateTrajectory(
   { gammaTick, requireStochastic = false } = {},
 ) {
   const { manifest, snapshot } = validateDataset(dataset, selection);
+  if (snapshot.controlProfile === "tribe-only-terminal-v1") {
+    assert.equal(gammaTick, 1, "Conditional tribe terminal objective requires gammaTick 1");
+    exact(
+      snapshot.actions,
+      {
+        macro: [],
+        micro: "exact-player-id-land-target",
+        tribeRanking: "native-land-subset-v1",
+        activeHeads: ["target"],
+        inactiveHeads: ["wait", "act"],
+        strategicMacro: "native-legendary-v1",
+        suppressWait: false,
+      },
+      "Invalid conditional tribe inference authority",
+    );
+  }
   const result = bindNativeModel(nativeRun, manifest, snapshot);
   const { selected, excluded } = selectGroup(dataset, manifest, selection);
   const terminal = bindNativeClosure(result, dataset, manifest, selection);

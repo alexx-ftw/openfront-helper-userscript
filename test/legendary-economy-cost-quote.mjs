@@ -131,11 +131,18 @@ const fallbackCandidates = await behavior.legendaryConstructionCandidates({
   missileSilosEnabled: false,
   nukesEnabled: false,
 });
-assert.equal(fallbackCandidates[0].cost, localEstimate, "an absent quote retains the estimate");
 assert.equal(
-  behavior.legendaryConstructionActionGroups(fallbackCandidates, true)[0][0].type,
-  "Wait",
-  "an absent quote does not make the captured City appear affordable",
+  fallbackCandidates.some((candidate) => candidate.type === UNIT.City),
+  false,
+  "a missing live price omits the economic build candidate",
+);
+assert.equal(
+  behavior
+    .legendaryConstructionActionGroups(fallbackCandidates, true)
+    .flat()
+    .some((candidate) => candidate.type === UNIT.City),
+  false,
+  "the planner emits no economic action when the live build price is unavailable",
 );
 
 const originalOwnedLevels = behavior.ownedLevels;
@@ -290,5 +297,25 @@ landlockedDispatch.handleOrdinaryStructurePriorities = async () => {
 assert.equal(await landlockedDispatch.doHandleStructures(), true);
 assert.equal(rankedLandlockedCalls, 1, "landlocked Legendary uses the ranked planner");
 assert.equal(faithfulLandlockedCalls, 0, "landlocked Legendary skips the fixed economy order");
+
+let buildAllowed = true;
+sandbox.autoBotBuildAllowed = () => buildAllowed;
+sandbox.sendAutoBotBuildOrUpgrade = () => true;
+const finalBuildCheck = Object.create(sandbox.__StructureBehavior.prototype);
+finalBuildCheck.shouldReserveEconomicGrowthForOffense = () => false;
+finalBuildCheck.isUsableStructureBuildable = () => true;
+const buildable = { type: UNIT.Factory, canBuild: 17 };
+assert.equal(
+  finalBuildCheck.emitStructureBuildable(UNIT.Factory, buildable),
+  true,
+  "the final legality gate allows a currently enabled structure build",
+);
+buildAllowed = false;
+assert.equal(
+  finalBuildCheck.emitStructureBuildable(UNIT.Factory, buildable),
+  false,
+  "the final legality gate rechecks a toggle changed during the placement probe",
+);
+assert.equal(sandbox.state.stats.builds, 1, "a newly disabled build is not emitted");
 
 process.stdout.write("legendary economy live-cost quote test passed\n");

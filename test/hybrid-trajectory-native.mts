@@ -7,11 +7,15 @@ import { execFileSync } from "node:child_process";
 import { PlayerInfo, PlayerType } from "../openfront-engine/src/core/game/Game.ts";
 import type { Intent } from "../openfront-engine/src/core/Schemas.ts";
 import { Config } from "../openfront-engine/src/core/configuration/Config.ts";
-import { createGame as createGameImpl } from "../openfront-engine/src/core/game/GameImpl.ts";
+import {
+  createGame as createGameImpl,
+  GameImpl,
+} from "../openfront-engine/src/core/game/GameImpl.ts";
 import { createGame, L } from "../openfront-engine/tests/core/pathfinding/_fixtures.ts";
 import { GameRunner } from "../openfront-engine/src/core/GameRunner.ts";
 import { Executor } from "../openfront-engine/src/core/execution/ExecutionManager.ts";
 import { SpawnExecution } from "../openfront-engine/src/core/execution/SpawnExecution.ts";
+import { TribeExecution } from "../openfront-engine/src/core/execution/TribeExecution.ts";
 import { WinCheckExecution } from "../openfront-engine/src/core/execution/WinCheckExecution.ts";
 import {
   BundledOpponentBot,
@@ -34,6 +38,14 @@ assert.equal(
   "Parent must explicitly release native execution",
 );
 assert.ok(process.env.OFH_NATIVE_TRAJECTORY_OUT, "Declare a new retained evidence directory");
+const controlProfile = process.env.OFH_NATIVE_TRAJECTORY_CONTROL_PROFILE;
+assert.ok(
+  controlProfile === undefined || controlProfile === "tribe-only-terminal-v1",
+  "Unknown native trajectory profile",
+);
+const tribeOnly = controlProfile === "tribe-only-terminal-v1";
+const profileOptions = tribeOnly ? { "control-profile": controlProfile } : {};
+const gammaTick = tribeOnly ? 1 : 0.9;
 const out = path.resolve(process.env.OFH_NATIVE_TRAJECTORY_OUT);
 fs.mkdirSync(out); // Existing evidence is never overwritten.
 const fixtureFile = fileURLToPath(import.meta.url);
@@ -54,15 +66,29 @@ const declaration = {
   maxTimerValue: 1,
   actor: "Human",
   targets: 17,
-  targetType: "Nation",
+  targetType: tribeOnly ? "Bot" : "Nation",
+  ...(tribeOnly
+    ? {
+        controlProfile,
+        gammaTick,
+        passiveTribes: "remove only actual spawned TribeExecution; retain PlayerExecution",
+        waitNation: { type: "Nation", tile: [20, 0], passive: true },
+        freeLandBudget: "eight native frontier capture losses plus one troop",
+        refreshWallBoundMs: 60000,
+      }
+    : {}),
   targetTroops: 1,
   ownTroopsAdded: 100000,
   actorRectangle: { xMin: 1, xMax: 30, yMin: 1, yMax: 14 },
   features,
   limits,
   winnerSchedule: "install-native-WinCheck-after-observations; one-minute-native-timer",
-  bootstrap: "four-shadow-WAIT-outcomes-and-seventeen-native-strategic-attacks",
-  proving: "one-frozen-learned-decision; observation-only-advancement",
+  bootstrap: tribeOnly
+    ? "four-actual-collector-WAIT-outcomes-and-seventeen-scored-native-Bot-attacks"
+    : "four-shadow-WAIT-outcomes-and-seventeen-native-strategic-attacks",
+  proving: tribeOnly
+    ? "one-frozen-native-tribe-choice-with-two-funded-candidates; observation-only-advancement"
+    : "one-frozen-learned-decision; observation-only-advancement",
   evidence: "injected-native-fixture-not-official-fullmatch",
   performanceClaim: false,
 };
@@ -125,6 +151,12 @@ function createWorld(seed: string) {
     execution.init(game, game.ticks());
     execution.tick(game.ticks());
     assert.equal(player.hasSpawned(), true);
+    if (tribeOnly) {
+      assert.ok(game instanceof GameImpl, "Official implementation execution inventory required");
+      for (const installed of game.executions())
+        if (installed instanceof TribeExecution) game.removeExecution(installed);
+      assert.ok(!game.executions().some((installed) => installed instanceof TribeExecution));
+    }
     for (const owned of [...player.tiles()]) player.relinquish(owned);
     return player;
   };
@@ -134,12 +166,21 @@ function createWorld(seed: string) {
   );
   const targets = Array.from({ length: declaration.targets }, (_, i) => {
     const target = spawn(
-      new PlayerInfo(`nation${i}`, PlayerType.Nation, null, `nation${i}`),
+      new PlayerInfo(
+        `nation${i}`,
+        tribeOnly ? PlayerType.Bot : PlayerType.Nation,
+        null,
+        `nation${i}`,
+      ),
       game.ref(i + 2, 0),
     );
     target.conquer(game.ref(i + 2, 0));
     return target;
   });
+  const waitNation = tribeOnly
+    ? spawn(new PlayerInfo("wait nation", PlayerType.Nation, null, "waitnation"), game.ref(20, 0))
+    : null;
+  if (waitNation) waitNation.conquer(game.ref(20, 0));
   for (let y = declaration.actorRectangle.yMin; y <= declaration.actorRectangle.yMax; y++)
     for (let x = declaration.actorRectangle.xMin; x <= declaration.actorRectangle.xMax; x++)
       me.conquer(game.ref(x, y));
@@ -148,8 +189,9 @@ function createWorld(seed: string) {
     game.executeNextTick();
   assert.equal(game.isNationSpawnImmunityActive(), false, "Native immunity exceeded fixture bound");
   me.addTroops(declaration.ownTroopsAdded);
-  for (const target of targets) target.removeTroops(target.troops() - declaration.targetTroops);
-  return { game, config, me, targets };
+  for (const target of [...targets, ...(waitNation ? [waitNation] : [])])
+    target.removeTroops(target.troops() - declaration.targetTroops);
+  return { game, config, me, targets, waitNation };
 }
 
 async function bootstrapNative(behavior, targets, bot, advance, drain) {
@@ -204,14 +246,182 @@ async function proveNative(behavior, targets, bot, policy, drain) {
   );
 }
 
+async function readyNativeTribes(behavior, game, deadline: number) {
+  const tick = game.ticks();
+  const cached = await behavior.getReadyEarlyGameTribeCandidates();
+  const work = behavior.earlyGameTribeCandidatesRefresh;
+  if (!work) return cached;
+  assert.ok(Date.now() < deadline, "Native refresh wall bound exhausted");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      work,
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(`Native tribe refresh timeout at ${behavior.earlyGameTribeRefreshStage}`),
+            ),
+          deadline - Date.now(),
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+  assert.equal(game.ticks(), tick, "Await actual refresh without advancing production");
+  assert.equal(behavior.earlyGameTribeCandidatesRefresh, null);
+  if (behavior.earlyGameTribeRefreshFailure) throw behavior.earlyGameTribeRefreshFailure.error;
+  const candidates = behavior.liveEarlyGameTribeSnapshot(behavior.earlyGameTribeCandidatesCache);
+  assert.ok(behavior.earlyGameTribeSnapshotIsScored(candidates));
+  return candidates;
+}
+
+async function sendNativeTribe(behavior, target, { bot, ready, advance }) {
+  let sent = false;
+  for (let attempt = 0; !sent && attempt < limits.sendAttempts; attempt++) {
+    const observed = bot.api.game.playerBySmallID(target.smallID());
+    const candidates = await ready();
+    const candidate = candidates.find(
+      (candidate) => candidate.player.smallID() === target.smallID(),
+    );
+    await behavior.prepareHybridCombatGeometry([observed]);
+    if (candidate)
+      sent = await behavior.sendAttack(observed, false, null, candidate, false, true, null);
+    if (!sent) await advance();
+  }
+  assert.equal(sent, true, "Scored guarded Bot bootstrap send exhausted bound");
+}
+
+async function bootstrapTribes({
+  behavior,
+  targets,
+  waitNation,
+  bot,
+  policy,
+  advance,
+  drain,
+  ready,
+}) {
+  assert.ok(waitNation && waitNation.type() === PlayerType.Nation);
+  assert.ok(targets.every((target) => target.type() === PlayerType.Bot));
+  assert.ok(
+    Object.values(policy.diagnostics().samples).every((count) => count === 0),
+    "Actual factory cold model required",
+  );
+  const freeLand = bot.api.game.terraNullius();
+  const minimum = behavior.getTerraNulliusMinimumTroops(freeLand, null);
+  assert.ok(Number.isFinite(minimum) && minimum >= 1);
+  const fraction = (8 * Math.ceil(minimum) + 1) / behavior.player.troops();
+  assert.ok(fraction > 0 && fraction <= 1);
+  assert.equal(await behavior.forceSendAttack(freeLand, fraction), true);
+  const waits = () =>
+    bot.harness.evidence
+      .snapshot()
+      .replay.records.filter(
+        (row) =>
+          row.action === "wait" &&
+          row.collectorControl === true &&
+          row.confirmed &&
+          Number.isFinite(row.reward),
+      );
+  for (let attempt = 0; waits().length < 4 && attempt < limits.sendAttempts; attempt++) {
+    await behavior.decideHybridCombat([bot.api.game.playerBySmallID(waitNation.smallID())]);
+    assert.ok(policy.pending && policy.pending.target === null);
+    await advance();
+    assert.equal(policy.pending, null);
+  }
+  assert.ok(waits().length >= 4 && waits().some((row) => row.reward > 0));
+  for (const target of targets) {
+    await sendNativeTribe(behavior, target, { bot, ready, advance });
+    await drain();
+  }
+  const attacks = bot.harness.evidence
+    .snapshot()
+    .replay.records.filter(
+      (row) =>
+        row.action === "attack" &&
+        row.confirmed &&
+        Number.isFinite(row.reward) &&
+        row.receiptID &&
+        row.geometry?.frontier,
+    );
+  assert.equal(new Set(attacks.map((row) => row.targetSmallID)).size, 17);
+  assert.equal(new Set(attacks.map((row) => row.receiptID)).size, attacks.length);
+  assert.equal(
+    policy.diagnostics().ready,
+    true,
+    "Original all-head cold gate remains authoritative",
+  );
+}
+
+async function proveTribes(behavior, bot, policy, drain, ready) {
+  assert.equal(policy.diagnostics().ready, true);
+  await ready();
+  assert.equal(await behavior.attackEarlyGameTribe(), true);
+  assert.ok(
+    policy.proposal?.candidateCount >= 2,
+    "Controlled native proposal needs two funded candidates",
+  );
+  assert.equal(policy.proposal.behaviorPolicy, "deterministic-native-tribe-choice-v1");
+  await drain();
+  assert.ok(policy.diagnostics().control.confirmedLearnedAttacks >= 1);
+  const outcomes = bot.harness.evidence
+    .snapshot()
+    .replay.records.filter((row) => row.learned === true && row.confirmed === true);
+  assert.ok(
+    outcomes.some(
+      (row) =>
+        row.action === "attack" &&
+        row.receiptID &&
+        row.geometry?.frontier &&
+        Number.isFinite(row.reward),
+    ),
+  );
+  assert.ok(
+    outcomes.every(
+      (row) =>
+        row.action === "attack" && row.behaviorPolicy === "deterministic-native-tribe-choice-v1",
+    ),
+    "No strategic controlled records",
+  );
+}
+
+function verifyEngine(expected) {
+  assert.equal(
+    canonical(readEngineFingerprint()),
+    canonical(expected),
+    "Engine drift during native run",
+  );
+}
+
+function nativeStart(seed, actualFingerprint, actualConfiguration) {
+  return {
+    phase: "start",
+    seed,
+    map: "native-tiny-trajectory",
+    engineFingerprint: actualFingerprint,
+    actualConfiguration,
+    configurationFingerprint: hash(canonical(actualConfiguration)),
+    mapFingerprint: hash(
+      canonical({
+        width: declaration.width,
+        height: declaration.height,
+        terrain: declaration.terrain,
+      }),
+    ),
+  };
+}
+
 const nativeRunner = async ({ seed, mode, learning, modelPath, bundlePath, runID }: NativeRun) => {
+  const deadline = Date.now() + 60000;
   const actualFingerprint = readEngineFingerprint();
   assert.equal(
     canonical(actualFingerprint),
     canonical(fingerprint),
     "Engine changed since fixture freeze",
   );
-  const { game, config, me, targets } = createWorld(seed);
+  const { game, config, me, targets, waitNation } = createWorld(seed);
   const actualConfiguration = JSON.parse(
     canonical({ fixture: declaration, gameConfig: config.gameConfig() }),
   );
@@ -220,7 +430,12 @@ const nativeRunner = async ({ seed, mode, learning, modelPath, bundlePath, runID
     runIdentity: runID,
     eventFile: path.join(out, `${runID}.events.jsonl`),
     evidenceCapacity: 1024,
-    hybrid: { mode, learning, modelPath },
+    hybrid: {
+      mode,
+      learning,
+      modelPath,
+      ...(tribeOnly ? { collectionPolicy: learning ? "coverage-wait-v1" : null } : {}),
+    },
   });
   let failure: unknown;
   const runner = new GameRunner(game, new Executor(game, seed, "actor001"), (update) => {
@@ -239,9 +454,12 @@ const nativeRunner = async ({ seed, mode, learning, modelPath, bundlePath, runID
     const api = harness.window.__OFH_hybridCombat;
     const originalIdentity = JSON.stringify(api.exportModel());
     assert.equal(api.exportModel().featureProfile, "frontier-v1");
+    if (tribeOnly) assert.equal(api.exportModel().controlProfile, controlProfile);
     const orders: unknown[] = [];
     let turn = 0;
+    const ready = () => readyNativeTribes(behavior, game, deadline);
     const advance = async () => {
+      if (tribeOnly) assert.ok(Date.now() < deadline, "Native episode wall bound exhausted");
       const intents = bot.intentBuffer.splice(0);
       orders.push(...intents.map((intent: unknown) => ({ tick: game.ticks(), intent })));
       runner.addTurn({
@@ -250,7 +468,13 @@ const nativeRunner = async ({ seed, mode, learning, modelPath, bundlePath, runID
       });
       assert.equal(runner.executeNextTick(), true);
       assert.equal(failure, undefined);
-      await bot.decide(); // Existing NationExecution observation path; feature flags disable decisions.
+      if (tribeOnly) {
+        harness.window.__OFH_realOpponentClock.now = game.ticks() * 100;
+        await bot.api.beginTick(bot.pageGame.myPlayer());
+        bot.nationBot.player = bot.api.game.myPlayer();
+        bot.nationBot.refreshBehaviorPlayerReferences();
+        bot.nationBot.observeHybridCombat(bot.api.game.myPlayer());
+      } else await bot.decide(); // Default existing NationExecution path.
       current.buildMenu = createBuildMenu(bot);
     };
     const drain = async () => {
@@ -260,8 +484,22 @@ const nativeRunner = async ({ seed, mode, learning, modelPath, bundlePath, runID
     };
     if (learning) {
       assert.equal(mode, "shadow");
-      await bootstrapNative(behavior, targets, bot, advance, drain);
-    } else if (mode === "learned") await proveNative(behavior, targets, bot, policy, drain);
+      if (tribeOnly)
+        await bootstrapTribes({
+          behavior,
+          targets,
+          waitNation,
+          bot,
+          policy,
+          advance,
+          drain,
+          ready,
+        });
+      else await bootstrapNative(behavior, targets, bot, advance, drain);
+    } else if (mode === "learned") {
+      if (tribeOnly) await proveTribes(behavior, bot, policy, drain, ready);
+      else await proveNative(behavior, targets, bot, policy, drain);
+    }
     // Declared fixture schedule: official timer/winner check, no direct setWinner.
     game.addExecution(new WinCheckExecution());
     for (let i = 0; !game.getWinner() && i < limits.winnerTicks; i++) await advance();
@@ -310,11 +548,7 @@ const nativeRunner = async ({ seed, mode, learning, modelPath, bundlePath, runID
       engineFingerprint: actualFingerprint,
       result,
     });
-    assert.equal(
-      canonical(readEngineFingerprint()),
-      canonical(actualFingerprint),
-      "Engine drift during native run",
-    );
+    verifyEngine(actualFingerprint);
     return {
       code: 0,
       interrupted: false,
@@ -324,21 +558,7 @@ const nativeRunner = async ({ seed, mode, learning, modelPath, bundlePath, runID
       // Evaluator computes provenanceMatches against its frozen launch from this actual start fingerprint.
       seed,
       mode,
-      start: {
-        phase: "start",
-        seed,
-        map: "native-tiny-trajectory",
-        engineFingerprint: actualFingerprint,
-        actualConfiguration,
-        configurationFingerprint: hash(canonical(actualConfiguration)),
-        mapFingerprint: hash(
-          canonical({
-            width: declaration.width,
-            height: declaration.height,
-            terrain: declaration.terrain,
-          }),
-        ),
-      },
+      start: nativeStart(seed, actualFingerprint, actualConfiguration),
       result,
     };
   } finally {
@@ -357,6 +577,7 @@ const online = await evaluate(
     collect: true,
     policy: "compact-neural",
     "feature-profile": "frontier-v1",
+    ...profileOptions,
     seeds: ["trajectory-native-bootstrap"],
     cohorts: cohorts("trajectory-native-bootstrap"),
     timeoutMs: 60000,
@@ -372,6 +593,7 @@ const evaluated = await evaluate(
     collect: false,
     policy: "compact-neural",
     "feature-profile": "frontier-v1",
+    ...profileOptions,
     model: collected,
     seeds: ["trajectory-native-frozen"],
     cohorts: cohorts("trajectory-native-frozen"),
@@ -415,7 +637,7 @@ const selection = {
   modelIdentity: first.event.modelIdentity,
 };
 const contract = loadNativeContract();
-const validationOptions = { gammaTick: 0.9, requireStochastic: false };
+const validationOptions = { gammaTick, requireStochastic: false };
 const trajectory = validateTrajectory(dataset, selection, nativeRun, validationOptions);
 const trainingRecords: Array<{ action: string; actionTick: number }> = trajectory.records;
 assert.equal(trajectory.trainable, true);
@@ -424,7 +646,7 @@ const before = canonical(trajectory.snapshot);
 const fitted = fitTrajectory(trajectory, contract);
 assert.equal(canonical(trajectory.snapshot), before);
 assert.equal(contract.learningAllowed(fitted.model), false);
-assert.equal(fitted.model.offline.originModelIdentity, selection.modelIdentity);
+assert.equal(JSON.stringify(fitted.model.offline.originModel), selection.modelIdentity);
 assert.equal(
   fitted.summary.updates,
   trainingRecords.reduce(
@@ -435,7 +657,18 @@ assert.equal(
 for (const [index, record] of trajectory.records.entries()) {
   assert.equal(
     trajectory.returns[index]?.return,
-    (nativeRun.result.won ? 1 : -1) * 0.9 ** (nativeRun.result.ticks - record.actionTick),
+    (nativeRun.result.won ? 1 : -1) * gammaTick ** (nativeRun.result.ticks - record.actionTick),
+  );
+}
+if (tribeOnly) {
+  assert.equal(fitted.model.offline.version, "offline-terminal-return-v2");
+  assert.equal(trajectory.records.length, 1);
+  assert.equal(fitted.summary.updates, 2);
+  assert.equal(trajectory.returns[0].return, 1);
+  assert.ok(
+    trajectory.records.every(
+      (row) => row.behaviorPolicy === "deterministic-native-tribe-choice-v1",
+    ),
   );
 }
 const capped = structuredClone(nativeRun);

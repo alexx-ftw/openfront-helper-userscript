@@ -47,6 +47,23 @@ y al hash de características; omitirlo conserva el control anterior por la
 cabeza ACT. No cambia recompensas, aprendizaje ni comprobaciones de seguridad.
 Debe entrenarse y evaluarse como un brazo independiente; no demuestra una mejora.
 
+`--control-profile tribe-ranking-v1` exige además `--feature-profile frontier-v1`.
+Conserva esa comparación estratégica y añade una selección de la primera tribu
+entre los candidatos terrestres financiados del plan nativo, después del filtro
+de clúster y antes de cualquier barco. Nunca sustituye por WAIT el ataque a tribus.
+El resto del lote mantiene su orden; reservas, legalidad y límites de envío siguen
+en el emisor original. Requiere un modelo nuevo y entrenamiento independiente:
+no se puede cambiar la etiqueta de un checkpoint anterior. Los fallos o datos
+obsoletos de geometría conservan el orden nativo. La latencia de esta ruta se
+registra como `tribe-choice`, incluida la preparación y el envío seleccionado.
+
+El perfil experimental de headless `tribe-only-terminal-v1` utiliza esa misma
+selección financiada, pero deja los ataques estratégicos y WAIT a Legendary.
+Solo TARGET decide; ACT y WAIT son auxiliares o inactivos. Mantiene todos los
+requisitos de preparación anteriores y exige un modelo nuevo. Su ajuste terminal
+usa `gammaTick=1`, recibos propios y el ganador nativo real; los ejemplos tácticos
+del arranque no se presentan como ejemplos terminales. No activa ningún modelo.
+
 Ejemplo de invocación, con valores elegidos para el experimento y archivos de
 cohortes/requisitos preparados previamente:
 
@@ -113,6 +130,14 @@ El resultado debe acreditar ejecución completada, procedencia positiva y revisi
 y diff del motor coincidentes al inicio. Una derrota terminal válida puede aportar
 retorno negativo; un error, una interrupción o una infracción del presupuesto no
 se convierte en una derrota de entrenamiento.
+
+Los nuevos ajustes exportan `offline-terminal-return-v2`: guardan una única copia
+estructurada y exacta del modelo de origen. La identidad original sigue siendo
+obligatoria durante el ajuste; puede reconstruirse con `JSON.stringify(originModel)`.
+Se validan recursivamente el contrato y los incrementos reales de muestras. Los
+modelos v1 siguen importándose, sin reescribir sus identidades ni sus pruebas.
+Esto evita duplicar y escapar todo el historial en cada ajuste sucesivo; no
+elimina el coste de historiales muy profundos ni acredita mejora competitiva.
 
 Una emisión aprendida sobre un ataque ya activo puede carecer de resultado
 atribuible. Solo se excluye ese paso si el intento enlazado tiene una única

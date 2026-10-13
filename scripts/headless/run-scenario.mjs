@@ -426,6 +426,7 @@ for (const scenario of selected) {
     (run.code === 0 ||
       (run.code === 2 &&
         scenarioResult.won === false &&
+        ["winner", "max_ticks", "bot_dead"].includes(scenarioResult.stopReason) &&
         scenarioResult.intentBudgetViolated !== true &&
         missileFixtureComplete));
   const ok = childFinishedNormally && scenario.assert(scenarioResult, logText);

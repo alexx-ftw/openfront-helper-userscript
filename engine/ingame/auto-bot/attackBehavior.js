@@ -1045,18 +1045,14 @@
 
     // Compact inference never labels the adapter's time-reused border cache as
     // current. Read the actual actor/target snapshots and reject tick drift.
-    async prepareHybridCombatGeometry(targets) {
+    async prepareHybridCombatGeometry(targets, tolerateProbeFailure) {
       const tick = this.currentAttackDecisionTick();
       const frontierEnabled = typeof hybridCombatPolicy !== "undefined" && hybridCombatPolicy.compactContract?.featureProfile === "frontier-v1";
       const generation = frontierEnabled ? hybridCombatPolicy.generation : null;
       this.hybridGeometrySnapshot = null;
       const actors = [this.player, ...targets];
-      const borders = await Promise.all(actors.map((actor) => {
-        const native = actor.__src ?? actor;
-        return typeof native.borderTiles === "function"
-          ? withTimeout(Promise.resolve(native.borderTiles()), WORKER_TIMEOUT_MS, null)
-          : null;
-      }));
+      const borders = await Promise.all(actors.map(actor =>
+        withTimeout(this.hybridBorderQuery(actor, tolerateProbeFailure), WORKER_TIMEOUT_MS, null)));
       if (tick !== this.currentAttackDecisionTick()) return;
       if (!this.hybridGeometryGenerationIsCurrent(generation)) return;
       const width = Number(this.game.width());
@@ -1069,6 +1065,15 @@
       this.hybridGeometrySnapshot = { tick, width, height, own: centers[0],
         targets: new Map(targets.map((target, i) => [target.smallID(), centers[i + 1]])),
         ...(frontierEnabled ? { generation, frontier } : {}) };
+    }
+
+    async hybridBorderQuery(actor, tolerateProbeFailure) {
+      const native = actor.__src ?? actor;
+      if (typeof native.borderTiles !== "function") return null;
+      if (!tolerateProbeFailure) return native.borderTiles();
+      try { return await native.borderTiles(); }
+      // eslint-disable-next-line no-restricted-syntax -- An optional worker query may be unavailable; geometry/model faults outside it still propagate.
+      catch { return null; }
     }
 
     hybridGeometryGenerationIsCurrent(generation) {
@@ -1200,6 +1205,7 @@
 
     async decideHybridCombat(enemies) {
       if (typeof hybridCombatPolicy === "undefined") return false;
+      if (hybridCombatPolicy.nativeStrategicMacro?.()) return false;
       const generation = hybridCombatPolicy.generation;
       const tick = this.currentAttackDecisionTick();
       const identity = hybridCombatPolicy.enabled() ? hybridCombatPolicy.decisionIdentity(this) : null;
@@ -3758,7 +3764,7 @@
       const maxParallelAttacks = Math.max(1, this.getBotAttackMaxParallelism());
       let launchedAttacks = 0;
       const ranked = rankEarlyGameTribeCandidates(candidates);
-      const strategicRanked = keepLargestTribeClusterCandidates(ranked);
+      let strategicRanked = keepLargestTribeClusterCandidates(ranked);
       this.earlyGamePreferredClusterTargetKeys = new Set(
         strategicRanked
           .map((candidate) => this.getOutboundAttackTargetKey(candidate.player))
@@ -3766,13 +3772,77 @@
       );
       this.publishEarlyGameTribeDiagnostics(ranked);
 
-      for (const candidate of strategicRanked) {
+      let hybridPlan = typeof hybridCombatPolicy !== "undefined" && hybridCombatPolicy.tribeRankingEnabled?.()
+        ? await this.prepareHybridTribePlan(strategicRanked, candidate => {
+        const key = this.getOutboundAttackTargetKey(candidate.player);
+        const existing = selectedTargetKeys.has(key);
+        const live = existing ? this.getLiveOutboundAttackTroopsForTarget(candidate.player) : null;
+        if (existing && live + this.getPendingOutboundAttackTroopsForTarget(candidate.player) < 1) return null;
+        return { parallelTribeAttack: true,
+          earlyGameCandidate: existing ? { ...candidate, existingCommittedTroops: live } : candidate,
+          reinforcementPlan: existing ? this.activeTribeReinforcementPlan(candidate.player) : null };
+        }) : { candidates: strategicRanked, chosen: null };
+      if (hybridPlan.chosen && !hybridCombatPolicy.tribePlanCurrent(this, hybridPlan)) {
+        this.finishHybridTribeTiming(hybridPlan);
+        hybridPlan = { candidates: strategicRanked, chosen: null };
+      }
+      strategicRanked = hybridPlan.candidates;
+
+      try { for (const candidate of strategicRanked) {
         if (launchedAttacks >= maxParallelAttacks || !hasAttackIntentRateCapacity()) break;
-        if (await this.launchEarlyGameTribeCandidate(candidate, selectedTargetKeys)) {
+        const send = () => this.launchEarlyGameTribeCandidate(candidate, selectedTargetKeys);
+        if (await (hybridPlan.chosen ? this.sendHybridTribeChoice(candidate, hybridPlan, send) : send())) {
           launchedAttacks++;
         }
-      }
+      } }
+      finally { if (hybridPlan.timing) this.finishHybridTribeTiming(hybridPlan); }
       return launchedAttacks > 0;
+    }
+
+    hybridDecisionNow() {
+      if (typeof window !== "undefined" && typeof window.__OFH_profileNow === "function") return window.__OFH_profileNow();
+      if (typeof performance !== "undefined") return performance.now();
+      return Date.now();
+    }
+
+    finishHybridTribeTiming(plan) {
+      if (!plan?.timing || plan.timing.recorded) return;
+      plan.timing.recorded = true;
+      if (typeof window !== "undefined") window.__OFH_hybridDecisionTiming?.({
+        generation: plan.timing.generation, tick: plan.timing.tick, phase: "tribe-choice",
+        candidateCount: plan.timing.candidateCount, geometryMs: plan.timing.geometryMs, scoringMs: plan.timing.scoringMs,
+        durationMs: this.hybridDecisionNow() - plan.timing.startedAt });
+    }
+
+    async prepareHybridTribePlan(candidates, fundingOptions) {
+      const native = { candidates, chosen: null };
+      if (typeof hybridCombatPolicy === "undefined" || !hybridCombatPolicy.tribeRankingEnabled?.() || !hasAttackIntentRateCapacity()) return native;
+      const generation = hybridCombatPolicy.generation;
+      const tick = this.currentAttackDecisionTick();
+      native.timing = { generation, tick, startedAt: this.hybridDecisionNow(), candidateCount: candidates.length, recorded: false };
+      const modelIdentity = JSON.stringify(hybridCombatPolicy.exportModel());
+      const targets = candidates.filter(candidate => candidate.landBorder === true).map(candidate => candidate.player);
+      let plan = native;
+      try {
+        if (new Set(targets.map(target => target.smallID())).size !== targets.length) return native;
+        const geometryStartedAt = this.hybridDecisionNow();
+        await this.prepareHybridCombatGeometry(targets, true);
+        native.timing.geometryMs = this.hybridDecisionNow() - geometryStartedAt;
+        if (generation !== hybridCombatPolicy.generation || tick !== this.currentAttackDecisionTick() ||
+            modelIdentity !== JSON.stringify(hybridCombatPolicy.exportModel())) return native;
+        const scoringStartedAt = this.hybridDecisionNow();
+        plan = hybridCombatPolicy.rankTribeChoice(this, candidates, fundingOptions);
+        native.timing.scoringMs = this.hybridDecisionNow() - scoringStartedAt;
+        plan.timing = native.timing;
+        return plan;
+      }
+      finally { if (!plan.chosen) this.finishHybridTribeTiming(plan); }
+    }
+
+    sendHybridTribeChoice(candidate, plan, send) {
+      if (typeof hybridCombatPolicy === "undefined" || !plan?.chosen) return send();
+      return hybridCombatPolicy.sendTribeChoice(this, candidate, plan, send)
+        .finally(() => this.finishHybridTribeTiming(plan));
     }
 
     // OpenFront marks the largest/open water body with `isOcean`, and that bit
@@ -9390,15 +9460,23 @@
       if (state.settings.winFixes && this.hasIncompleteEarlyGameClusterScores()) {
         return false;
       }
-      const reducedBots = this.getBotsNeedingAttackReinforcement(nearby);
+      let reducedBots = this.getBotsNeedingAttackReinforcement(nearby);
       if (reducedBots.length === 0) return false;
       this.botAttackTroopsSent = 0;
+      let hybridPlan = typeof hybridCombatPolicy !== "undefined" && hybridCombatPolicy.tribeRankingEnabled?.()
+        ? await this.prepareHybridTribePlan(reducedBots.map(player => ({ player,
+        landBorder: this.player.sharesBorderWith(player) })), candidate => ({ parallelTribeAttack: true,
+        reinforcementPlan: this.activeTribeReinforcementPlan(candidate.player) })) : null;
+      if (hybridPlan && hybridCombatPolicy.tribePlanCurrent(this, hybridPlan)) reducedBots = hybridPlan.candidates.map(candidate => candidate.player);
+      else {
+        this.finishHybridTribeTiming(hybridPlan);
+        hybridPlan = null;
+      }
       let launchedAttacks = 0;
-      for (const bot of reducedBots) {
+      try { for (const [botIndex, bot] of reducedBots.entries()) {
         if (!hasAttackIntentRateCapacity()) break;
         const reinforcementPlan = this.activeTribeReinforcementPlan(bot);
-        if (
-          await this.sendAttack(
+        const send = () => this.sendAttack(
             bot,
             false,
             null,
@@ -9406,11 +9484,14 @@
             false,
             true,
             reinforcementPlan,
-          )
-        ) {
+          );
+        if (await (hybridPlan
+          ? this.sendHybridTribeChoice(hybridPlan.candidates[botIndex], hybridPlan, send)
+          : send())) {
           launchedAttacks++;
         }
-      }
+      } }
+      finally { this.finishHybridTribeTiming(hybridPlan); }
 
       return launchedAttacks > 0;
     }
@@ -9509,11 +9590,11 @@
       return this.inspectLandAttackFunding(target).allowed;
     }
 
-    inspectLandAttackFunding(target) {
+    inspectLandAttackFunding(target, options = {}) {
       // Breaking the alliance marks us as a traitor even if the next attack
       // is unaffordable. Reuse the first-strike reserve and defense checks
       // before paying that diplomatic cost; do not emit a same-tick attack.
-      const context = this.createLandAttackContext(target);
+      const context = this.createLandAttackContext(target, options);
       let troops;
       try {
         troops = this.calculateLandAttackTroops(context);

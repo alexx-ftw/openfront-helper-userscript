@@ -12,7 +12,7 @@ const HYBRID_COMBAT_REASONS = Object.freeze([
   "target-authorization-rejected", "pending-duplicate", "cancelled-generation", "stale-geometry-tick",
   "forced-action", "tribe-target", "non-strategic-target", "ambiguous-commitment",
   "observation-identity-invalid", "observation-pending", "observation-stale",
-  "controlled-wait", "controlled-attack", "action-accepted", "native-receipt",
+  "controlled-wait", "controlled-attack", "controlled-tribe-choice", "action-accepted", "native-receipt",
   "capture-reserve-insufficient", "war-appetite-exceeded", "reinforcement-capture-insufficient",
   "nonfinite-payload", "no-spendable-troops", "defense-post-floor", "intent-emission-rejected",
   "intent-constructor-unavailable", "intent-rate-capacity-exhausted", "same-clan-nuke-terrain",
@@ -413,7 +413,7 @@ class HybridCombatPolicy {
     const wait = this.predict("wait", gate);
     const gateAct = this.predict("act", gate);
     if (ranked === undefined) return { wait, act: gateAct };
-    if (this.compactContract?.controlProfile !== "target-value-v1") {
+    if (!["target-value-v1", "tribe-ranking-v1"].includes(this.compactContract?.controlProfile)) {
       return { wait, act: gateAct, controlledCandidates: ranked };
     }
     return { wait, act: ranked[0]?.score,
@@ -652,7 +652,93 @@ class HybridCombatPolicy {
   }
 
   isStrategicTarget(behavior, target) {
-    return target?.type?.() !== PlayerType.Bot && target?.isPlayer?.() === true && behavior.player.sharesBorderWith(target);
+    if (this.tribeOnlyControl() && target?.type?.() !== PlayerType.Bot) return false;
+    return (target?.type?.() !== PlayerType.Bot || this.tribeRankingEnabled()) &&
+      target?.isPlayer?.() === true && behavior.player.sharesBorderWith(target);
+  }
+
+  tribeRankingEnabled() {
+    return this.enabled() && this.backend === "compact-tanh-v1" &&
+      ["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(this.compactContract?.controlProfile);
+  }
+
+  tribeOnlyControl() {
+    return this.backend === "compact-tanh-v1" && this.compactContract?.controlProfile === "tribe-only-terminal-v1";
+  }
+
+  nativeStrategicMacro() {
+    return this.tribeOnlyControl() && !(this.mode === "shadow" && this.learning);
+  }
+
+  rankTribeChoice(behavior, candidates, fundingOptions) {
+    const plan = { candidates, chosen: null };
+    if (!this.tribeRankingEnabled() || !this.eligible()) return plan;
+    const gate = this.gateFeatures(behavior);
+    if (!gate) return plan;
+    // A preceding boat changes the budget before land dispatch. Keep that pass native.
+    const end = candidates.findIndex(candidate => candidate.landBorder !== true);
+    const prefix = candidates.slice(0, end < 0 ? candidates.length : end);
+    if (!prefix.length) return plan;
+    const firstScored = this.scoreTribeChoiceCandidate(behavior, prefix[0], 0, gate, fundingOptions);
+    if (!firstScored) return plan;
+    const scored = [firstScored, ...prefix.slice(1).map((candidate, index) =>
+      this.scoreTribeChoiceCandidate(behavior, candidate, index + 1, gate, fundingOptions)).filter(Boolean)];
+    if (!this.eligible()) return plan;
+    const ranked = [...scored].sort((left, right) => right.score - left.score || left.index - right.index);
+    const selected = ranked[0];
+    const first = scored[0].index;
+    const reordered = [...candidates];
+    reordered.splice(selected.index, 1);
+    reordered.splice(first, 0, selected.candidate);
+    return { candidates: reordered, chosen: selected, ranked, gate,
+      identity: this.decisionIdentity(behavior), modelIdentity: JSON.stringify(this.exportModel()), used: false };
+  }
+
+  scoreTribeChoiceCandidate(behavior, candidate, index, gate, fundingOptions) {
+    const target = candidate.player;
+    if (target?.type?.() !== PlayerType.Bot || this.candidateRejection(behavior, target, true) !== null) return null;
+    const options = fundingOptions(candidate);
+    if (!options || behavior.sendAttackIsPendingDuplicate?.(target, false, true, options.reinforcementPlan)) return null;
+    if (behavior.inspectLandAttackFunding?.(target, options)?.allowed !== true) return null;
+    const evidence = { geometry: null };
+    const features = this.targetFeatures(behavior, target, gate, undefined, { evidence });
+    if (!features) return null;
+    const score = this.predict("target", features);
+    return Number.isFinite(score) ? { target, candidate, index, features, geometry: evidence.geometry, score } : null;
+  }
+
+  async sendTribeChoice(behavior, candidate, plan, send) {
+    if (!plan?.chosen || plan.used || plan.chosen.candidate !== candidate) return send();
+    plan.used = true;
+    if (!this.tribePlanCurrent(behavior, plan)) return send();
+    const selected = plan.chosen;
+    this.proposal = { ...plan.identity, step: this.step++, action: "attack", greedyChoice: "attack",
+      target: selected.target.smallID(), targetSmallID: selected.target.smallID(), gate: plan.gate,
+      candidateCount: plan.ranked.length, reserveRatio: this.reserveRatio(Number(behavior.player.troops()), Number(behavior.getEarlyGameLiveReserveTroops())),
+      ready: true, eligible: true, wait: null, act: selected.score, utilityMargin: null,
+      controlledAction: null, fallback: false, behaviorProbability: null, logProbability: null,
+      behaviorPolicy: "deterministic-native-tribe-choice-v1", candidateSetSource: "native-leading-land-tribe-plan",
+      candidates: plan.ranked.map(({ target, features, geometry, score }) => ({ targetSmallID: target.smallID(), features, geometry, score,
+        sourceTick: plan.identity.tick, legal: typeof (behavior.player.__src ?? behavior.player).canAttackPlayer === "function" ? true : null,
+        legalitySource: "existing-canAttackPlayerNow-filter" })),
+      candidateCoverage: { complete: true, truncated: false, count: plan.ranked.length, scope: "feature-valid-native-eligible-targets" },
+      funnel: { dispatchAttempts: 0 } };
+    this.proposal.decisionSequence = this.sequence;
+    this.proposal.decisionReferenceKind = "proposal";
+    this.recordLedger("proposal", { ...this.proposal, featureVersion: this.compactContract.schema });
+    const generation = this.generation;
+    const decision = { ...this.proposal };
+    const sent = await this.sendRankedAttack(behavior, [selected], send);
+    if (generation !== this.generation) { this.recordCancelledDecision(decision); return sent; }
+    if (!sent) this.fallback(this.proposal.sendReason || "send-rejected-unknown");
+    else this.recordDecision("attack", false, "controlled-tribe-choice");
+    return sent;
+  }
+
+  tribePlanCurrent(behavior, plan) {
+    return Boolean(plan?.chosen) && this.tribeRankingEnabled() && this.eligible() &&
+      plan.identity.generation === this.generation && plan.identity.tick === behavior.currentAttackDecisionTick() &&
+      plan.modelIdentity === JSON.stringify(this.exportModel());
   }
 
   validObservationIdentity(targetSmallID, tick) {
@@ -666,16 +752,18 @@ class HybridCombatPolicy {
 
   dispatchMetadata(targetSmallID) {
     const learned = this.dispatch?.targetSmallID === targetSmallID && this.dispatch?.generation === this.generation;
+    let behaviorPolicy = learned ? "deterministic-ranked-legal" : "legendary-unknown";
+    if (learned && this.proposal?.behaviorPolicy === "deterministic-native-tribe-choice-v1") behaviorPolicy = this.proposal.behaviorPolicy;
     return { learned, dispatchID: learned ? this.dispatch.id : null,
       decisionStep: learned ? this.dispatch.decisionStep : null,
       decisionSequence: learned ? this.dispatch.decisionSequence : null,
       controlledAction: learned ? "attack" : null,
-      behaviorProbability: null, logProbability: null, behaviorPolicy: learned ? "deterministic-ranked-legal" : "legendary-unknown",
+      behaviorProbability: null, logProbability: null, behaviorPolicy,
       ...(learned ? { modelIdentity: this.dispatch.modelIdentity } : {}) };
   }
 
   allowsAttack(behavior, target) {
-    if (!this.enabled() || this.numericalError || this.mode !== "learned" || !this.ready() ||
+    if (this.tribeOnlyControl() || !this.enabled() || this.numericalError || this.mode !== "learned" || !this.ready() ||
         target?.isPlayer?.() !== true || target.type?.() === PlayerType.Bot) return true;
     if (this.backend === "compact-tanh-v1" && !this.captureGeometry(behavior, target)) return true;
     const key = String(behavior.getOutboundAttackTargetKey(target));
@@ -744,6 +832,7 @@ class HybridCombatPolicy {
 
   async decide(behavior, enemies, identity = null) {
     if (!this.enabled()) return false;
+    if (this.nativeStrategicMacro()) return false;
     this.proposal = { ...(identity ?? this.decisionIdentity(behavior)), step: this.step++,
       targetSmallID: null, reserveRatio: null,
       candidateCount: 0, controlledAction: null, eligible: null, fallback: true };
@@ -859,8 +948,8 @@ class HybridCombatPolicy {
     return candidates;
   }
 
-  candidateRejection(behavior, target) {
-    if (target.type?.() === PlayerType.Bot) return "tribe-target";
+  candidateRejection(behavior, target, allowTribe = false) {
+    if (target.type?.() === PlayerType.Bot && !(allowTribe && this.tribeRankingEnabled())) return "tribe-target";
     if (!target.isAlive()) return "target-dead";
     if (behavior.player.isFriendly(target)) return "friendly-target";
     if (!behavior.player.sharesBorderWith(target)) return "no-land-border";
@@ -964,7 +1053,7 @@ class HybridCombatPolicy {
     this.recordLedger("decision", decision);
   }
 
-  async sendRankedAttack(behavior, ranked) {
+  async sendRankedAttack(behavior, ranked, send = target => behavior.sendAttack(target)) {
     const generation = this.generation;
     for (const candidate of ranked) {
       if (generation !== this.generation || this.mode !== "learned") return false;
@@ -981,7 +1070,7 @@ class HybridCombatPolicy {
         decisionStep: dispatch.decisionStep, decisionSequence: dispatch.decisionSequence, tick: behavior.currentAttackDecisionTick(),
         reason: null });
       let sent;
-      try { sent = await behavior.sendAttack(candidate.target); }
+      try { sent = await send(candidate.target); }
       finally { if (this.dispatch === dispatch) this.dispatch = null; }
       if (generation === this.generation && !sent) this.proposal.sendReason = dispatch.reason || "send-rejected-unknown";
       if (sent) {

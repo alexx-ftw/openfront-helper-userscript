@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { GameRunner } from "../../openfront-engine/src/core/GameRunner";
 import { Executor } from "../../openfront-engine/src/core/execution/ExecutionManager";
 import { TurnSchema, type Intent } from "../../openfront-engine/src/core/Schemas";
@@ -26,6 +29,36 @@ export async function setupNativeGame(playerIDs = ["attacker", "defender"]) {
     playerIDs.map((id) => new PlayerInfo(id, PlayerType.Human, id, id)),
     engineTestsUtil,
   );
+}
+
+export async function setupNativeGameFromMap16x(
+  mapID: "baikalnukewars" | "luna",
+  playerIDs = ["attacker", "defender"],
+) {
+  const resourceDir = new URL(`../../openfront-engine/resources/maps/${mapID}/`, import.meta.url);
+  const manifest = JSON.parse(await readFile(new URL("manifest.json", resourceDir), "utf8"));
+  const mapBytes = await readFile(new URL("map16x.bin", resourceDir));
+  const reducedManifest = { ...manifest, map: manifest.map16x, map4x: manifest.map16x };
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ofh-map16x-"));
+  const mapDir = path.join(tempRoot, "testdata", "maps", mapID);
+  const runnerDir = path.join(tempRoot, "runner");
+  try {
+    await mkdir(mapDir, { recursive: true });
+    await mkdir(runnerDir);
+    await Promise.all([
+      writeFile(path.join(mapDir, "map.bin"), mapBytes),
+      writeFile(path.join(mapDir, "map4x.bin"), mapBytes),
+      writeFile(path.join(mapDir, "manifest.json"), JSON.stringify(reducedManifest)),
+    ]);
+    return await setup(
+      mapID,
+      { instantBuild: true },
+      playerIDs.map((id) => new PlayerInfo(id, PlayerType.Human, id, id)),
+      runnerDir,
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 }
 
 function createNativeRunner(

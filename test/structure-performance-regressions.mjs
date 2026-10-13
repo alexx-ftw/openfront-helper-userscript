@@ -2141,10 +2141,11 @@ assert.ok(
   assert.equal(await behavior.buildableFor(UNIT.Factory, 7), quote);
 
   behavior.structureCandidateTiles = () => [7];
+  behavior.game = { width: () => 1, height: () => 1 };
   behavior.assignRailClusters = () => {
     throw failure;
   };
-  assert.throws(
+  await assert.rejects(
     () =>
       behavior.addLegendaryFactoryRouteCandidates({
         strategicState: {

@@ -87,9 +87,25 @@ const HybridCombatContract = {};
     }
   }
 
+  function validateControlProfile(controlProfile, featureProfile) {
+    if (controlProfile !== undefined && !["target-value-v1", "tribe-ranking-v1", "tribe-only-terminal-v1"].includes(controlProfile)) throw new Error("Invalid control profile");
+    if (["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(controlProfile) && featureProfile !== "frontier-v1") throw new Error("Tribe ranking requires frontier features");
+  }
+
+  function actionsFor(controlProfile) {
+    if (controlProfile === "tribe-only-terminal-v1") return {
+      macro: [], micro: "exact-player-id-land-target", tribeRanking: "native-land-subset-v1",
+      activeHeads: ["target"], inactiveHeads: ["wait", "act"],
+      strategicMacro: "native-legendary-v1", suppressWait: false };
+    const actions = { macro: ["wait", "act"], micro: "exact-player-id-land-target" };
+    if (controlProfile !== undefined) actions.macroValue = "best-target-vs-wait-v1";
+    if (controlProfile === "tribe-ranking-v1") actions.tribeRanking = "native-land-subset-v1";
+    return actions;
+  }
+
   function create({ featureProfile, controlProfile, provenance, normalizer: supplied } = {}) {
     if (featureProfile !== undefined && featureProfile !== "frontier-v1") throw new Error("Invalid feature profile");
-    if (controlProfile !== undefined && controlProfile !== "target-value-v1") throw new Error("Invalid control profile");
+    validateControlProfile(controlProfile, featureProfile);
     const identity = { schema: featureProfile ? frontierSchema : schema,
       ...(featureProfile ? { featureProfile } : {}) };
     const names = featuresFor(identity);
@@ -98,8 +114,7 @@ const HybridCombatContract = {};
       features: names, architecture,
       normalizer: supplied ?? normalizer(names,
         featureProfile ? "fixed-normalizer-frontier-v1" : "fixed-normalizer-v1"),
-      actions: { macro: ["wait", "act"], micro: "exact-player-id-land-target",
-        ...(controlProfile === undefined ? {} : { macroValue: "best-target-vs-wait-v1" }) },
+      actions: actionsFor(controlProfile),
       reward: "own-land-share-change-at-commitment-end",
       provenance: provenance ?? { implementation: "ofh", trainer: architecture.version,
         datasetID: "online-own-receipts", featureVersion: identity.schema } };
@@ -109,11 +124,10 @@ const HybridCombatContract = {};
   }
 
   function validate(snapshot) {
-    if (snapshot?.controlProfile !== undefined && snapshot.controlProfile !== "target-value-v1") throw new Error("Invalid control profile");
+    validateControlProfile(snapshot?.controlProfile, snapshot?.featureProfile);
     if (!snapshot || JSON.stringify(snapshot.features) !== JSON.stringify(featuresFor(snapshot)) ||
         JSON.stringify(snapshot.architecture) !== JSON.stringify(architecture) ||
-        JSON.stringify(snapshot.actions) !== JSON.stringify({ macro: ["wait", "act"], micro: "exact-player-id-land-target",
-          ...(snapshot.controlProfile === undefined ? {} : { macroValue: "best-target-vs-wait-v1" }) }) ||
+        JSON.stringify(snapshot.actions) !== JSON.stringify(actionsFor(snapshot.controlProfile)) ||
         !["own-land-share-change-at-commitment-end", "potential-shaped-land-delta-ticks-v2", "discounted-terminal-win-return-v1"].includes(snapshot.reward)) throw new Error("Incompatible compact neural contract");
     validateProvenance(snapshot);
     validateNormalizer(snapshot.normalizer, snapshot);
@@ -126,10 +140,9 @@ const HybridCombatContract = {};
 
   function validateReturnProvenance(snapshot) {
     if (snapshot.reward !== "discounted-terminal-win-return-v1") throw new Error("Incompatible terminal reward provenance");
-    validateReturnContext(snapshot, snapshot.offline);
-    if (snapshot.offline.returnTrainer !== "monte-carlo-tanh-sgd-v1" ||
-        snapshot.offline.originModelIdentity !== snapshot.offline.modelIdentity) throw new Error("Invalid return trainer provenance");
-    const origin = JSON.parse(snapshot.offline.originModelIdentity);
+    validateReturnContext(snapshot, snapshot.offline, snapshot.offline.version === "offline-terminal-return-v1");
+    if (snapshot.offline.returnTrainer !== "monte-carlo-tanh-sgd-v1") throw new Error("Invalid return trainer provenance");
+    const origin = returnOrigin(snapshot.offline);
     validate(origin);
     if (origin.schema !== snapshot.schema || origin.controlProfile !== snapshot.controlProfile ||
         JSON.stringify(origin.actions) !== JSON.stringify(snapshot.actions) || JSON.stringify(origin.normalizer) !== JSON.stringify(snapshot.normalizer) ||
@@ -139,6 +152,20 @@ const HybridCombatContract = {};
       if (snapshot.offline.originalDecisionSteps.length !== snapshot.offline.fittedRecords) throw new Error("Invalid return decision counts");
     }
     validateReturnCounts(snapshot, origin);
+  }
+
+  function returnOrigin(offline) {
+    if (offline.version === "offline-terminal-return-v1") {
+      if (offline.originModelIdentity !== offline.modelIdentity) throw new Error("Invalid return trainer provenance");
+      return JSON.parse(offline.originModelIdentity);
+    }
+    if (!offline.originModel || typeof offline.originModel !== "object" || Array.isArray(offline.originModel) ||
+        "modelIdentity" in offline || "originModelIdentity" in offline) throw new Error("Invalid structured return origin");
+    return offline.originModel;
+  }
+
+  function returnProvenanceVersion(version) {
+    return version === "offline-terminal-return-v1" || version === "offline-terminal-return-v2";
   }
 
   function validateReturnCounts(snapshot, origin) {
@@ -153,14 +180,14 @@ const HybridCombatContract = {};
 
   function validateProvenance(snapshot) {
     if (snapshot.offline) {
-      if (snapshot.offline.version === "offline-terminal-return-v1") validateReturnProvenance(snapshot);
+      if (returnProvenanceVersion(snapshot.offline.version)) validateReturnProvenance(snapshot);
       else {
         if (snapshot.offline.version !== "offline-fit-ticks-v2") throw new Error("Invalid offline fit provenance");
         validateReplayContext(snapshot, snapshot.offline);
       }
     }
     if (snapshot.reward === "potential-shaped-land-delta-ticks-v2" && snapshot.offline?.ablation?.potentialShaping !== true) throw new Error("Missing offline reward provenance");
-    if (snapshot.reward === "discounted-terminal-win-return-v1" && snapshot.offline?.version !== "offline-terminal-return-v1") throw new Error("Missing terminal reward provenance");
+    if (snapshot.reward === "discounted-terminal-win-return-v1" && !returnProvenanceVersion(snapshot.offline?.version)) throw new Error("Missing terminal reward provenance");
     validateModelOrigin(snapshot);
   }
 
@@ -480,10 +507,18 @@ const HybridCombatContract = {};
     }
   }
 
-  function validateReturnContext(snapshot, context) {
+  function validateConditionalTribeReturn(snapshot, context, record) {
+    if (snapshot.controlProfile !== "tribe-only-terminal-v1") return;
+    if (context?.gammaTick !== 1) throw new Error("Conditional tribe terminal objective requires gammaTick 1");
+    if (record !== undefined && (record?.action !== "attack" || record?.controlledAction !== "attack" ||
+        record?.behaviorPolicy !== "deterministic-native-tribe-choice-v1")) throw new Error("Invalid conditional tribe return record");
+  }
+
+  function validateReturnContext(snapshot, context, identityRequired) {
+    validateConditionalTribeReturn(snapshot, context);
     if (!context || !/^[0-9a-f]{40}$/.test(context.engineRevision || "") ||
         ![context.configHash, context.resultHash].every((hash) => /^[0-9a-f]{64}$/.test(hash || "")) ||
-        ![context.experimentID, context.runID, context.modelIdentity].every((value) => typeof value === "string" && value.trim()) ||
+        ![context.experimentID, context.runID, ...(identityRequired !== false ? [context.modelIdentity] : [])].every((value) => typeof value === "string" && value.trim()) ||
         ![context.episodeId, context.generation, context.terminalTick, context.actorSmallID].every(exactID) ||
         typeof context.terminalWin !== "boolean" || !Number.isFinite(context.gammaTick) ||
         context.gammaTick < 0 || context.gammaTick > 1 || context.featureProfile !== snapshot.featureProfile ||
@@ -491,6 +526,7 @@ const HybridCombatContract = {};
   }
 
   function validateReturnRecord(snapshot, record, context) {
+    validateConditionalTribeReturn(snapshot, context, record);
     if (!record || !["engineRevision", "experimentID", "runID", "configHash", "episodeId", "generation", "modelIdentity", "actorSmallID"].every((key) => record[key] === context[key]) ||
         record.featureVersion !== snapshot.schema || JSON.stringify(record.normalizer) !== JSON.stringify(snapshot.normalizer) ||
         record.learned !== true || record.confirmed !== true || record.truncated !== false || record.error != null ||
@@ -539,10 +575,10 @@ const HybridCombatContract = {};
     const headUpdates = Object.fromEntries(Object.keys(output.models).map((name) =>
       [name, output.models[name].samples - snapshot.models[name].samples]));
     output.reward = "discounted-terminal-win-return-v1";
-    output.offline = { version: "offline-terminal-return-v1", engineRevision: context.engineRevision,
+    output.offline = { version: "offline-terminal-return-v2", engineRevision: context.engineRevision,
       experimentID: context.experimentID, runID: context.runID, configHash: context.configHash,
       episodeId: context.episodeId, generation: context.generation, actorSmallID: context.actorSmallID,
-      modelIdentity: context.modelIdentity, originModelIdentity: context.modelIdentity,
+      originModel: clone(snapshot),
       featureProfile: snapshot.featureProfile, gammaTick: context.gammaTick,
       terminalTick: context.terminalTick, terminalWin: context.terminalWin, resultHash: context.resultHash,
       returnTrainer: "monte-carlo-tanh-sgd-v1", fittedRecords: prepared.length, headUpdates,

@@ -485,7 +485,7 @@
       if (difficulty !== Difficulty.Easy) {
         if (this.isNukeAlreadyLandingNear(tile, type)) return -1;
         coverage = this.enemyLandBlastCoverage(tile, type);
-        if (coverage < MIN_BLAST_COVERAGE[type]) return -1;
+        if (coverage < this.nukeCoverageFloor(context, type)) return -1;
       }
       // Legendary saturation divergence: refusing every SAM-covered
       // trajectory stalls the bombardment once a rival fields launchers —
@@ -495,23 +495,52 @@
       // clear ones via the wave cost in maybeDestroyEnemySam territory.
       // Overlap/coverage gates now precede this return (upstream has no
       // Legendary; the !Easy branch applies).
-      if (difficulty === Difficulty.Legendary) return coverage;
+      if (isLegendaryDifficulty(difficulty)) {
+        return this.legendarySaturationCoverage(spawnTile, tile, context, coverage);
+      }
       return !isAtLeastHardDifficulty(difficulty) ||
         !this.isTrajectoryInterceptableBySam(spawnTile, tile)
         ? coverage
         : -1;
     }
 
+    // Survival divergence: against the pinned invader that is actively
+    // consuming our territory, fallout-cratered enemy land keeps the standard
+    // floor unsatisfiable and freezes every response shot
+    // (scenario-sam-salvo-b: zero launches in the final 3 439 ticks).
+    nukeCoverageFloor(context, type) {
+      return context.survival === true && type === UNIT.AtomBomb
+        ? 0.15
+        : MIN_BLAST_COVERAGE[type];
+    }
+
+    // Survival-scoped saturation (pre-declared lever): the 2026-10-09 closure
+    // kept the tier comparison dead because an unconditional release
+    // deterministically lost the baikal no-harm gate. The pinned heavy
+    // invasion is the scoped reopening — only that target's tiles may stay
+    // scorable through a covered trajectory, and the partition still orders
+    // them below clear shots. Raw Legendary never fires in production
+    // (currentDifficulty() maps the tier to Impossible); the union gate keeps
+    // both spellings equivalent.
+    legendarySaturationCoverage(spawnTile, tile, context, coverage) {
+      if (context.survival === true) return coverage;
+      return this.isTrajectoryInterceptableBySam(spawnTile, tile) ? -1 : coverage;
+    }
+
     async collectNukeCandidates(target, type, silos, difficulty) {
       await withTimeout(
         this.game.ensureBorderTiles(target), WORKER_TIMEOUT_MS, null,
       );
+      // Keep retries from retaining every rival's full trajectory set in one tick.
+      this._nukeTrajectoryCacheTick = this.game.ticks();
+      this._nukeTrajectoryCache = new Map();
       const structures = unitsOfTypes(target);
+      const survival = this.isInvasionSurvivalTarget(target);
       const randomCount = isAtLeastHardDifficulty(difficulty) ? 30 : 10;
       const randomTiles = randTerritoryTileArray(this.random, this.game, target, randomCount);
       const tiles = randomTiles.concat(structures.map((unit) => unit.tile()));
       const range = this.game.config().nukeMagnitudes(type).outer;
-      const context = { range, target, type, difficulty };
+      const context = { range, target, type, difficulty, survival };
       this.removeOldNukeEvents();
       // Upstream 34a8fe723: per-tile value gate before scoring (Impossible
       // demands strictly positive structure value) and coverage-boosted
@@ -520,7 +549,13 @@
         .map((tile) => {
           const coverage = this.isScorableNukeTile(tile, context);
           if (coverage === -1) return null;
-          const value = this.nukeTileScore(tile, silos, structures, type);
+          const scoredValue = this.nukeTileScore(
+            tile, silos, structures, type, survival,
+          );
+          const value =
+            survival && coverage > 0
+              ? Math.max(1, scoredValue)
+              : scoredValue;
           if (difficulty === Difficulty.Impossible ? value <= 0 : value < 0) return null;
           return {
             tile,
@@ -721,6 +756,17 @@
       return priority.incoming || priority.counterforce === true;
     }
 
+    // An active, heavy land invasion is the one situation where the pinned
+    // aggressor's territory is itself a valuable nuclear target, even after
+    // structures and recent strike value have been exhausted.
+    isInvasionSurvivalTarget(target) {
+      if (state.settings.winFixes !== true) return false;
+      if (!isLegendaryDifficulty(currentDifficulty())) return false;
+      const incoming = this.attackBehavior?.findIncomingAttackPlayer?.();
+      if (!incoming || incoming.smallID?.() !== target?.smallID?.()) return false;
+      return this.isUnderHeavyAttack() === true;
+    }
+
     findCounterforceNukeTarget() {
       const players = this.game?.players?.() ?? [];
       for (const [ownerId, threat] of this._hostileNukeThreats ?? []) {
@@ -795,9 +841,7 @@
             ordinaryAction;
         }
       } else {
-        if (
-          await this.fireLegendaryClearFallthrough(clear, target, selectedNuke, silos)
-        ) {
+        if (await this.fireLegendaryClearFallthrough(clear, target, selectedNuke, silos)) {
           return true;
         }
       }
@@ -903,17 +947,29 @@
     // apply — a pool/wave deletion IS the payoff — but SAM-discipline still
     // does: clear trajectories first, saturated salvos second.
     async maybeFreezeGiantStrike(silos, difficulty) {
-      const giant = this.freezeGiantStrikeTarget();
+      const incoming = this.attackBehavior?.findIncomingAttackPlayer?.();
+      const invasionTarget = this.isInvasionSurvivalTarget(incoming) ? incoming : null;
+      const giant = invasionTarget ?? this.freezeGiantStrikeTarget();
       if (giant === null) return;
       if (!this.isEligibleNukeTarget(giant)) return;
       const demandTarget = this.samDemandStrikeTarget();
-      if (demandTarget !== null && demandTarget.smallID() !== giant.smallID()) return;
+      if (
+        invasionTarget === null &&
+        demandTarget !== null &&
+        demandTarget.smallID() !== giant.smallID()
+      ) return;
       if (this.hasPendingNukeLaunches()) return;
       const selectedNuke = await this.selectAffordableNuke();
       if (!selectedNuke) return;
+      // Survival release: the standing 3x war-chest reserve froze this tail
+      // lane with 1.2M idle gold while a 2.38M invasion conquered the bot
+      // (scenario-sam-salvo-b, tick 6049). Under an active invasion only the
+      // shot cost plus the score-zero buffer is required.
+      const survivalRelease = invasionTarget === giant;
       if (
         typeof selectedNuke.cost !== "bigint" ||
-        this.player.gold() < selectedNuke.cost * 3n
+        this.player.gold() <
+          (survivalRelease ? selectedNuke.cost + 100_000n : selectedNuke.cost * 3n)
       ) {
         return;
       }
@@ -980,14 +1036,28 @@
       const ladderValue = currentCandidateValue > 0
         ? this.playerStructureValue(target)
         : 0;
+      const costScreening =
+        currentCandidateValue <= 0 && typeof selectedNuke.cost === "bigint";
       const minimumRetargetValue = currentCandidateValue > 0
         ? Math.max(1_500_000, ladderValue * 2)
-        : 0;
+        : costScreening ? Number(selectedNuke.cost) : 0;
+      const lowValueExceptions = new Set();
+      if (costScreening) {
+        const incoming = this.attackBehavior?.findIncomingAttackPlayer?.();
+        if (incoming && this.isInvasionSurvivalTarget(incoming)) {
+          lowValueExceptions.add(incoming.smallID());
+        }
+        const borderArmyTarget = this.findStrategicBorderArmyTarget();
+        if (borderArmyTarget) lowValueExceptions.add(borderArmyTarget.smallID());
+      }
       for (const { target: valueTarget, value: valueTargetValue } of
         this.findValueRankedNukeTargets(target)) {
         if (excludedTarget?.smallID() === valueTarget.smallID()) continue;
+        if (valueTargetValue < minimumRetargetValue) {
+          if (!costScreening) break;
+          if (!lowValueExceptions.has(valueTarget.smallID())) continue;
+        }
         if (await this.shouldDeferNukeForEconomy(valueTarget, selectedNuke.cost)) return null;
-        if (valueTargetValue < minimumRetargetValue) break;
         if (!this.isEligibleNukeTarget(valueTarget)) continue;
         const retryCandidates = await this.collectNukeCandidates(
           valueTarget, selectedNuke.type, silos, difficulty,
@@ -1052,13 +1122,14 @@
 
     async nukeHasPositiveExpectedValue(candidate, target, selectedNuke, silos) {
       if (!isLegendaryDifficulty(currentDifficulty())) return true;
-      // Survival bypass only: an existential attack may spend any bomb.
+      // Survival bypass only: the pinned active invader's territory is itself
+      // a valid payoff; unrelated targets still need positive structure value.
       // The plain retaliation bypass was measured firing 11 sub-value shots
       // (best candidate 5-31k vs a 750k Atom) for 0 destroyed value on the
       // closest matrix row — a direct violation of the expected-value
       // requirement, since deterrence bombs that hit nothing still cost
       // full price and invite counter-retaliation.
-      if (this.isUnderHeavyAttack()) return true;
+      if (this.isInvasionSurvivalTarget(target)) return true;
       if (
         this.findStrategicBorderArmyTarget()?.smallID?.() ===
         target?.smallID?.()
@@ -1883,22 +1954,79 @@
       return Math.ceil(distance / speed) <= index;
     }
 
+    collectTrajectorySamCandidates(trajectory, includeUnderConstruction) {
+      const config = this.game.config();
+      if (
+        typeof config?.maxSamRange !== "function" ||
+        typeof config?.defaultNukeSpeed !== "function"
+      ) return null;
+      const maxRange = Number(config.maxSamRange());
+      const speed = Number(config.defaultNukeSpeed());
+      if (
+        typeof this.game.nearbyUnits !== "function" ||
+        typeof this.game.euclideanDistSquared !== "function" ||
+        !Number.isFinite(maxRange) || maxRange < 0 ||
+        !Number.isFinite(speed) || speed <= 0
+      ) return null;
+
+      const stride = 8;
+      // Parabola samples are at most one missile-speed apart; +2 covers tile rounding.
+      const searchRange = maxRange + Math.ceil((speed + 2) * stride);
+      if (!Number.isFinite(searchRange)) return null;
+      const candidates = new Map();
+      const addNearby = (tile) => {
+        for (const sam of this.game.nearbyUnits(
+          tile,
+          searchRange,
+          UNIT.SAMLauncher,
+          undefined,
+          includeUnderConstruction,
+        )) {
+          const unit = sam.unit;
+          candidates.set(unit.id?.() ?? unit, unit);
+        }
+      };
+      for (let index = 0; index < trajectory.length; index += stride) {
+        addNearby(trajectory[index]);
+      }
+      const lastIndex = trajectory.length - 1;
+      if (lastIndex % stride !== 0) addNearby(trajectory[lastIndex]);
+      return [...candidates.values()];
+    }
+
     hasReachableSamAtTrajectoryIndex(
       coverageTile,
       trajectory,
       interceptionIndex,
       excludedSamIds,
-      { interceptingSams = null, includeUnderConstruction = false } = {},
+      {
+        interceptingSams = null,
+        includeUnderConstruction = false,
+        candidateSamUnits = null,
+      } = {},
     ) {
-      const nearbySams = this.game.nearbyUnits(
-        coverageTile,
-        this.game.config().maxSamRange(),
-        UNIT.SAMLauncher,
-        undefined,
-        includeUnderConstruction,
-      );
+      const maxRange = this.game.config().maxSamRange();
+      const nearbySams = candidateSamUnits === null
+        ? this.game.nearbyUnits(
+            coverageTile,
+            maxRange,
+            UNIT.SAMLauncher,
+            undefined,
+            includeUnderConstruction,
+          )
+        : candidateSamUnits;
       let interceptable = false;
-      for (const sam of nearbySams) {
+      for (const candidate of nearbySams) {
+        const sam = candidateSamUnits === null
+          ? candidate
+          : {
+              unit: candidate,
+              distSquared: this.game.euclideanDistSquared(
+                coverageTile,
+                candidate.tile(),
+              ),
+            };
+        if (sam.distSquared > maxRange * maxRange) continue;
         if (!this.isHostileSamIntercept(sam, excludedSamIds)) continue;
         if (!this.canSamReachTrajectoryIndex(sam, trajectory, interceptionIndex)) continue;
         if (interceptingSams === null) return true;
@@ -1928,6 +2056,28 @@
       );
     }
 
+    getNukeTrajectory(spawnTile, targetTile) {
+      const tick = this.game.ticks();
+      if (this._nukeTrajectoryCacheTick !== tick) {
+        this._nukeTrajectoryCacheTick = tick;
+        this._nukeTrajectoryCache = new Map();
+      }
+      let destinations = this._nukeTrajectoryCache.get(spawnTile);
+      if (!destinations) {
+        destinations = new Map();
+        this._nukeTrajectoryCache.set(spawnTile, destinations);
+      }
+      if (!destinations.has(targetTile)) {
+        const pathFinder = UniversalPathFinding.Parabola(this.game, {
+          increment: this.game.config().defaultNukeSpeed(),
+          distanceBasedHeight: true,
+          directionUp: true,
+        });
+        destinations.set(targetTile, pathFinder.findPath(spawnTile, targetTile) ?? []);
+      }
+      return destinations.get(targetTile);
+    }
+
     // ── isTrajectoryInterceptableBySam — NationNukeBehavior.ts:547 ────────────
     // mirroring NukeTrajectoryPreviewLayer.ts logic a bit
     isTrajectoryInterceptableBySam(
@@ -1937,13 +2087,16 @@
       options = {},
     ) {
       const { interceptingSams = null } = options;
-      const pathFinder = UniversalPathFinding.Parabola(this.game, {
-        increment: this.game.config().defaultNukeSpeed(),
-        distanceBasedHeight: true,
-        directionUp: true,
-      });
-      const trajectory = pathFinder.findPath(spawnTile, targetTile) ?? [];
+      // Reuse only route geometry per tick; SAM interception is checked live on every call.
+      const trajectory = this.getNukeTrajectory(spawnTile, targetTile);
       if (trajectory.length === 0) return false;
+      const candidateSamUnits = this.collectTrajectorySamCandidates(
+        trajectory,
+        options.includeUnderConstruction === true,
+      );
+      const interceptionOptions = candidateSamUnits === null
+        ? options
+        : { ...options, candidateSamUnits };
       const untargetable = this.findUntargetableTrajectoryRange(
         trajectory, spawnTile, targetTile,
       );
@@ -1961,7 +2114,7 @@
             trajectory,
             i,
             excludedSamIds,
-            options,
+            interceptionOptions,
           )
         ) {
           if (interceptingSams === null) return true;
@@ -1976,7 +2129,7 @@
         trajectory,
         untargetable,
         excludedSamIds,
-        options,
+        interceptionOptions,
       ) || interceptable;
     }
 
@@ -2125,7 +2278,7 @@
       return MIRV_CAPABLE_SILO_PRIORITY_MULTIPLIER;
     }
 
-    nukeTileScore(tile, silos, targets, nukeType) {
+    nukeTileScore(tile, silos, targets, nukeType, survival = false) {
       const magnitude = this.game.config().nukeMagnitudes(nukeType);
       let tileValue = targets
         .filter((unit) => isInsideNukeDestructionRadius(
@@ -2214,17 +2367,32 @@
       const baseTileValue = tileValue;
       tileValue = Math.max(baseTileValue * 0.2, tileValue - distancePenalty); // Keep at least 20% of structure value
 
-      // Don't target near recent targets
-      // Legendary divergence: the adaptive tier's nuclear strategy is a
-      // sustained bombardment funded by the recurring war chest. The faithful
-      // 1M penalty made one strike poison its own cluster until the 600-tick
-      // memory expired, capping throughput at roughly one launch per window;
-      // a lighter penalty keeps re-strikes on damaged-but-valuable clusters
-      // scorable while still preferring fresh ground.
+      // Don't target near recent targets (see recentStrikePenalty).
+      tileValue -= this.recentStrikePenalty(tile, nukeType, survival);
+
+      // Don't blast our own (or a permanent teammate's) structures: the src
+      // scorer only rewards enemy value, so without this a border/hydro tile
+      // that also erases our silo/SAM/city cluster can win the sweep.
+      tileValue -= this.friendlyFirePenalty(tile, magnitude);
+
+      return tileValue;
+    }
+
+    // Don't target near recent targets
+    // Legendary divergence: the adaptive tier's nuclear strategy is a
+    // sustained bombardment funded by the recurring war chest. The faithful
+    // 1M penalty made one strike poison its own cluster until the 600-tick
+    // memory expired, capping throughput at roughly one launch per window;
+    // a lighter penalty keeps re-strikes on damaged-but-valuable clusters
+    // scorable while still preferring fresh ground. Survival bypass: an
+    // active invasion must keep re-striking the same cratered aggressor land
+    // instead of waiting out the memory window while territory falls.
+    recentStrikePenalty(tile, nukeType, survival = false) {
+      if (survival === true) return 0;
       const recentPenalty = isLegendaryDifficulty(currentDifficulty())
         ? 250_000
         : 1_000_000;
-      tileValue -= this.recentlySentNukes
+      return this.recentlySentNukes
         .filter(([_tick, recentTile, recentNukeType]) => {
           const recentInnerRadius = this.game
             .config()
@@ -2234,13 +2402,6 @@
         })
         .map((_) => recentPenalty)
         .reduce((prev, cur) => prev + cur, 0);
-
-      // Don't blast our own (or a permanent teammate's) structures: the src
-      // scorer only rewards enemy value, so without this a border/hydro tile
-      // that also erases our silo/SAM/city cluster can win the sweep.
-      tileValue -= this.friendlyFirePenalty(tile, magnitude);
-
-      return tileValue;
     }
 
     // ── sendNuke — NationNukeBehavior.ts:750 (now async; addExecution → build menu)
@@ -2276,6 +2437,16 @@
           salvoMetadata,
         );
       }
+      return this.sendImmediateNuke(
+        tile,
+        nukeType,
+        targetPlayer,
+        salvoMetadata,
+        finalLaunchCheck,
+      );
+    }
+
+    async sendImmediateNuke(tile, nukeType, targetPlayer, salvoMetadata, finalLaunchCheck) {
       if (
         !this.isEligibleNukeTarget(targetPlayer, false) ||
         !this.isValidNukeDestination(tile, false, targetPlayer)
@@ -2293,19 +2464,23 @@
       ) {
         return false;
       }
-      // Keep the target-selection policy stable while refreshing launch safety
-      // after the async buildability and counterforce checks.
-      if (
-        !this.isEligibleNukeTarget(targetPlayer, false) ||
-        !this.isValidNukeDestination(tile, false, targetPlayer) ||
-        this.blastHitsFriendlyLand(tile, nukeType) ||
-        !this.nukeLaunchRouteViable(tile, nukeType, targetPlayer, salvoMetadata) ||
-        !(await nukeFinalLaunchCheckPasses(finalLaunchCheck, buildable))
-      ) return false;
+      if (!this.nukeLaunchStillSafe(tile, nukeType, targetPlayer, salvoMetadata)) {
+        return false;
+      }
+      if (!(await nukeFinalLaunchCheckPasses(finalLaunchCheck, buildable))) return false;
       // DIVERGENCE: the source can change while the worker prices this shot.
       if (!this.emitNukeWithSalvoFlight(buildable, tile, salvoMetadata)) return false;
       await this.rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer);
       return true;
+    }
+
+    nukeLaunchStillSafe(tile, nukeType, targetPlayer, salvoMetadata) {
+      // Keep the target-selection policy stable while refreshing launch safety
+      // after the async buildability and counterforce checks.
+      return this.isEligibleNukeTarget(targetPlayer, false) &&
+        this.isValidNukeDestination(tile, false, targetPlayer) &&
+        !this.blastHitsFriendlyLand(tile, nukeType) &&
+        this.nukeLaunchRouteViable(tile, nukeType, targetPlayer, salvoMetadata);
     }
 
     queueDelayedNukeLaunch(tile, nukeType, targetPlayer, delay, salvo = null) {

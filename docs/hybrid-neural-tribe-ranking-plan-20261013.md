@@ -1,0 +1,53 @@
+# N6: native tribe choice, without changing attack admission
+
+Status: Linux and native Windows collection and holdout complete, independently audited. No strength or promotion claim.
+
+## Evidence and hypothesis
+
+N5 completes 224 unique collection games and 48 holdout executions, with no demonstrated learned advantage. Both learned models control one attack among 1,667 decisions. The independent funding audit finds only one funded strategic target among 3,333 target checks per arm. Its 124 same-tick baseline-emission/rejected-check pairs are forced land, boats or tribes; none proves inconsistent admission of an ordinary non-forced strategic land attack. The reserves must remain intact.
+
+The existing learner excludes tribes and is reached after the early expansion lanes. Its effective decision domain is too sparse to establish useful strategic selection. N6 tests a separate, opt-in cold-model control profile, `tribe-ranking-v1`, which also observes real tribe land outcomes and selects the first tribe from the existing cluster planner's funded land choices. Strategic target-versus-WAIT behavior is retained. Tribe selection never substitutes WAIT for the planner.
+
+## Integration boundary
+
+- New profile identity and explicit `actions.tribeRanking` metadata; reject missing frontier features, unknown profiles and mismatched action metadata. Default v2/v3 factories and historical profiles retain their exact identities. Do not restamp existing models.
+- Place selection after `keepLargestTribeClusterCandidates`, and after the existing reinforcement filter/slice in `attackBots`. Preserve candidates, metadata, topology/cluster restrictions, parallelism, RNG calls and existing native ordering of non-selected candidates.
+- Make one first-choice decision per pass rather than pretending each batched send is an independent policy choice. Initially restrict control to the leading contiguous land subset before any boat/unknown-route slot: preceding boat emissions can change the funding state. Boats retain their positions. This is an explicit scope limit, to expand only with separately verified per-send state/trajectory handling.
+- Prepare actual geometry with the existing async caller, then verify tick, generation and model identity. Stale or missing evidence retains native ordering. Cold/shadow profiles preserve ordering while collecting genuine observations.
+- Funding quotes must use the same early candidate, parallel flag and reinforcement plan as the actual sender. Quote calculations restore reservations. Selection cannot weaken reserve, legality, pending duplicate, emission rate, defense or trajectory guards.
+- Actual learned choice, send, acceptance, fresh receipt and outcome retain original policy/episode/model references. Other native sends do not acquire learned control credit. Failure/absence remains unknown or excluded, never an invented receipt/sample.
+
+## Checks and next experiment
+
+Test legacy factory/import compatibility; cold/shadow/disabled behavior; stable equal-score ordering; boats/unknown routes; dead/friendly/illegal/unfunded/duplicate targets; cluster metadata; quote/sender option parity; actual production caller; tick/generation/model drift; failed emission; fresh versus old receipts; and real native SGD updates. Use the normal integration hooks and an independent review of the final source.
+
+Only after these checks, freeze the actual combined source, bundle, engine, harness, configuration, runtime and cold models for fresh native Linux/Windows collection and paired complete holdout. Reuse the established full-map evaluation boundary and declared study budget, with fresh disjoint seeds, immutable provenance and errors/caps distinct from losses. The final model is selected by the declared collection boundary, never an intermediate win or readiness checkpoint. Retain Legendary fallback and no automatic activation or promotion.
+
+Performance is part of acceptance: retain actual decision latency distributions, producer drop counts, timeouts and completed-game throughput for both hosts. Compare the new profile with the same frozen Legendary baseline; distinguish native engine throughput from browser responsiveness. Inspect geometry preparation and candidate traversal for repeated work and stalled async calls before expanding collection. Offline timing alone cannot certify absence of browser frame stutters; that requires an observed Chromium run with the exact published artifact.
+
+## Frozen N6 execution
+
+Evidence directory: `/home/eros/.local/state/ofh-evaluation/20261013-n6-tribe-ranking`.
+Study: `n6-fe467d22-f0b6-4470-be1b-e089cc444690`. The measured native host source closures and cold factory identities agree. Binary diff serialization uses explicit full indices and `core.compression=0` to preserve identical complete patch bytes across Git implementations; no changed files are omitted.
+
+The scientific source is isolated committed HEAD `63f0266a` plus the owned profile/caller/parser/test patch. Concurrent root changes are excluded. Its bundle SHA256 is `8efb737a8a3b9d742b2cddb9af4bdf1e0e26d7b599c04c2a33f8e21d8d5328cb`; frozen plan SHA256 is `f668543c7de378811d0aae25e503b6d5c8dcd6cbf246aed127dfd1f312bd8c77`. Models start from a fresh zero-sample tribe-profile factory, never an imported N5 checkpoint. The declared budget is 112 collection seeds per host, then eight shared disjoint full-game scenarios with baseline/shadow/learned arms: 224 collection games and 48 holdout executions, not 16 independent holdout scenarios.
+
+Both native tiny fixtures produced four confirmed finite collector WAIT outcomes (two zero and two positive), 17 distinct tribe attack receipts/outcomes, final sample counts 7/17/17 and actual readiness. A separate frozen episode accepted and confirmed one learned choice; another native emission remained uncontrolled. Passive opponents, engineered terrain/troops and one replay pass limit this proof to integration. It does not prove changed preference, full-game efficacy, browser responsiveness or native server admission.
+
+## Local results and separate performance correction
+
+Each independent host audit verifies 112 complete collection games and 24 complete holdout executions, zero errors/caps and an unchanged frozen model during holdout. Final samples are 55/799/799 locally and 55/880/880 on Porty. Baseline, shadow and learned each win 0/8 on each host; no efficacy improvement is demonstrated. The total is 224 collection games and 48 holdout executions on eight shared scenarios, not 16 independent scenarios.
+
+Each learned arm accepts 74 controlled sends with 65 fresh receipt confirmations. Of 68 controlled tribe sends per host, 54 have one candidate and 14 have several. Emissions match baseline in scenarios 01–04; actual preferences diverge in 05–08. Each host reports 74 learned-attack reserve checks, 76 legality checks and zero violations in that scope. Other bot actions do not acquire this safety certification. Local/Porty fallback counts are 1,966/2,080. Both supervisors terminate successfully with positive postfreeze verification; the transient Porty SSH disconnect did not interrupt its original supervisor or cause duplicate launches.
+
+The loss of final territory and differing winners in some scenarios cannot be causally assigned to one feature or choice. The first divergent choices vary in distance, shared frontier and cost. What the code does establish is that it fits own land-share change at commitment end, without an explicit win or elapsed-time objective. More real samples and actual control therefore do not, by themselves, establish a stronger policy. Legendary remains the default; the candidate is not automatically activated or promoted.
+
+Full-map learned tribe scoring is a measured hotspot: p95 38.604 ms and maximum 84.207 ms. A separate fresh-seed native CPU diagnostic attributes about 96% of sampled time beneath `rankTribeChoice` to funding inspection. Model-only prediction/export microbenchmarks do not identify the dominant cost. CPU sampling and wall timings are different measurements, and neither certifies Chromium frame behavior.
+
+The first native candidate must pass the existing eligibility/funding/features checks before any reordering is allowed. The correction probes it first and immediately retains native ordering if it fails, eliminating pointless later queries on that pass. The regression is RED with funding probes `[2,3]` and GREEN with `[2]`; quote/sender guards and freshness checks remain intact. This correction is outside the frozen N6 scientific source and does not rewrite its evidence.
+
+An isolated corrected build is compared against the original on the same diagnostic seed and unchanged model, separately from collection and holdout. Both games reach the same native winner at tick 9341, with identical final state, construction events, intent budget, emitted/cumulative intent counts and all 889 attack-admission records. Both accept and confirm five controlled attacks, with zero measured reserve/legality violations. Across 91 measured scoring passes per arm, p95 changes from 15.542 to 10.072 ms; the maximum changes from 23.544 to 25.064 ms. This one CPU-profiled pair supports removing redundant work, not a universal latency improvement or a strength claim. Original and corrected bundles, profiles, event streams and logs remain under `scoring-cpu-profile` and `scoring-cpu-profile-fixed` in the evidence directory.
+
+A second, separate performance correction changes new terminal-return provenance to `offline-terminal-return-v2`: one structured exact origin replaces two escaped identity strings. An actual helper test with four synthetic independent episodes grows from 7,129 to 166,186 bytes before the fix, versus 4,838 to 27,654 bytes after it. Fitting still checks the original identity exactly, and import still validates the entire origin contract and count deltas. Legacy v1 imports and mixed ancestry remain supported without rewriting saved evidence. This removes exponential duplication, not all depth-related validation or ledger costs. No serial terminal training or efficacy claim follows from this synthetic proof alone.
+
+The separate `native-return-v2-proof` fixture and independent artifact review verify one actual frozen strategic attack, its fresh receipt, native winner, complete trajectory and two native SGD head updates. The original model remains unchanged and the fitted model has online learning disabled. All 209 declared harness source hashes reconcile. This engineered frontier fixture verifies the new provenance path; it does not verify full-game tribe-return training, deep model ancestry performance or strength. Its evidence remains separate from N6 collection and holdout.

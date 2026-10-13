@@ -86,13 +86,19 @@ const gameApiSandbox = {
   globalThis: null,
 };
 gameApiSandbox.globalThis = gameApiSandbox;
+const horizonPlannerSandbox = {};
+executeClassicScript(
+  fs.readFileSync(path.join(ROOT, "engine/ingame/auto-bot/legendaryPlanner.js"), "utf8"),
+  horizonPlannerSandbox,
+  { filename: "legendaryPlanner.js" },
+);
 executeClassicScript(
   `${fs.readFileSync(GAME_API_SOURCE, "utf8")}\nglobalThis.__createGameApi = createGameApi;`,
   gameApiSandbox,
   { filename: GAME_API_SOURCE },
 );
 
-let gameApiTick = 1;
+let gameApiTick = 50;
 let playerUnitCalls = 0;
 let globalUnitCalls = 0;
 let playerListCalls = 0;
@@ -123,6 +129,7 @@ const playerCore = {
 };
 const gameApiSource = {
   ticks: () => gameApiTick,
+  ticksSinceStart: () => gameApiTick - 40,
   players: () => {
     playerListCalls += 1;
     return [playerCore];
@@ -152,6 +159,21 @@ const gameApiSource = {
 };
 const wrappedApi = gameApiSandbox.__createGameApi(gameApiSource);
 const gameApi = wrappedApi.game;
+assert.equal(gameApi.ticksSinceStart(), 10);
+assert.equal(
+  horizonPlannerSandbox.legendaryStructureHorizonTicks(
+    {
+      config: () => ({
+        msPerTick: () => 100,
+        gameConfig: () => ({ maxTimerValue: 1 }),
+      }),
+      ticksSinceStart: () => gameApi.ticksSinceStart(),
+    },
+    gameApi.ticks(),
+  ),
+  590,
+  "the live economy horizon uses the wrapper's spawn-adjusted elapsed ticks",
+);
 const playerView = gameApi._wrapPlayer(playerCore);
 await wrappedApi.beginTick(playerCore);
 assert.deepEqual([...playerView.borderTiles()], [1]);

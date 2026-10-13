@@ -9630,3 +9630,65 @@ disabled, then compare both bundles on the same fixed seeds:
 territory; record own structures nuked and nuke launches / detonations to
 explain changes. Report each seed and both bundle hashes; until that control
 exists, treat the evidence as correctness-only and make no efficacy claim.
+
+## 2026-10-13 — production-map Silo/SAM fixtures + cgroup memory constraint
+
+- `test/nuke-map16x-silo-scenario.mts` runs the real target-selection pipeline on
+  production maps Baikal Nuke Wars and Luna via the 16x-reduced `map16x` tiles
+  (Baikal 625x391 / 120k land tiles, Luna 327x877 / 85k, vs. 1.97M / 1.52M on
+  full grids). Both passed: a level-2 SAM forces a 3-slot demand aimed through
+  the SAM at a level-3 City, one Silo upgrade intent is emitted, and the Silo
+  reaches level 3. Wired into `npm run test:nuke-maps` (768 MiB heap cap) and
+  now into the main `npm test` chain before `build-parity`.
+- Operational constraint: this desktop's `chatgpt.slice/chatgpt-backend.slice`
+  cgroup caps at 4 GiB RAM + 1 GiB swap and sits near steady-state ~3.96 GiB.
+  Chained native simulations (tsx + engine + salvo reload windows) pushed it
+  over: kernel OOM killed node/bun/git processes at 20:39 and 20:46 on
+  2026-10-13. Rule of thumb: run light fixtures first, never chain heavy
+  native sims back-to-back, prefer map16x production-map scenarios over full
+  map grids, and re-check `memory.current`/`memory.events` under
+  `/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/chatgpt.slice/`
+  before launching native engine work.
+- The three native Silo scenarios in the `npm test` chain and the map16x
+  fixtures now run with a 768 MiB V8 heap cap, so a runaway simulation dies
+  inside its own process instead of triggering a cgroup-wide OOM.
+
+## 2026-10-13 — post-OOM recovery verification (no code change)
+
+- The historical VM-harness failures (`economyCostQuotes?.has is not a
+function`, `this.player.buildables(...)` TypeError) no longer reproduce:
+  both tests pass on current source, as does the whole light Legendary family
+  (`legendary`, `legendary-scenarios` n=8, enhancements, recent-penalty,
+  train-outflow, economy action-cycle/selection, port seed-selection,
+  seed-components, construction-delay). All exit 0; recent-penalty and
+  seed-selection are silent on success.
+- `node scripts/check-build-parity.mjs` passes and
+  `openfront-helper-dev.service` is active + enabled, serving the 20:37
+  build unchanged.
+- Public-history research: OpenFront exposes no public match-history API;
+  replays are client-side recordings (r/Openfront community answers + a save
+  replay tutorial video). Historical-scenario sourcing therefore stays
+  artificial (the map16x fixtures); there is no external corpus to mine.
+- Native Silo fixtures and `npm run check` stay gated on cgroup headroom:
+  the process needs well under 3.5 GiB before launch, and the cgroup held
+  3.7-4.0 GiB all evening. Evidence remains correctness-only; no efficacy
+  claim is made.
+
+## 2026-10-13 — test-chain OOM caps extended
+
+- A full light sweep ran every `test/*.mjs` with a 512 MiB heap cap and a
+  120 s timeout: 96 green; `smoke.mjs` and `hybrid-combat.mjs` each failed
+  once under back-to-back memory pressure and pass on individual reruns; five
+  heavy harnesses (`hybrid-combat-evaluation`, `hybrid-return-training`,
+  `hybrid-runtime-integration`, `hybrid-trajectory-contract`,
+  `openfront-engine-compat`) hit the resource bounds, confirming they belong
+  in the memory-window validation group.
+- The 768 MiB heap-cap pattern already used by the Silo/map16x scenarios now
+  also covers every `tsx` fixture in the `pretest` chain and the four
+  uncapped heavy `node` entries in `test` (`openfront-engine-compat`,
+  `headless-simulation`, `hybrid-combat-evaluation`,
+  `hybrid-runtime-integration`). A runaway now dies inside its own process
+  instead of triggering a cgroup-wide OOM. package.json diff: the two script
+  lines only; JSON re-parsed valid; no double prefixes.
+- If a capped harness turns out to legitimately need more than 768 MiB, raise
+  that entry's cap deliberately during the memory-window validation run.

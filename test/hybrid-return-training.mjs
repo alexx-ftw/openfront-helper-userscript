@@ -68,7 +68,7 @@ for (const profile of [undefined, "frontier-v1"]) {
       complete: true,
       performanceClaim: false,
     });
-    assert.equal(trained.model.offline.originModelIdentity, input.selection.modelIdentity);
+    assert.equal(JSON.stringify(trained.model.offline.originModel), input.selection.modelIdentity);
     assert.deepEqual(trained.model.offline.headUpdates, { wait: 2, act: 1, target: 1 });
     assert.ok(trained.model.models.wait.outputBias * (win ? 1 : -1) > 0);
     assert.ok(trained.model.models.act.outputBias * (win ? 1 : -1) > 0);

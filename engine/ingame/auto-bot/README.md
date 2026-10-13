@@ -33,6 +33,23 @@ remain excluded. Outcomes record the pre-existing troop amount and the
 not only the reinforcement's marginal effect. This expands real observation
 coverage without changing attack funding, reserves, legality or payloads.
 
+The opt-in `tribe-ranking-v1` frontier profile additionally observes confirmed
+tribe land commitments and chooses the first funded land tribe within the native
+cluster/reinforcement plan. It preserves the remaining order and boat positions;
+it never substitutes WAIT for tribe expansion. Cold/shadow or stale evidence keeps
+native ordering. A fresh model must be trained under this profile; existing
+checkpoints cannot be relabelled. Timing includes geometry, scoring and selected
+send, with separate measured phase durations. This profile has no demonstrated
+full-match advantage yet.
+
+The experimental headless `tribe-only-terminal-v1` frontier profile gives only
+TARGET inference authority over the same funded native tribe subset. Legendary
+retains strategic ACT/WAIT and native commitment rules. All existing cold gates
+remain mandatory. Its terminal fitter requires genuine controlled tribe receipts
+and native winner evidence with gammaTick=1; ACT updates are auxiliary and WAIT
+is inactive. Bootstrap tactical counts are not terminal training evidence. No
+default setting or model activation changes with this profile.
+
 The feature contract uses troop-capacity ratios, own/target land fractions,
 incoming pressure, relative armies, capture budget and existing commitments. It
 has no fixed opponent slots or wait sentinel inside a truncated list. A unit ridge

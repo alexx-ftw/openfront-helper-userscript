@@ -1179,7 +1179,7 @@ function stripAttackAdmissionFailureBoundaries(source) {
     ],
     ["    async observeAttackAdmission(", "\n    recordAttackEmission(", dispatchPattern],
   ];
-  return boundaries.reduce(
+  const checked = boundaries.reduce(
     (checked, [start, end, pattern]) =>
       stripAuditedFunctionBoundary(
         checked,
@@ -1190,11 +1190,28 @@ function stripAttackAdmissionFailureBoundaries(source) {
       ),
     source,
   );
+  return stripAuditedFunctionBoundary(
+    checked,
+    "    async hybridBorderQuery(",
+    "\n    hybridGeometryGenerationIsCurrent(",
+    /async hybridBorderQuery\(actor, tolerateProbeFailure\) \{\s*const native = actor\.__src \?\? actor;\s*if \(typeof native\.borderTiles !== "function"\) return null;\s*if \(!tolerateProbeFailure\) return native\.borderTiles\(\);\s*try \{ return await native\.borderTiles\(\); \}\s*\/\/ eslint-disable-next-line no-restricted-syntax -- An optional worker query may be unavailable; geometry\/model faults outside it still propagate\.\s*catch \{ return null; \}\s*\}/g,
+    "only the explicitly optional border worker query may fail closed to native ordering",
+  );
 }
 
 const attackAdmissionSource = fs.readFileSync(
   path.join(root, "engine/ingame/auto-bot/attackBehavior.js"),
   "utf8",
+);
+assert.throws(
+  () =>
+    stripAttackAdmissionFailureBoundaries(
+      attackAdmissionSource.replace(
+        "if (!tolerateProbeFailure) return native.borderTiles();",
+        "if (!tolerateProbeFailure) return null;",
+      ),
+    ),
+  /only the explicitly optional border worker query/,
 );
 for (const handler of attackAdmissionSource.matchAll(
   /catch\s*\(error\)\s*\{[^}]*throw (?:originalError \?\? )?error;\s*\}/g,
