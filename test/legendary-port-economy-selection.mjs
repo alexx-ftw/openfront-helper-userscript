@@ -424,6 +424,130 @@ const OCEAN = -1;
   );
 }
 
+// A rerouted member of a merged multi-port cohort sheds exactly its own slot:
+// the remaining same-owner ports keep the old schedule instead of the whole
+// cohort keeping the rerouted port's old schedule on top of its new one.
+{
+  const horizon = 8;
+  const config = {
+    tradeShipSpawnRate: (_rejections, ships) => (ships < 1 ? 1 : 10),
+  };
+  const rerouteCandidate = {
+    portReadyAt: 0,
+    portRoutes: [{ weight: 1, distance: 100 }],
+    portInboundSources: [
+      {
+        level: 1,
+        readyAtTicks: 0,
+        routes: [{ weight: 1, distance: 100 }],
+        beforeRoutes: [{ weight: 1, distance: 1 }],
+      },
+    ],
+  };
+  const projection = sandbox.legendaryProjectEconomyFleets(
+    {
+      tradeShipCount: 0,
+      fleetProducerSupply: {
+        portOwners: [
+          {
+            ports: [
+              { level: 1, readyAtTicks: 0, routes: [{ weight: 1, distance: 1 }] },
+              { level: 1, readyAtTicks: 0, routes: [{ weight: 1, distance: 1 }] },
+            ],
+          },
+        ],
+        trainOwners: [],
+      },
+    },
+    config,
+    horizon,
+    rerouteCandidate,
+  );
+  const expected = new Array(horizon + 1);
+  const arrivals = new Float64Array(horizon + 1);
+  const rateCache = new Map();
+  let ships = 0;
+  for (let tick = 0; tick <= horizon; tick++) {
+    if (tick > 0) ships = Math.max(0, ships - arrivals[tick]);
+    expected[tick] = ships;
+    if (tick === horizon) break;
+    const rate = sandbox.legendaryExpectedTradeRateAtFleet(1, ships, config, rateCache);
+    arrivals[tick + 1] += rate;
+    ships += 3 * rate;
+  }
+  for (let tick = 0; tick <= horizon; tick++) {
+    assert.ok(
+      Math.abs(projection.after.tradeShipCounts[tick] - expected[tick]) < 1e-12,
+      `merged cohort sheds only the rerouted member at tick ${tick}`,
+    );
+  }
+}
+
+// Substitution is owner-scoped: rerouting one owner's source port must not
+// consume a different owner's identical cohort.
+{
+  const horizon = 8;
+  const config = {
+    tradeShipSpawnRate: (_rejections, ships) => (ships < 1 ? 1 : 10),
+  };
+  const rerouteCandidate = {
+    portReadyAt: 0,
+    portRoutes: [{ weight: 1, distance: 100 }],
+    portInboundSources: [
+      {
+        ownerId: "1",
+        level: 1,
+        readyAtTicks: 0,
+        routes: [{ weight: 1, distance: 100 }],
+        beforeRoutes: [{ weight: 1, distance: 1 }],
+      },
+    ],
+  };
+  const projection = sandbox.legendaryProjectEconomyFleets(
+    {
+      tradeShipCount: 0,
+      fleetProducerSupply: {
+        portOwners: [
+          {
+            ownerId: "1",
+            ports: [{ level: 1, readyAtTicks: 0, routes: [{ weight: 1, distance: 1 }] }],
+          },
+          {
+            ownerId: "2",
+            ports: [{ level: 1, readyAtTicks: 0, routes: [{ weight: 1, distance: 1 }] }],
+          },
+        ],
+        trainOwners: [],
+      },
+    },
+    config,
+    horizon,
+    rerouteCandidate,
+  );
+  const expected = new Array(horizon + 1);
+  const arrivals = new Float64Array(horizon + 1);
+  const rateCache = new Map();
+  let ships = 0;
+  for (let tick = 0; tick <= horizon; tick++) {
+    if (tick > 0) ships = Math.max(0, ships - arrivals[tick]);
+    expected[tick] = ships;
+    if (tick === horizon) break;
+    const rate = sandbox.legendaryExpectedTradeRateAtFleet(1, ships, config, rateCache);
+    arrivals[tick + 1] += rate;
+    ships += 3 * rate;
+  }
+  for (let tick = 0; tick <= horizon; tick++) {
+    assert.ok(
+      Math.abs(projection.after.tradeShipCounts[tick] - expected[tick]) < 1e-12,
+      `cross-owner substitution keeps the untouched owner's cohort at tick ${tick}`,
+    );
+  }
+  assert.ok(
+    projection.before.tradeShipCounts[horizon] !== expected[horizon],
+    "the two short-route baselines differ from the substituted fleet path",
+  );
+}
+
 // Live trade economy formulas (openfront-engine Config.ts):
 // tradeShipGold = 75k/(1+exp(-0.03*(dist-300))) + 50*dist,
 // saturation and spawn-rate (pity timer included) follow the same source.

@@ -464,6 +464,41 @@ function legendaryNormalizedTradeRoutes(routes) {
   }));
 }
 
+function legendaryTradeCohortOwnerId(ownerId) {
+  return ownerId === null || ownerId === undefined ? "" : String(ownerId);
+}
+
+function legendaryTradeReplacementKey(ownerId, level, readyAtTicks, routes) {
+  return `${legendaryTradeCohortOwnerId(ownerId)}|${Math.max(1, Number(level) || 1)}:` +
+    `${Math.max(0, Number(readyAtTicks) || 0)}:` +
+    legendaryNormalizedTradeRoutes(routes)
+      .map((route) => `${route.travelTicks}:${route.weight}`).join(",");
+}
+
+function legendarySubstitutedTradePortCohorts(portOwners, replacements) {
+  return legendaryTradePortCohorts(portOwners.map((owner) => {
+    const ownerId = legendaryTradeCohortOwnerId(owner.ownerId);
+    const ports = (owner.ports ?? []).flatMap((group) => {
+      const key = legendaryTradeReplacementKey(
+        ownerId,
+        group.level,
+        group.readyAtTicks,
+        group.routes,
+      );
+      const replaced = replacements.reduce(
+        (total, replacement) => replacement.ownerId === ownerId &&
+            replacement.beforeKey === key
+          ? total + 1
+          : total,
+        0,
+      );
+      const count = Math.max(0, (Number(group.count) || 0) - replaced);
+      return count > 0 ? [{ ...group, count }] : [];
+    });
+    return ports.length > 0 ? { ...owner, ports } : null;
+  }).filter(Boolean));
+}
+
 function legendaryTradePortCohorts(portOwners) {
   const cohorts = new Map();
   for (const owner of portOwners) {
@@ -674,26 +709,25 @@ function legendaryProjectEconomyFleets(inputs, config, horizon, candidate) {
       const readyAtTicks = Math.max(0, Number(source.readyAtTicks) || 0);
       return {
         routes,
-        beforeKey: `${level}:${readyAtTicks}:` +
-          beforeRoutes.map((route) => `${route.travelTicks}:${route.weight}`).join(","),
+      ownerId: legendaryTradeCohortOwnerId(source.ownerId),
+      beforeKey: legendaryTradeReplacementKey(
+        source.ownerId,
+        level,
+        readyAtTicks,
+        source.beforeRoutes,
+      ),
       };
     })
     .filter(Boolean);
   const project = (includeCandidate, only = null) => {
     const includeTrains = only !== "trade";
     const includeTradeShips = only !== "train";
-    // Replace an already-productive source's cohort only when it is alone in
-    // its level/readiness cohort; merged cohorts keep the old schedule.
+    // Replace each rerouted source's per-owner cohort exactly: single-port
+    // cohorts vanish, merged cohorts shed only the replaced member counts.
     const activeTradePortCohorts = !includeCandidate ||
         candidateTradeReplacements.length === 0
       ? tradePortCohorts
-      : tradePortCohorts.filter((cohort) =>
-          cohort.count !== 1 ||
-          !candidateTradeReplacements.some((replacement) =>
-            replacement.beforeKey === `${cohort.level}:${cohort.readyAtTicks}:` +
-              cohort.routes.map((route) => `${route.travelTicks}:${route.weight}`).join(","),
-          ),
-        );
+      : legendarySubstitutedTradePortCohorts(portOwners, candidateTradeReplacements);
     const trainCounts = includeTrains ? new Array(ticks + 1) : null;
     const tradeShipCounts = includeTradeShips ? new Array(ticks + 1) : null;
     const trainArrivals = includeTrains && trainLifetime > 0
@@ -1028,6 +1062,7 @@ function legendaryPortCandidateProjectionSignature(profile) {
 function legendaryPortCandidateInboundSources(inboundSources) {
   return (inboundSources ?? [])
     .map((source) => ({
+      ownerId: source.ownerId,
       level: source.level,
       readyAtTicks: source.constructionDelayTicks,
       routes: source.afterProfile?.routes ?? [],

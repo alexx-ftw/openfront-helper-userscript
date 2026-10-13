@@ -10683,7 +10683,11 @@
             }];
           });
         return ports.length > 0
-          ? [{ isBuilder: sameOwner(owner, ownPlayer), ports }]
+          ? [{
+            ownerId: String(owner?.smallID?.() ?? ""),
+            isBuilder: sameOwner(owner, ownPlayer),
+            ports,
+          }]
           : [];
       });
       const fleetProducerSupply = { trainOwners, portOwners };
@@ -11568,6 +11572,7 @@
     legendaryPortInboundSource(source, profiles) {
       if (!profiles.afterProfile) return null;
       return {
+        ownerId: String(source.owner?.smallID?.() ?? ""),
         level: source.unit?.isUnderConstruction?.() === true
           ? 1
           : Math.max(1, Math.floor(Number(source.unit?.level?.() ?? 1))),
