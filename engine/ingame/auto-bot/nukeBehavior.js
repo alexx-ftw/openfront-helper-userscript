@@ -2858,7 +2858,7 @@
       return sorted.slice(bestStart, bestStart + bestCount);
     }
 
-    createSamOverwhelmPlan(targetSam, silos) {
+    createSamOverwhelmPlan(targetSam, silos, nukeTarget = null) {
       const demandTargetTile = state.nukeWantSlots?.targetSamId;
       const pinnedTile =
         demandTargetTile !== null &&
@@ -2866,7 +2866,7 @@
         String(state.nukeWantSlots.targetSamId) === String(targetSam.id())
           ? state.nukeWantSlots.targetTile
           : null;
-      const targetTile = pinnedTile ?? this.samSalvoAimTile(targetSam);
+      const targetTile = pinnedTile ?? this.samSalvoAimTile(targetSam, nukeTarget);
       if (targetTile == null ||
           (pinnedTile != null && this.blastHitsFriendlyLand(targetTile, UNIT.AtomBomb))) {
         return null;
@@ -2899,13 +2899,16 @@
     // qualify, prefer the one whose blast also covers the most enemy
     // structure value — measured bombs routinely landed on structure-poor
     // tiles and converted a full salvo into zero destroyed gold.
-    samSalvoAimTile(targetSam) {
+    samSalvoAimTile(targetSam, nukeTarget = null) {
       const samTile = targetSam.tile();
       const magnitude = this.game.config().nukeMagnitudes(UNIT.AtomBomb);
       const radius = Number(magnitude?.outer) || 0;
       if (radius <= 0) return this.safeSamSalvoAimTile(samTile);
       const enemy = targetSam.owner?.();
       const structures = unitsOfTypes(enemy);
+      if (nukeTarget?.smallID?.() !== enemy?.smallID?.()) {
+        structures.push(...unitsOfTypes(nukeTarget));
+      }
       if (structures.length === 0) return this.safeSamSalvoAimTile(samTile);
       const bestTile = this.bestSamSalvoAimTile(samTile, structures, magnitude, radius);
       return bestTile !== null && !this.blastHitsFriendlyLand(bestTile, UNIT.AtomBomb)
@@ -3229,7 +3232,7 @@
     }
 
     async tryEnemySamSalvo(targetSam, nukeTarget, silos, atomCost, allowHeldAtoms) {
-      const plan = this.createSamOverwhelmPlan(targetSam, silos);
+      const plan = this.createSamOverwhelmPlan(targetSam, silos, nukeTarget);
       if (!plan) {
         state.nukeWantSlots = null;
         this._samDemandRequest = null;

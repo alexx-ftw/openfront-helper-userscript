@@ -449,4 +449,46 @@ function makeWorld({
   assert.equal(emitted.length, 0, "no upgrade for disabled silos");
 }
 
+// A silo that cools down during the async upgrade probe now serves the queue.
+{
+  const { behavior, emitted } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5],
+    level: 1,
+  });
+  let readyChecks = 0;
+  behavior.legendaryReadyShotTotal = () => (++readyChecks > 1 ? 1 : 0);
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
+    false,
+    "a newly ready shot prevents a stale Silo upgrade",
+  );
+  assert.equal(readyChecks, 2, "recheck ready slots after the async upgrade probe");
+  assert.equal(emitted.length, 0, "do not spend on an upgrade after cooldown completes");
+}
+
+// The maxed-Silo spawn fallback also rechecks readiness after its async probe.
+{
+  const { behavior } = makeWorld({
+    pending: [{ nukeType: UNIT.AtomBomb }],
+    queue: [5, 5, 5],
+    level: 5,
+  });
+  let readyChecks = 0;
+  const spawns = [];
+  behavior.legendaryReadyShotTotal = () => (++readyChecks > 1 ? 1 : 0);
+  behavior.findBestStructureToUpgrade = async () => null;
+  behavior.maybeSpawnNuclearSlotPressureSilo = () => {
+    spawns.push(UNIT.MissileSilo);
+    return true;
+  };
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNuclearSlotPressure(),
+    false,
+    "a newly ready shot prevents a stale fallback Silo build",
+  );
+  assert.equal(readyChecks, 2, "recheck ready slots before falling back to a build");
+  assert.equal(spawns.length, 0, "do not add a Silo once the queue has a ready shot");
+}
+
 process.stdout.write("silo nuclear slot pressure tests passed\n");

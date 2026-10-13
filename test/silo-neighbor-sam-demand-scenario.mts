@@ -2,6 +2,7 @@ import {
   setupNativeGame,
   attachNativeBot,
   createNativeLoop,
+  useProductionNukeMagnitudes,
 } from "./helpers/native-bot-fixture.mts";
 import assert from "node:assert/strict";
 import { UnitType } from "../openfront-engine/src/core/game/Game";
@@ -17,11 +18,14 @@ const neighbour = game.player("neighbour");
 const source = game.ref(1, 1);
 const cityTile = game.ref(80, 1);
 const samTile = game.ref(83, 1);
+const decoyCityTile = game.ref(140, 1);
+useProductionNukeMagnitudes(game);
 attacker.addGold(100_000_000n);
 attacker.conquer(source);
 const silo = attacker.buildUnit(UnitType.MissileSilo, source, {});
 rich.conquer(cityTile);
 const valuableCity = rich.buildUnit(UnitType.City, cityTile, {});
+for (let level = 1; level < 4; level++) valuableCity.increaseLevel();
 const { runner, step } = createNativeLoop(game, "silo-neighbor-sam-demand-scenario", (update) =>
   bot.applyGameUpdate(update),
 );
@@ -39,6 +43,10 @@ try {
   // SAM, price two Atom slots, and upgrade the level-1 Silo (one slot short).
   neighbour.conquer(samTile);
   const neighbourSam = neighbour.buildUnit(UnitType.SAMLauncher, samTile, {});
+  neighbour.conquer(decoyCityTile);
+  const decoyCity = neighbour.buildUnit(UnitType.City, decoyCityTile, {});
+  decoyCity.increaseLevel();
+  decoyCity.increaseLevel();
   // gameApi caches unit snapshots per authoritative tick; a launcher built
   // mid-tick is only observable after the next one, like in a real match.
   step();
@@ -49,6 +57,16 @@ try {
     "the demand pins the neighbour SAM covering the rich target",
   );
   assert.equal(state.nukeWantSlots?.need, 2, "the level-1 neighbour SAM requires two Atom slots");
+  const aim = state.nukeWantSlots.targetTile;
+  const blastRadius = game.config().nukeMagnitudes(UnitType.AtomBomb).outer;
+  assert.ok(
+    game.euclideanDistSquared(aim, valuableCity.tile()) < blastRadius ** 2,
+    "the SAM-demand aim includes the selected rich target's City",
+  );
+  assert.ok(
+    game.euclideanDistSquared(aim, decoyCity.tile()) >= blastRadius ** 2,
+    "the aim does not follow the neighbour's valuable decoy away from the selected target",
+  );
   const upgrades = bot.intentBuffer.filter(
     (intent) => intent.type === "upgrade_structure" && intent.unit === UnitType.MissileSilo,
   );

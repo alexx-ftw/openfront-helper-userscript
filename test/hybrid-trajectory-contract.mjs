@@ -52,6 +52,7 @@ import {
 } from "../scripts/headless/hybrid-trajectory-contract.mjs";
 import { loadNativeContract } from "../scripts/headless/train-hybrid-returns.mjs";
 import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { createAttackBehaviorSandbox } from "./helpers/attack-behavior-sandbox.mjs";
 
 function warmSnapshot(C) {
   const snapshot = C.create();
@@ -1074,7 +1075,343 @@ export function trajectoryChecks() {
   );
 }
 
+function waitProducerRealm(mode = "learned") {
+  const input = fixture({ actions: [] });
+  input.selection.manifest.mode = mode;
+  input.selection.manifest.runID = hash(
+    canonical([input.selection.manifest.experimentID, input.selection.manifest.seed, mode]),
+  );
+  input.dataset.coverage[0].runID = input.selection.manifest.runID;
+  input.nativeRun.result.hybridCombat.mode = mode;
+  input.nativeRun.result.hybridEvaluation.latestClosure.runIdentity =
+    input.selection.manifest.runID;
+  const events = [];
+  const sandbox = createAttackBehaviorSandbox();
+  sandbox.window = { localStorage: null };
+  sandbox.roundLogRecord = (_name, entry) =>
+    events.push({
+      ...JSON.parse(JSON.stringify(entry)),
+      runIdentity: input.selection.manifest.runID,
+    });
+  const { C, policy } = executeClassicScript(
+    readRepositoryFile("engine/ingame/auto-bot/hybridModelContract.js") +
+      "\n" +
+      readRepositoryFile("engine/ingame/auto-bot/hybridCombat.js") +
+      "\n({ C: HybridCombatContract, policy: hybridCombatPolicy });",
+    sandbox,
+  );
+  policy.importModel(warmSnapshot(C));
+  policy.configure({ mode, learning: false });
+  let tick = 2;
+  let attacks = [];
+  const target = {
+    smallID: () => 2,
+    id: () => "enemy",
+    type: () => "NATION",
+    isPlayer: () => true,
+    isAlive: () => true,
+    troops: () => 20,
+    numTilesOwned: () => 10,
+  };
+  const behavior = {
+    player: {
+      smallID: () => 1,
+      canAttackPlayer: () => true,
+      sharesBorderWith: () => true,
+      isFriendly: () => false,
+      troops: () => 50,
+      numTilesOwned: () => 20,
+    },
+    game: { config: () => ({ maxTroops: () => 100 }), numLandTiles: () => 100 },
+    currentAttackDecisionTick: () => tick,
+    incomingHostileAttackPressure: () => 0,
+    getEarlyGameLiveReserveTroops: () => 10,
+    getPlayerAttackPreferredTroopFloor: () => 20,
+    getOutboundAttackSnapshot: () => attacks,
+    getOutboundTransportSnapshot: () => [],
+    getOutboundAttackTargetKey: (target) => target.smallID(),
+    hybridCombatGeometry: () =>
+      targetEvidence(C, undefined, tick, policy.gateFeatures(behavior)).geometry,
+  };
+  behavior.sendAttack = async (selected) => {
+    const observation = policy.actionObservation(behavior, selected);
+    policy.recordAcceptedAction(behavior, selected, observation, policy.generation);
+    return true;
+  };
+  const finish = () => {
+    bindProducerFixture(input, policy, events);
+    return input;
+  };
+  return {
+    input,
+    sandbox,
+    policy,
+    target,
+    behavior,
+    finish,
+    setTick: (value) => {
+      tick = value;
+    },
+    setAttacks: (value) => {
+      attacks = value;
+    },
+  };
+}
+
+async function produceControl(f, step, action) {
+  const { policy, behavior, target } = f;
+  const gate = policy.gateFeatures(behavior);
+  const evidence = {};
+  const features = policy.targetFeatures(behavior, target, gate, undefined, { evidence });
+  const ranked = [{ target, features, geometry: evidence.geometry, score: 0 }];
+  policy.proposal = { ...policy.decisionIdentity(behavior), step, funnel: { dispatchAttempts: 0 } };
+  policy.scoredProposal(behavior, ranked, {
+    gate,
+    wait: Number(action === "wait"),
+    act: Number(action === "attack"),
+    utilityMargin: action === "attack" ? 1 : -1,
+  });
+  policy.pendingWait(behavior, gate);
+  assert.equal(
+    await policy.controlProposal(behavior, ranked, action === "wait"),
+    policy.mode === "learned",
+  );
+}
+
+async function busyWaitFixture(ownerAction) {
+  const f = waitProducerRealm();
+  await produceControl(f, 0, ownerAction);
+  if (ownerAction === "attack") {
+    f.setAttacks([{ id: "busy-owner-receipt", target: f.target, targetKey: "2", troops: 10 }]);
+    f.setTick(3);
+    f.policy.observe(f.behavior);
+  }
+  const owner = f.policy.pending;
+  await produceControl(f, 1, "wait");
+  assert.equal(f.policy.pending, owner, "busy WAIT preserves the earlier observation owner");
+  f.setTick(ownerAction === "attack" ? 3 : 4);
+  f.setAttacks([]);
+  f.policy.observe(f.behavior);
+  return f.finish();
+}
+
+function emissionSender(f, emitted) {
+  const sender = Object.create(f.sandbox.AttackBehavior.prototype);
+  Object.assign(sender, {
+    player: f.behavior.player,
+    game: { owner: () => f.target },
+    currentAttackDecisionTick: f.behavior.currentAttackDecisionTick,
+    captureSameClanNukeTerrain: () => {},
+    reconcileOutboundAttackIntentCommitments: () => {},
+    getForceAttackTroops: () => 30,
+    canEmitBoatToDestination: () => true,
+    boatLaunchWarshipDanger: () => false,
+    boatDestinationReserved: () => false,
+    resolveBoatTroops: (troops) => troops,
+    recordOutboundAttackIntent: () => {},
+    recordBoatDestinationIntent: () => {},
+  });
+  Object.assign(f.sandbox, {
+    discoverCtors: () => ({ attack: () => {}, boat: () => {} }),
+    getEventBus: () => ({}),
+    hasAttackIntentRateCapacity: () => true,
+    emitIntent: emitted,
+    setLastAction: () => {},
+    tr: (value) => value,
+  });
+  return sender;
+}
+
+async function intervenedWaitFixture(path, mode = "learned") {
+  const f = waitProducerRealm(mode);
+  await produceControl(f, 0, "wait");
+  let emitted = false;
+  const sender = emissionSender(f, () => emitted);
+  const send = () => {
+    if (path === "boat") return sender.emitBoat(7, 30, "fixture");
+    if (path === "land")
+      return sender.emitObservedAttackOrder(f.sandbox.discoverCtors().attack, 0, 1.5, "land");
+    return sender.forceSendAttack(f.target);
+  };
+  const owner = f.policy.pending;
+  assert.equal(await send(), false);
+  assert.equal(f.policy.pending, owner, "rejected emission must preserve controlled WAIT");
+  emitted = true;
+  assert.equal(await send(), true);
+  // The real dispatcher must censor at emission, not at a proposed/rejected order.
+  f.setTick(5);
+  await produceControl(f, 1, "wait");
+  f.setTick(6);
+  f.policy.observe(f.behavior);
+  return f.finish();
+}
+
+function rejectsWaitMutation(input, change) {
+  const invalid = structuredClone(input);
+  change(invalid);
+  assert.throws(
+    () => validateFixture(invalid),
+    /busy|WAIT|emission|owner|reference|receipt|sequence|Orphan|Truncated|ledger/i,
+  );
+}
+
+async function waitExclusionChecks() {
+  for (const action of ["attack", "wait"]) {
+    const input = await busyWaitFixture(action);
+    const trajectory = validateFixture(input);
+    assert.deepEqual(
+      trajectory.records.map((record) => record.decisionStep),
+      [0],
+    );
+    assert.equal(trajectory.context.coverage.decisionCount, 2);
+    assert.equal(trajectory.context.coverage.excluded[0].decisionStep, 1);
+    assert.equal(trajectory.context.coverage.excluded[0].reason, "censored-busy-wait");
+    assert.equal(
+      input.nativeRun.result.hybridCombat.diagnostics.control.controlledWaits,
+      action === "wait" ? 2 : 1,
+    );
+    const omission = (x) =>
+      x.dataset.records.find((r) => r.event.phase === "controlled-wait-busy").event;
+    rejectsWaitMutation(input, (x) => {
+      omission(x).owner.decisionStep = 1;
+    });
+    rejectsWaitMutation(input, (x) => {
+      omission(x).owner.decisionSequence++;
+    });
+    rejectsWaitMutation(input, (x) => {
+      omission(x).owner.actionTick++;
+    });
+    rejectsWaitMutation(input, (x) => {
+      omission(x).owner.actorSmallID = 99;
+    });
+    rejectsWaitMutation(input, (x) => {
+      omission(x).owner.modelIdentity = "{}";
+    });
+    rejectsWaitMutation(input, (x) => {
+      omission(x).owner.targetSmallID = 99;
+    });
+    rejectsWaitMutation(input, (x) => {
+      omission(x).reason = "unknown-cancellation";
+    });
+    rejectsWaitMutation(input, (x) => {
+      omission(x).decisionSequence++;
+    });
+    if (action === "attack")
+      rejectsWaitMutation(input, (x) => {
+        const receipt = x.dataset.records.find(
+          (r) => r.event.kind === "hybrid-combat-receipt",
+        ).event;
+        receipt.receiptID = "unmatched";
+      });
+  }
+  for (const path of ["forced-land", "boat", "land"]) {
+    const input = await intervenedWaitFixture(path);
+    const trajectory = validateFixture(input);
+    assert.deepEqual(
+      trajectory.records.map((record) => record.decisionStep),
+      [1],
+    );
+    assert.equal(trajectory.context.coverage.decisionCount, 2);
+    assert.equal(trajectory.context.coverage.excluded[0].reason, "censored-wait-intervention");
+    assert.equal(trajectory.context.coverage.excluded[0].decisionStep, 0);
+    const proof = (x) => x.dataset.records.find((r) => r.event.phase === "emission").event;
+    const outcome = (x) =>
+      x.dataset.records.find(
+        (r) =>
+          r.event.reason === "competing-attack-emission" &&
+          r.event.kind === "hybrid-combat-outcome",
+      ).event;
+    rejectsWaitMutation(input, (x) => {
+      outcome(x).emissionSequence = 99;
+    });
+    rejectsWaitMutation(input, (x) => {
+      const rows = x.dataset.records;
+      const proofEvent = proof(x);
+      const decision = rows.find(
+        (r) => r.event.kind === "hybrid-combat-decision" && r.event.step === 0,
+      ).event;
+      const proofIndex = rows.findIndex((r) => r.event === proofEvent);
+      const decisionIndex = rows.findIndex((r) => r.event === decision);
+      [rows[proofIndex], rows[decisionIndex]] = [rows[decisionIndex], rows[proofIndex]];
+      [proofEvent.sequence, decision.sequence] = [decision.sequence, proofEvent.sequence];
+      outcome(x).emissionSequence = proofEvent.sequence;
+      const result = x.nativeRun.result.hybridEvaluation;
+      result.ledger.entries = [...rows.map((r) => r.event), result.latestClosure];
+    });
+    rejectsWaitMutation(input, (x) => {
+      proof(x).emission.emitted = false;
+    });
+    rejectsWaitMutation(input, (x) => {
+      proof(x).emission.actorSmallID = 99;
+    });
+    rejectsWaitMutation(input, (x) => {
+      proof(x).emission.tick = 0;
+    });
+    rejectsWaitMutation(input, (x) => {
+      proof(x).emission.payloadTroops = 0;
+    });
+    rejectsWaitMutation(input, (x) => {
+      proof(x).emission.path = "unknown";
+    });
+    rejectsWaitMutation(input, (x) => {
+      outcome(x).reason = "unknown-cancellation";
+    });
+    rejectsWaitMutation(input, (x) => {
+      proof(x).decisionSequence++;
+    });
+    rejectsWaitMutation(input, (x) => {
+      outcome(x).reward = 0.2;
+    });
+    rejectsWaitMutation(input, (x) => {
+      outcome(x).truncated = false;
+    });
+    rejectsWaitMutation(input, (x) => {
+      x.nativeRun.result.hybridEvaluation.ledger.entries =
+        x.nativeRun.result.hybridEvaluation.ledger.entries.filter((e) => e.phase !== "emission");
+    });
+  }
+  await uncontrolledWaitExclusionChecks();
+  process.stdout.write("WAIT exclusions: actual producer/dispatcher and validator passed\n");
+}
+
+async function uncontrolledWaitExclusionChecks() {
+  for (const path of ["forced-land", "boat", "land"]) {
+    const input = await intervenedWaitFixture(path, "shadow");
+    const trajectory = validateFixture(input);
+    assert.equal(trajectory.trainable, false);
+    assert.equal(trajectory.records.length, 0);
+    assert.ok(
+      trajectory.excluded.some(
+        (entry) => entry.reason === "uncontrolled-censored-wait-intervention",
+      ),
+    );
+    assert.equal(input.nativeRun.result.hybridCombat.diagnostics.control.controlledWaits, 0);
+  }
+  const unknownOwner = waitProducerRealm();
+  const observation = unknownOwner.policy.actionObservation(
+    unknownOwner.behavior,
+    unknownOwner.target,
+  );
+  unknownOwner.policy.recordAcceptedAction(
+    unknownOwner.behavior,
+    unknownOwner.target,
+    observation,
+    unknownOwner.policy.generation,
+  );
+  unknownOwner.setAttacks([
+    { id: "uncontrolled-owner", target: unknownOwner.target, targetKey: "2", troops: 10 },
+  ]);
+  unknownOwner.setTick(3);
+  unknownOwner.policy.observe(unknownOwner.behavior);
+  await produceControl(unknownOwner, 0, "wait");
+  unknownOwner.setTick(4);
+  unknownOwner.setAttacks([]);
+  unknownOwner.policy.observe(unknownOwner.behavior);
+  assert.throws(() => validateFixture(unknownOwner.finish()), /Busy WAIT owner scope mismatch/);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   trajectoryChecks();
   await producerChecks();
+  await waitExclusionChecks();
 }

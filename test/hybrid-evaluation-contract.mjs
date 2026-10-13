@@ -13,6 +13,7 @@ const {
   summarizeTelemetry,
   transitionDiagnostic,
   validateTransitions,
+  outcomeTransitionFlags,
   assessCandidatePromotion,
   FifoTransport,
   selectReplayGroup,
@@ -210,6 +211,30 @@ assert.equal(
   false,
 );
 validateTransitions([transition]);
+const cancelledObservation = {
+  action: "wait",
+  reward: null,
+  cancelled: true,
+  truncated: true,
+  reason: "competing-attack-emission",
+  terminal: false,
+  envError: false,
+};
+assert.equal(outcomeTransitionFlags(cancelledObservation).observationTruncated, true);
+for (const patch of [
+  { action: "attack" },
+  { reward: 0 },
+  { cancelled: false },
+  { reason: "reset" },
+  { reason: "max_ticks" },
+  { reason: "unknown" },
+]) {
+  const flags = outcomeTransitionFlags({ ...cancelledObservation, ...patch });
+  assert.equal(flags.truncated, true, "unknown/episode truncation must remain closed");
+  assert.equal(flags.observationTruncated, undefined);
+}
+assert.equal(outcomeTransitionFlags({ ...cancelledObservation, terminal: true }).terminated, true);
+assert.equal(outcomeTransitionFlags({ ...cancelledObservation, envError: true }).envError, true);
 assert.throws(() => validateTransitions([{ ...transition, terminated: true }]), /flags/);
 assert.throws(
   () => validateTransitions([transition, { ...transition, first: false, step: 1 }]),

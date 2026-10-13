@@ -11503,24 +11503,19 @@
         strategicState,
       );
       const economyCostQuotes = new Map();
-      try {
-        // PlayerImpl.buildableUnits computes cost without a tile; placement still needs its tile-scoped probe.
-        const buildables = await withTimeout(
-          this.player.buildables(undefined, ECONOMIC_STRUCTURE_TYPES),
-          STRUCTURE_PROBE_TIMEOUT_MS,
-          null,
-        );
-        for (const buildable of Array.isArray(buildables) ? buildables : []) {
-          if (
-            ECONOMIC_STRUCTURE_TYPES.includes(buildable?.type) &&
-            typeof buildable.cost === "bigint"
-          ) {
-            economyCostQuotes.set(buildable.type, buildable.cost);
-          }
+      // PlayerImpl.buildableUnits computes cost without a tile; placement still needs its tile-scoped probe.
+      const buildables = await withTimeout(
+        this.player.buildables(undefined, ECONOMIC_STRUCTURE_TYPES),
+        STRUCTURE_PROBE_TIMEOUT_MS,
+        null,
+      );
+      for (const buildable of Array.isArray(buildables) ? buildables : []) {
+        if (
+          ECONOMIC_STRUCTURE_TYPES.includes(buildable?.type) &&
+          typeof buildable.cost === "bigint"
+        ) {
+          economyCostQuotes.set(buildable.type, buildable.cost);
         }
-      // eslint-disable-next-line no-restricted-syntax -- Fall back to local price if worker quote fails.
-      } catch {
-        // Keep the existing estimate when the worker quote is unavailable.
       }
       const typeOrder = {
         [UNIT.City]: 0,
@@ -12877,6 +12872,7 @@
       if (routeEligibleSilos.length === 0) return false;
       if (this.legendaryReadyShotTotal(routeEligibleSilos) > 0) return false;
       const result = await this.findBestStructureToUpgrade(routeEligibleSilos);
+      if (this.legendaryReadyShotTotal(routeEligibleSilos) > 0) return false;
       if (result === null) {
         // A null probe can be a timeout. Only a confirmed max-level set can
         // justify adding another launcher for the waiting queue.
@@ -13266,17 +13262,16 @@
 
     /**
      * Hook A: demand satisfaction follows the salvo planner, not the static
-     * level sum. false = the plan closes with the live layout (demand
-     * serviced); true = capacity/window still missing (keep building);
-     * null = planner unavailable or probe failed (fall back to level sum).
+     * level sum. false = demand serviced or its aim is unsafe; true =
+     * capacity/window still missing (keep building); null = planner
+     * unavailable or probe failed (fall back to level sum).
      */
     samOverwhelmPlanStillMissing(request) {
       const nuke = this.nukeBehavior;
       if (
         !nuke ||
         typeof nuke.createSamOverwhelmPlan !== "function" ||
-        request?.targetSamId === null ||
-        request?.targetSamId === undefined
+        request?.targetSamId == null
       ) {
         return null;
       }
@@ -13289,10 +13284,15 @@
             .filter((silo) => !silo.isUnderConstruction?.())
         : [];
       const plan = nuke.createSamOverwhelmPlan(targetSam, silos);
-      // A refused plan (friendly blast at the aim tile, etc.) cannot close a
-      // live capacity demand — only a closing plan releases it. Keep the
-      // request alive so the Silo still upgrades toward required capacity.
-      if (plan === null) return null;
+      // A friendly-fire veto closes this investment request; treating it as
+      // an unavailable planner would fund capacity for a salvo we cannot fire.
+      if (plan === null) {
+        return request.targetTile != null &&
+          typeof nuke.blastHitsFriendlyLand === "function" &&
+          nuke.blastHitsFriendlyLand(request.targetTile, UNIT.AtomBomb)
+          ? false
+          : null;
+      }
       return Boolean(plan.capacityMissing);
     }
 

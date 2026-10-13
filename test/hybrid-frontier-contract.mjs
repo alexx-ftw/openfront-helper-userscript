@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import vm from "node:vm";
 import { execFileSync } from "node:child_process";
@@ -31,6 +32,11 @@ assert.equal(JSON.stringify(v2), identity, "import validation preserves original
 assert.deepEqual(json(C.dimensionsFor(v2)), { wait: 4, act: 4, target: 13 });
 assert.deepEqual(json(C.normalize(Array(13).fill(0), "target", v2.normalizer)), Array(13).fill(0));
 const v3 = C.create({ featureProfile: "frontier-v1" });
+assert.equal(
+  createHash("sha256").update(JSON.stringify(v3)).digest("hex"),
+  "fa1a80c213da255337f15cab6950b92f34adc03185316e2f39b38b489f929861",
+  "default v3 factory bytes remain unchanged",
+);
 assert.deepEqual(json(C.dimensionsFor(v3)), { wait: 4, act: 4, target: 17 });
 assert.deepEqual(json(C.featuresFor(v3).target.slice(13)), [
   "sharedFrontierRatio",
@@ -58,6 +64,26 @@ assert.throws(() => C.validate({ ...v3, normalizer: v2.normalizer }));
 assert.throws(() => C.validate({ ...v3, provenance: v2.provenance }));
 assert.throws(() => C.create({ featureProfile: "unknown" }));
 const expected = { actorSmallID: 1, targetSmallID: 2, tick: 10, generation: 3 };
+const controlled = C.create({ featureProfile: "frontier-v1", controlProfile: "target-value-v1" });
+assert.equal(controlled.controlProfile, "target-value-v1");
+assert.equal(controlled.actions.macroValue, "best-target-vs-wait-v1");
+for (const base of [C.create(), v3]) {
+  const profiled = C.create({
+    featureProfile: base.featureProfile,
+    controlProfile: "target-value-v1",
+  });
+  const defaultShape = json(profiled);
+  delete defaultShape.controlProfile;
+  delete defaultShape.actions.macroValue;
+  assert.equal(JSON.stringify(defaultShape), JSON.stringify(base), "only control identity changes");
+  C.validate(profiled);
+  assert.throws(() => C.validate({ ...profiled, controlProfile: "unknown" }));
+  assert.throws(() => C.validate({ ...profiled, controlProfile: undefined }));
+  assert.throws(() => C.validate({ ...profiled, actions: base.actions }));
+  assert.throws(() => C.validate({ ...base, actions: profiled.actions }));
+}
+assert.throws(() => C.create({ controlProfile: "unknown" }));
+
 const raw = {
   source: "native-target-frontier-v1",
   ...expected,
@@ -167,6 +193,14 @@ assert.equal(fit.model.models.act.samples, 1);
 assert.equal(fit.model.models.target.samples, 1);
 assert.equal(fit.model.models.wait.samples, 0);
 C.validate(fit.model);
+const controlledFit = C.fitOffline(
+  controlled,
+  [{ ...record, modelIdentity: JSON.stringify(controlled) }],
+  context,
+);
+assert.equal(controlledFit.model.controlProfile, controlled.controlProfile);
+assert.deepEqual(json(controlledFit.model.actions), json(controlled.actions));
+C.validate(controlledFit.model);
 const shapedContext = {
   ...context,
   gammaTick: 0.9,
@@ -255,7 +289,7 @@ process.stdout.write(
 );
 
 // Episode return fitting uses the actual compact optimizer and original identity.
-for (const base of [v2, v3]) {
+for (const base of [v2, v3, controlled]) {
   const returnContext = {
     ...context,
     normalizer: base.normalizer,
@@ -329,6 +363,14 @@ for (const base of [v2, v3]) {
   assert.equal(result.model.offline.originModelIdentity, originalIdentity);
   assert.equal(result.model.offline.returnTrainer, "monte-carlo-tanh-sgd-v1");
   C.validate(json(result.model));
+  assert.equal(result.model.controlProfile, base.controlProfile);
+  assert.deepEqual(json(result.model.actions), json(base.actions));
+  if (base.controlProfile) {
+    const dropped = json(result.model);
+    delete dropped.controlProfile;
+    delete dropped.actions.macroValue;
+    assert.throws(() => C.validate(dropped), /origin contract/);
+  }
   assert.throws(() =>
     C.validate({
       ...result.model,
@@ -407,7 +449,7 @@ process.stdout.write(
 );
 
 // Known exclusions retain original steps; unknown missing ledger rows stay rejected.
-for (const base of [v2, v3]) {
+for (const base of [v2, v3, controlled]) {
   const ctx = {
     ...context,
     modelIdentity: JSON.stringify(base),

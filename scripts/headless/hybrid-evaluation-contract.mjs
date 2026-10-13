@@ -393,6 +393,22 @@ function validateTransition(row) {
   );
 }
 
+export function outcomeTransitionFlags(event) {
+  // A cancelled WAIT observation can be censored while the game continues.
+  const observationTruncated =
+    event.truncated === true &&
+    event.cancelled === true &&
+    event.action === "wait" &&
+    event.reward === null &&
+    ["competing-attack-emission", "zero-duration-collector-wait"].includes(event.reason);
+  return {
+    terminated: event.terminal === true,
+    truncated: event.truncated === true && !observationTruncated,
+    envError: event.envError === true,
+    ...(observationTruncated ? { observationTruncated: true } : {}),
+  };
+}
+
 export function validateTransitions(rows) {
   assert.ok(Array.isArray(rows), "Invalid transition stream");
   const episodes = new Map();
@@ -421,7 +437,9 @@ export function transitionDiagnostic(row, shaping) {
       Number.isFinite(shaping.coefficient),
     "Invalid declared shaping parameters",
   );
-  if (row.envError) return { usable: false, reward: null, bootstrapDiscount: null };
+  if (row.envError || row.observationTruncated === true) {
+    return { usable: false, reward: null, bootstrapDiscount: null };
+  }
   assert.ok(
     [row.baseReward, row.potential, row.nextPotential].every(Number.isFinite),
     "Missing observed potential/reward",

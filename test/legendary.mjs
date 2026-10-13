@@ -2985,7 +2985,7 @@ structureSandbox.Difficulty.Legendary = "Legendary";
 structureSandbox.isLegendaryDifficulty = () => true;
 Object.assign(capPressureSelector, {
   game: { config: () => ({ maxTroops: () => 100 }) },
-  player: { troops: () => currentTroops },
+  player: { troops: () => currentTroops, buildables: async () => [] },
   safeMaxTroops: () => 100,
   legendaryThinDensityPressure: () => true,
   legendaryConstructionState: () => ({
@@ -4687,6 +4687,7 @@ executeClassicScript(
   { filename: "structureBehavior-seed-rank.js" },
 );
 const makeSeedRankOwner = (id, units) => ({
+  buildables: async () => [],
   id: () => id,
   smallID: () => id,
   isPlayer: () => true,

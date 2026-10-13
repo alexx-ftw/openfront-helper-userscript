@@ -9,6 +9,7 @@ import { createStructureUpgradeFixture } from "./helpers/structure-upgrade-fixtu
 const UNIT = {
   MissileSilo: "MissileSilo",
   SAMLauncher: "SAMLauncher",
+  AtomBomb: "AtomBomb",
 };
 const Difficulty = { LEGENDARY: "LEGENDARY" };
 
@@ -192,4 +193,27 @@ function makeWorld({ gold, upgradeCost, routes, canUpgrade = true, stubSpawn = t
   assert.equal(state.nukeWantSlots, null, "a closed demand releases its reservation");
   assert.equal(emitted.length, 0, "a stale SAM request does not upgrade a silo");
   assert.equal(spawn(), 0, "a stale SAM request does not build another silo");
+}
+
+// A friendly-fire veto is a closed demand, not an unavailable planner: never
+// invest in Silo capacity for an aim tile that the launch path has rejected.
+{
+  const { behavior, state } = makeWorld({
+    gold: 5000n,
+    upgradeCost: 4000n,
+    routes: [{ id: () => 1 }],
+  });
+  let vetoedUnitType = null;
+  delete behavior.samOverwhelmPlanStillMissing;
+  behavior.nukeBehavior.createSamOverwhelmPlan = () => null;
+  behavior.nukeBehavior.blastHitsFriendlyLand = (_tile, type) => {
+    vetoedUnitType = type;
+    return true;
+  };
+  assert.equal(
+    behavior.samOverwhelmPlanStillMissing(state.nukeWantSlots),
+    false,
+    "a live friendly-fire veto closes the Silo demand instead of falling back to static capacity",
+  );
+  assert.equal(vetoedUnitType, UNIT.AtomBomb, "check the same weapon used by the salvo plan");
 }

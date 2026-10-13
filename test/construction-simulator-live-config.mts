@@ -236,11 +236,17 @@ const structureSandbox: Record<string, unknown> & {
   },
   UNIT: LiveUnitType,
   WORKER_TIMEOUT_MS: 1,
+  window: { setTimeout, clearTimeout },
   state: { settings: { winFixes: true } },
   globalThis: null as unknown,
 };
 Object.assign(structureSandbox, planner);
 structureSandbox.globalThis = structureSandbox;
+executeClassicScript(
+  fs.readFileSync(path.join(ROOT, "engine/ingame/auto-bot/helpers.js"), "utf8"),
+  structureSandbox,
+  { filename: "helpers.js" },
+);
 executeClassicScript(
   `${fs.readFileSync(path.join(ROOT, "engine/ingame/auto-bot/structureBehavior.js"), "utf8")}\nglobalThis.__StructureBehavior = StructureBehavior;`,
   structureSandbox,
@@ -272,9 +278,12 @@ const makeOwner = (id: number, units: Record<string, ReturnType<typeof station>[
   isPlayer: () => true,
   isAlive: () => true,
   hasEmbargoAgainst: () => false,
+  isFriendly: (other: { teamId?: number }) => other.teamId === 7,
   isOnSameTeam: (other: { teamId?: number }) => other.teamId === 7,
   isAlliedWith: () => false,
   units: (...types: string[]) => types.flatMap((type) => units[type] ?? []),
+  // This economics fixture has no worker; use the explicit unavailable-quote fallback.
+  buildables: async () => null,
 });
 const actor = Object.assign(makeOwner(1, ownUnits), { gold: () => 10_000_000n });
 const teammate = makeOwner(2, teammateUnits);

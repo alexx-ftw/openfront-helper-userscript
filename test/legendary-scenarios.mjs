@@ -870,6 +870,7 @@ function economyAction(type, cost, evaluation, extra = {}) {
 function cityCandidateValues(capPressure) {
   const candidates = [];
   const behavior = Object.create(ScenarioStructureBehavior.prototype);
+  behavior.cost = () => 10_000n;
   behavior.addLegendaryConstructionCandidate = (_context, type, values) =>
     candidates.push({ type, ...values });
   behavior.legendaryCityUpgradeCandidateInfo = () => null;

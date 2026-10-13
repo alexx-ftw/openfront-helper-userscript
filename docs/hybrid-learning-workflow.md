@@ -33,6 +33,20 @@ por cada lote y comprueba su hash y compatibilidad con las fuentes actuales. Det
 la colección cuando la API nativa indica cobertura suficiente o se agotan las
 semillas declaradas. Solo un modelo listo pasa al holdout congelado.
 
+`--collection-stop seed-bound` completa todas las semillas de entrenamiento
+declaradas aunque el modelo ya esté listo; el valor predeterminado, `readiness`,
+conserva la parada al alcanzar cobertura mínima. El criterio se registra antes
+del lanzamiento. No modifica los requisitos de readiness ni permite evaluar un
+modelo frío. Úsalo para separar cobertura mínima de un presupuesto de entrenamiento
+predefinido, sin elegir la parada según victorias del holdout.
+
+La opción experimental `--control-profile target-value-v1` solo admite
+`compact-neural`. Compara el valor del mejor objetivo financiado con WAIT y evita
+reintentar objetivos cuyo valor no supere WAIT. El perfil queda ligado al modelo
+y al hash de características; omitirlo conserva el control anterior por la
+cabeza ACT. No cambia recompensas, aprendizaje ni comprobaciones de seguridad.
+Debe entrenarse y evaluarse como un brazo independiente; no demuestra una mejora.
+
 Ejemplo de invocación, con valores elegidos para el experimento y archivos de
 cohortes/requisitos preparados previamente:
 
@@ -108,6 +122,11 @@ La exclusión conserva el paso original y su razón; no fabrica recompensa ni
 aceptación observada. Un pendiente cancelado por el vencedor requiere el cierre
 nativo exacto y sus referencias. Los huecos sin prueba y las confirmaciones sin
 recibo siguen rechazándose, aunque el resto de la partida haya terminado.
+
+Un WAIT cancelado por una emisión competidora conserva el resultado censurado y
+la prueba de esa emisión. La transición marca `observationTruncated`, sin cerrar
+el episodio del juego ni calcular shaping para ese resultado. Los límites de
+ticks, resets, errores y finales nativos conservan sus comprobaciones de cierre.
 
 Al comparar WAIT y ACT, ambos deben usar recompensas compatibles. Ajustar solo
 ACT con derrotas terminales y dejar WAIT con recompensas locales puede cambiar

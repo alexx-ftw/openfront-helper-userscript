@@ -692,6 +692,161 @@ function winnerCancellation(outcome, state) {
   );
 }
 
+function excludeBusyWait(decision, proposal, linked, state) {
+  assert.ok(
+    decision.fallback === false &&
+      decision.reason === "controlled-wait" &&
+      linked.accepted.length === 0 &&
+      linked.receipts.length === 0,
+    "Controlled decision missing pending outcome: busy WAIT has unexplained action references",
+  );
+  const proofs = state.selected.filter(
+    (event) =>
+      kind(event) === "observation-omitted" &&
+      event.sequence === decision.observationOmissionSequence,
+  );
+  assert.equal(
+    proofs.length,
+    1,
+    "Controlled decision missing pending outcome: missing/duplicate busy WAIT proof",
+  );
+  const proof = proofs[0];
+  assert.ok(
+    proof.phase === "controlled-wait-busy" &&
+      proof.reason === "observation-pending" &&
+      proof.decisionStep === decision.step &&
+      proof.decisionSequence === proposal.sequence &&
+      proof.actorSmallID === decision.actorSmallID &&
+      proof.modelIdentity === decision.modelIdentity &&
+      proof.tick === decision.tick &&
+      proof.sequence > proposal.sequence &&
+      proof.sequence < decision.sequence,
+    "Busy WAIT proof reference mismatch",
+  );
+  validateBusyOwner(proof.owner, decision, proposal, state);
+  assert.ok(!state.consumed.has(proof), "Duplicate busy WAIT proof reference");
+  state.consumed.add(proof);
+  state.excluded.push({
+    decisionStep: decision.step,
+    reason: "censored-busy-wait",
+    omissionSequence: proof.sequence,
+    ownerDecisionStep: proof.owner.decisionStep,
+  });
+  return null;
+}
+
+function validateBusyOwner(owner, decision, proposal, state) {
+  assert.ok(
+    owner &&
+      integer(owner.decisionStep) &&
+      owner.decisionStep < decision.step &&
+      owner.episodeId === decision.episodeId &&
+      owner.generation === decision.generation,
+    "Busy WAIT owner scope mismatch",
+  );
+  const originals = state.selected.filter(
+    (event) => kind(event) === "decision" && event.step === owner.decisionStep,
+  );
+  const outcomes = state.selected.filter(
+    (event) => kind(event) === "outcome" && event.decisionStep === owner.decisionStep,
+  );
+  assert.equal(originals.length, 1, "Missing busy WAIT original decision");
+  assert.equal(outcomes.length, 1, "Missing busy WAIT owner outcome");
+  const original = originals[0],
+    outcome = outcomes[0];
+  assert.ok(
+    original.controlledAction === owner.action &&
+      original.controlledAction === owner.controlledAction &&
+      original.sequence < proposal.sequence &&
+      owner.decisionSequence === original.decisionSequence &&
+      owner.actionTick === original.tick &&
+      original.actorSmallID === decision.actorSmallID,
+    "Busy WAIT original owner reference mismatch",
+  );
+  for (const field of [
+    "decisionStep",
+    "decisionSequence",
+    "acceptedSequence",
+    "actorSmallID",
+    "controlledAction",
+    "modelIdentity",
+    "actionTick",
+    "targetSmallID",
+    "behaviorPolicy",
+  ])
+    exact(owner[field], outcome[field], "Busy WAIT owner identity mismatch");
+  assert.ok(
+    owner.actionTick <= decision.tick &&
+      outcome.outcomeTick >= decision.tick &&
+      outcome.sequence > decision.sequence &&
+      (owner.action !== "wait" || owner.actionTick === decision.tick),
+    "Busy WAIT lies outside owner interval",
+  );
+}
+
+function waitIntervention(outcome, state) {
+  if (outcome.reason !== "competing-attack-emission") return false;
+  assert.ok(
+    outcome.action === "wait" &&
+      outcome.reward === null &&
+      outcome.cancelled === true &&
+      outcome.truncated === true &&
+      outcome.terminal === false,
+    "Invalid WAIT intervention cancellation",
+  );
+  const proofs = state.selected.filter(
+    (event) => kind(event) === "observation-omitted" && event.sequence === outcome.emissionSequence,
+  );
+  assert.equal(proofs.length, 1, "Missing/duplicate WAIT emission proof");
+  const proof = proofs[0];
+  assert.ok(
+    proof.phase === "emission" &&
+      proof.reason === "competing-attack-emission" &&
+      proof.sequence < outcome.sequence &&
+      proof.tick === outcome.outcomeTick,
+    "WAIT emission interval/reference mismatch",
+  );
+  for (const field of [
+    "decisionStep",
+    "decisionSequence",
+    "acceptedSequence",
+    "actorSmallID",
+    "controlledAction",
+    "modelIdentity",
+    "actionTick",
+    "targetSmallID",
+    "behaviorPolicy",
+  ])
+    exact(proof[field], outcome[field], "WAIT emission owner reference mismatch");
+  const owner = state.selected.find(
+    (event) => kind(event) === "decision" && event.step === outcome.decisionStep,
+  );
+  assert.ok(
+    outcome.decisionStep === null || (owner && proof.sequence > owner.sequence),
+    "WAIT emission precedes controlled decision",
+  );
+  validateWaitEmission(proof.emission, outcome);
+  assert.ok(!state.consumed.has(proof), "Duplicate WAIT emission reference");
+  state.consumed.add(proof);
+  return true;
+}
+
+function validateWaitEmission(emission, outcome) {
+  assert.ok(
+    emission?.emitted === true &&
+      emission.tick === outcome.outcomeTick &&
+      emission.actorSmallID === outcome.actorSmallID &&
+      Number.isFinite(emission.payloadTroops) &&
+      emission.payloadTroops > 0 &&
+      ["land", "forced-land", "boat"].includes(emission.path) &&
+      (emission.path === "boat"
+        ? integer(emission.target)
+        : emission.target === null || text(emission.target) || integer(emission.target)),
+    "Invalid actual WAIT emission proof",
+  );
+  assert.ok(outcome.actionTick <= emission.tick, "WAIT emission precedes observation");
+}
+
 function controlledRecord(decision, state) {
   const {
     selected,
@@ -711,10 +866,14 @@ function controlledRecord(decision, state) {
   const proposal = controlledProposal(decision, proposals, selection, requireStochastic);
   const linked = actionReferences(selected, proposal, selection, consumed);
   const { outcomes, accepted, receipts } = linked;
-  if (outcomes.length === 0) return excludeAmbiguousDispatch(decision, proposal, linked, state);
+  if (outcomes.length === 0)
+    return decision.controlledAction === "wait"
+      ? excludeBusyWait(decision, proposal, linked, state)
+      : excludeAmbiguousDispatch(decision, proposal, linked, state);
   assert.equal(outcomes.length, 1, "Controlled decision missing pending outcome");
   const outcome = outcomes[0];
-  const cancelled = winnerCancellation(outcome, state);
+  const intervened = waitIntervention(outcome, state);
+  const cancelled = intervened || winnerCancellation(outcome, state);
   validatePending(outcome, decision, result, cancelled);
   if (decision.controlledAction === "wait") validateWait(outcome, accepted, receipts);
   else {
@@ -733,7 +892,11 @@ function controlledRecord(decision, state) {
     validateReceipt(outcome, decision, accepted[0], receipts[0], seenReceipts);
   }
   if (cancelled) {
-    excluded.push({ decisionStep: decision.step, reason: "censored-winner-pending" });
+    excluded.push({
+      decisionStep: decision.step,
+      reason: intervened ? "censored-wait-intervention" : "censored-winner-pending",
+      emissionSequence: outcome.emissionSequence,
+    });
     return null;
   }
   const manifest = selection.manifest;
@@ -785,6 +948,8 @@ function validateUncontrolledOutcome(outcome, result, cancelled) {
 }
 
 function uncontrolledExclusionReason(event, state) {
+  if (event.reason === "competing-attack-emission")
+    return "uncontrolled-censored-wait-intervention";
   if (winnerCancellation(event, state)) return "uncontrolled-censored-winner-pending";
   if (kind(event) === "outcome" && event.reward === null) return "uncontrolled-unconfirmed-attack";
   return "uncontrolled-policy-event";
@@ -797,7 +962,8 @@ function excludeUncontrolledEvents(state, actorSmallID) {
   );
   for (const event of events) validateUncontrolledScope(event, actorSmallID);
   for (const outcome of events.filter((event) => kind(event) === "outcome")) {
-    validateUncontrolledOutcome(outcome, result, winnerCancellation(outcome, state));
+    const intervened = waitIntervention(outcome, state);
+    validateUncontrolledOutcome(outcome, result, intervened || winnerCancellation(outcome, state));
     if (outcome.action === "wait") {
       assert.equal(outcome.targetSmallID, null, "Invalid uncontrolled WAIT target");
       validateWait(outcome, [], []);
@@ -948,6 +1114,16 @@ export function validateTrajectory(
     if (record) records.push(record);
   }
   excludeUncontrolledEvents(state, decisions[0].actorSmallID);
+  assert.ok(
+    selected
+      .filter(
+        (event) =>
+          kind(event) === "observation-omitted" &&
+          ["controlled-wait-busy", "emission"].includes(event.phase),
+      )
+      .every((event) => state.consumed.has(event)),
+    "Orphan WAIT exclusion proof",
+  );
   assert.ok(
     selected
       .filter((event) => ["accepted", "receipt", "outcome"].includes(kind(event)))

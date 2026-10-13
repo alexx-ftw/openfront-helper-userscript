@@ -10362,17 +10362,20 @@
       } finally { this.finishObservedAttack(row, null, null, dispatchError); }
     }
 
-    recordAttackEmission(troops, path) {
+    recordAttackEmission(troops, path, target = null) {
       if (this.attackAdmissionAttempt) Object.assign(this.attackAdmissionAttempt, { emitted: true, payloadTroops: troops, path });
       if (this.hybridSafetyAttempt) this.hybridSafetyAttempt.emitted = true;
-      if (typeof hybridCombatPolicy !== "undefined") hybridCombatPolicy.cancelCollectorWait?.(this);
+      if (typeof hybridCombatPolicy !== "undefined") hybridCombatPolicy.cancelWaitOnEmission?.(this, {
+        emitted: true, tick: this.currentAttackDecisionTick(), actorSmallID: this.player.smallID?.() ?? null,
+        path, payloadTroops: troops, target,
+      });
     }
 
     emitObservedAttackOrder(ctor, target, troops, path) {
       if (!ctor) return this.rejectHybridAttack("intent-constructor-unavailable");
       if (!hasAttackIntentRateCapacity()) return this.rejectHybridAttack("intent-rate-capacity-exhausted");
       if (!emitIntent(ctor, target, troops)) return this.rejectHybridAttack("intent-emission-rejected");
-      this.recordAttackEmission(troops, path);
+      this.recordAttackEmission(troops, path, target);
       return true;
     }
 

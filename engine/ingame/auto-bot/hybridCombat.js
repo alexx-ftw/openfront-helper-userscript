@@ -174,7 +174,7 @@ class HybridCombatPolicy {
       this.persist();
       return;
     }
-    if (!snapshot || snapshot.schema !== HYBRID_COMBAT_SCHEMA ||
+    if (!snapshot || snapshot.schema !== HYBRID_COMBAT_SCHEMA || snapshot.controlProfile !== undefined ||
         snapshot.reward !== "own-land-share-change-at-commitment-end" ||
         JSON.stringify(snapshot.features) !== JSON.stringify(HYBRID_COMBAT_FEATURES)) {
       throw new Error("Incompatible hybrid combat feature/action schema");
@@ -409,8 +409,15 @@ class HybridCombatPolicy {
     this.recordLedger("decision", this.proposal);
   }
 
-  scoreMacro(gate) {
-    return { wait: this.predict("wait", gate), act: this.predict("act", gate) };
+  scoreMacro(gate, ranked) {
+    const wait = this.predict("wait", gate);
+    const gateAct = this.predict("act", gate);
+    if (ranked === undefined) return { wait, act: gateAct };
+    if (this.compactContract?.controlProfile !== "target-value-v1") {
+      return { wait, act: gateAct, controlledCandidates: ranked };
+    }
+    return { wait, act: ranked[0]?.score,
+      controlledCandidates: ranked.filter(candidate => candidate.score > wait) };
   }
 
   scoreMicro(candidates) {
@@ -423,7 +430,8 @@ class HybridCombatPolicy {
     const troops = Number(player.troops());
     const maximum = Number(behavior.game.config().maxTroops(player));
     const land = Number(behavior.game.numLandTiles());
-    const incoming = Number(behavior.incomingHostileAttackPressure?.());
+    const pressure = behavior.incomingHostileAttackPressure?.();
+    const incoming = Number.isFinite(pressure) ? pressure : Number.NaN;
     if (this.backend === "compact-tanh-v1" &&
         (![troops, maximum, land, incoming, Number(player.numTilesOwned())].every(Number.isFinite) ||
          maximum <= 0 || land <= 0 || troops < 0 || incoming < 0 || Number(player.numTilesOwned()) < 0)) return null;
@@ -506,6 +514,21 @@ class HybridCombatPolicy {
         this.models.wait.samples === waitSamples + 1 && !this.numericalError) this.collection.completedWaits++;
   }
 
+  cancelWaitOnEmission(behavior, emission) {
+    const pending = this.pending;
+    if (!pending || pending.target) return false;
+    // Clear before diagnostic publication: an emitted order cannot remain WAIT.
+    this.pending = null;
+    const proof = this.recordLedger("observation-omitted", {
+      ...this.actionReferences(pending), modelIdentity: pending.modelIdentity ?? null,
+      tick: behavior.currentAttackDecisionTick(), actionTick: pending.tick, targetSmallID: null, phase: "emission",
+      reason: "competing-attack-emission", emission,
+    });
+    this.recordOutcome({ ...pending, censorReason: "competing-attack-emission", emissionSequence: proof.sequence },
+      behavior.currentAttackDecisionTick(), null);
+    return true;
+  }
+
   cancelCollectorWait(behavior) {
     return this.censorCollectorWait(behavior, "competing-attack-emission");
   }
@@ -536,6 +559,7 @@ class HybridCombatPolicy {
       generation: pending.generation ?? this.generation, receiptID: pending.receiptID ?? null,
       reward, gate: pending.gate, nextGate, ...this.outcomeFeatures(pending), terminal, truncated: false,
       learned: pending.learned === true };
+    if (pending.emissionSequence !== undefined) this.lastOutcome.emissionSequence = pending.emissionSequence;
     if (pending.censorReason) Object.assign(this.lastOutcome, { reason: pending.censorReason, cancelled: true, truncated: true });
     this.recordLedger("outcome", this.lastOutcome);
   }
@@ -737,8 +761,8 @@ class HybridCombatPolicy {
       return this.fallback(this.proposal.funnel.fundedTargets ? "target-features-unavailable" : "no-funded-native-target");
     }
     this.decisions++;
-    const { wait, act } = this.scoreMacro(gate);
     const ranked = this.scoreMicro(candidates);
+    const { wait, act, controlledCandidates } = this.scoreMacro(gate, ranked);
     if (this.numericalError) { this.proposal.eligible = false; return this.fallback("numerical-failure"); }
     this.funnel.scoredTargets += ranked.length;
     this.proposal.funnel.scoredTargets = ranked.length;
@@ -760,7 +784,7 @@ class HybridCombatPolicy {
       this.recordDecision("wait", false, "controlled-wait");
       return true;
     }
-    return this.controlProposal(behavior, ranked, act <= wait);
+    return this.controlProposal(behavior, controlledCandidates, act <= wait);
   }
 
   admitCollectorWait(behavior) {
@@ -864,7 +888,7 @@ class HybridCombatPolicy {
     if (!this.pending) this.pending = { target: null, targetSmallID: null, gate, share: gate[2],
       tick: behavior.currentAttackDecisionTick(), episodeId: this.episodeId, generation: this.generation,
       modelIdentity: this.proposal.modelIdentity,
-      actorSmallID: this.proposal.actorSmallID };
+      actorSmallID: this.proposal.actorSmallID, observationDecisionSequence: this.proposal.decisionSequence };
   }
 
   async controlProposal(behavior, ranked, wait) {
@@ -877,13 +901,24 @@ class HybridCombatPolicy {
     }
     if (wait) {
       this.control.controlledWaits++;
-      if (this.pending && !this.pending.target && this.pending.tick === behavior.currentAttackDecisionTick()) {
+      if (this.pending && !this.pending.target && this.pending.observationDecisionSequence === this.proposal.decisionSequence) {
         this.pending.decisionStep = this.proposal.step;
         this.pending.decisionSequence = this.proposal.decisionSequence;
         this.pending.controlledAction = "wait";
         this.pending.learned = true;
         this.pending.modelIdentity = this.proposal.modelIdentity;
         this.pending.behaviorPolicy = "deterministic-wait-act-ranked-target";
+      } else {
+        const pending = this.pending;
+        const proof = this.recordLedger("observation-omitted", {
+          decisionStep: this.proposal.step, decisionSequence: this.proposal.decisionSequence,
+          actorSmallID: this.proposal.actorSmallID, modelIdentity: this.proposal.modelIdentity,
+          tick: this.proposal.tick, phase: "controlled-wait-busy", reason: "observation-pending",
+          owner: { ...this.actionReferences(pending), actionTick: pending.tick,
+            action: pending.target ? "attack" : "wait", targetSmallID: pending.targetSmallID ?? null,
+            episodeId: pending.episodeId, generation: pending.generation, modelIdentity: pending.modelIdentity },
+        });
+        this.proposal.observationOmissionSequence = proof.sequence;
       }
       this.recordDecision("wait", false, "controlled-wait");
       return true;

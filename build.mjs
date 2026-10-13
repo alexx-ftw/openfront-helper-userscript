@@ -141,7 +141,7 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
   const previousAtomDisposer = window.__OFH_disposeAtomMacroForHotReload;
   const previousActivationPending = window.__openfrontAutoBotActivationPending;
   let candidate = null;
-  let previousDisposed = false;
+  let previousDisposalStarted = false;
   let committed = false;
   const finishStaging = () => {
     window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
@@ -167,11 +167,12 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
       ) {
         throw new Error("el candidato de Auto-Bot no expuso el contrato de hot reload");
       }
+      // Disposal can reject after stopping the engine and removing its panel.
+      previousDisposalStarted = true;
       const disposed = await previous.disposeForHotReload();
       if (disposed === false) {
         throw new Error("el runtime anterior no pudo cerrarse limpiamente");
       }
-      previousDisposed = true;
       window.__OFH_HOT_RELOAD_IN_PROGRESS__ = false;
       if (!(await candidate.activateForHotReload(activationOptions))) {
         throw new Error("el candidato de Auto-Bot no pudo activarse");
@@ -216,7 +217,7 @@ window.__OFH_HOT_RELOAD_AUTOBOT__ = function(source, buildId) {
           window.__OFH_disposeAtomMacroForHotReload = previousAtomDisposer;
           window.__openfrontAutoBotActivationPending = previousActivationPending;
           finishStaging();
-          if (previousDisposed && candidateQuiescent) {
+          if (previousDisposalStarted && candidateQuiescent) {
             const rollback = await settle(() =>
               previous.activateForHotReload(activationOptions),
             );

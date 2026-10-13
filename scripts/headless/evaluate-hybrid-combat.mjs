@@ -20,6 +20,7 @@ import {
   summarizeTelemetry,
   summarizeDecisionRows,
   validateTransitions,
+  outcomeTransitionFlags,
   assessCandidatePromotion,
   selectReplayGroup,
   fingerprintSources,
@@ -121,6 +122,7 @@ export function parseArgs(argv) {
         "--timeout-ms",
         "--policy",
         "--feature-profile",
+        "--control-profile",
         "--cohorts",
         "--requirements",
         "--replay",
@@ -151,6 +153,10 @@ function validateOptions(options) {
   if (options["feature-profile"] !== undefined) {
     assert.equal(options["feature-profile"], "frontier-v1", "Unsupported feature profile");
     assert.equal(options.policy, "compact-neural", "Feature profile requires compact-neural");
+  }
+  if (options["control-profile"] !== undefined) {
+    assert.equal(options["control-profile"], "target-value-v1", "Unsupported control profile");
+    assert.equal(options.policy, "compact-neural", "Control profile requires compact-neural");
   }
   assert.ok(!options.frozenReplay || options.collect, "--frozen-replay requires --collect");
   assert.ok(
@@ -624,9 +630,7 @@ function validateNativeTransitionRows(transitions, outcomes, runID) {
       tick: event.actionTick,
       nextTick: event.outcomeTick,
       first: event.step === 0,
-      terminated: event.terminal === true,
-      truncated: event.truncated === true,
-      envError: event.envError === true,
+      ...outcomeTransitionFlags(event),
       reason: event.reason ?? null,
       potentialID: "observed-own-land-share-v1",
       potentialSource: "policy-gate-ownLandShare",
@@ -962,7 +966,7 @@ export function modelProvenance(model, sourceHash) {
   };
 }
 
-function assertPolicy(model, policy, featureProfile) {
+function assertPolicy(model, policy, featureProfile, controlProfile) {
   const schemas =
     policy === "compact-neural"
       ? ["ofh-combat-compact-tanh-v2", "ofh-combat-compact-tanh-v3"]
@@ -970,6 +974,8 @@ function assertPolicy(model, policy, featureProfile) {
   assert.ok(schemas.includes(model.schema), "Selected policy/model kind mismatch");
   if (featureProfile !== undefined)
     assert.equal(model.featureProfile, featureProfile, "Selected model feature profile mismatch");
+  if (controlProfile !== undefined)
+    assert.equal(model.controlProfile, controlProfile, "Selected model control profile mismatch");
 }
 
 function initialModel(options, { source, provenance }) {
@@ -984,7 +990,12 @@ function initialModel(options, { source, provenance }) {
       format,
       "Use the native trained-model.json exported by --collect (includes training provenance)",
     );
-    assertPolicy(saved.model, options.policy, options["feature-profile"]);
+    assertPolicy(
+      saved.model,
+      options.policy,
+      options["feature-profile"],
+      options["control-profile"],
+    );
     validateProvenance(
       saved,
       { ...provenance, ...modelProvenance(saved.model, provenance.sourceHash) },
@@ -1010,16 +1021,19 @@ function initialModel(options, { source, provenance }) {
   } else {
     validateSeedIdentities(options.seeds, trainingSeeds);
     const compactOptions =
-      options["feature-profile"] === undefined
+      options["feature-profile"] === undefined && options["control-profile"] === undefined
         ? undefined
-        : { featureProfile: options["feature-profile"] };
+        : {
+            featureProfile: options["feature-profile"],
+            controlProfile: options["control-profile"],
+          };
     model =
       options.policy === "compact-neural"
         ? api.createCompactModel(compactOptions)
         : api.exportModel();
     model = validateModel(model, source, false);
   }
-  assertPolicy(model, options.policy, options["feature-profile"]);
+  assertPolicy(model, options.policy, options["feature-profile"], options["control-profile"]);
   return { model, trainingSeeds, collectionCounts };
 }
 
@@ -1156,7 +1170,7 @@ function collectRunModel(options, run, state, { launch, source, modelPath, outDi
       "Frozen replay model mutated",
     );
   const model = validateModel(run.result.hybridCombat.model, source, false);
-  assertPolicy(model, options.policy, options["feature-profile"]);
+  assertPolicy(model, options.policy, options["feature-profile"], options["control-profile"]);
   Object.assign(state, { model });
   const nextPath = path.join(outDir, `collected-${hash(run.seed).slice(0, 16)}.json`);
   save(nextPath, model);
@@ -1318,7 +1332,7 @@ function offlineReplay(options, inputs, cohorts, environment) {
     "Incomplete selected replay coverage",
   );
   const model = validateModel(group.snapshot, inputs.source, false);
-  assertPolicy(model, options.policy, options["feature-profile"]);
+  assertPolicy(model, options.policy, options["feature-profile"], options["control-profile"]);
   validateProvenance(
     group.manifest,
     { ...inputs.provenance, ...modelProvenance(model, inputs.provenance.sourceHash) },

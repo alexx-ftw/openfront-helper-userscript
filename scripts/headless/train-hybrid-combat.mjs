@@ -60,7 +60,16 @@ function writeResult(file, value) {
 }
 
 function validateSettings(settings) {
+  settings.collectionStop ??= "readiness";
+  assert.ok(
+    ["readiness", "seed-bound"].includes(settings.collectionStop),
+    "Invalid collection stop",
+  );
   assert.ok(["ridge", "compact-neural"].includes(settings.policy), "Declare a supported policy");
+  if (settings.controlProfile !== undefined) {
+    assert.equal(settings.controlProfile, "target-value-v1", "Invalid control profile");
+    assert.equal(settings.policy, "compact-neural", "Control profile requires compact-neural");
+  }
   assert.ok(
     Number.isSafeInteger(settings.batchSize) && settings.batchSize > 0,
     "Invalid batch size",
@@ -142,6 +151,7 @@ export async function trainAndEvaluate(options, environment = process.env, depen
     policy: settings.policy,
     timeoutMs: settings.timeoutMs,
     "feature-profile": settings.featureProfile,
+    "control-profile": settings.controlProfile,
   };
   for (let start = 0; start < settings.trainingSeeds.length; start += settings.batchSize) {
     verifyPlan();
@@ -169,7 +179,7 @@ export async function trainAndEvaluate(options, environment = process.env, depen
       officialEvidence: output.report.runner === "official-gameimpl-bundled-harness",
     });
     writeResult(path.join(directory, `batch-${batches.length}.json`), batches.at(-1));
-    if (checkpoint.ready) break;
+    if (checkpoint.ready && settings.collectionStop === "readiness") break;
   }
   assert.ok(checkpoint, "No checkpoint exported");
   const result = {
@@ -222,6 +232,8 @@ export function parseTrainingArgs(argv) {
     "--cohorts",
     "--requirements",
     "--feature-profile",
+    "--collection-stop",
+    "--control-profile",
   ]);
   for (let index = 0; index < argv.length; index++) {
     const key = argv[index];

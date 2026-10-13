@@ -67,6 +67,13 @@ function ready(policy) {
 const p = new Policy({ storage: null });
 assert.equal(p.diagnostics().readiness.target.sampleDeficit, 9);
 ready(p);
+const ridgeBeforeProfile = JSON.stringify(p.exportModel());
+assert.throws(
+  () => p.importModel({ ...p.exportModel(), controlProfile: "target-value-v1" }),
+  /Incompatible hybrid combat feature\/action schema/,
+  "A compact-only control profile cannot be silently discarded by Ridge import",
+);
+assert.equal(JSON.stringify(p.exportModel()), ridgeBeforeProfile);
 assert.equal(await p.decide(behavior, [a, b, tribe]), false);
 assert.equal(p.diagnostics().funnel.suppliedTargets, 3);
 assert.equal(p.diagnostics().funnel.nativeEligibleTargets, 1);
@@ -156,6 +163,13 @@ const geometryBehavior = {
     height: 100,
   }),
 };
+assert.equal(
+  compact.gateFeatures({ ...geometryBehavior, incomingHostileAttackPressure: () => null }),
+  null,
+  "Unknown pressure cannot become a compact-model known-zero feature",
+);
+assert.equal(p.gateFeatures({ ...behavior, incomingHostileAttackPressure: () => null })[3], 1);
+assert.equal(p.gateFeatures({ ...behavior, incomingHostileAttackPressure: () => 0 })[3], 0);
 await compact.decide(geometryBehavior, [a]);
 assert.equal(compact.exportLedger().entries.at(-1).reason, "model-not-ready");
 assert.equal(compact.actionObservation(behavior, a), null);
@@ -1004,4 +1018,86 @@ assert.equal(
   assert.equal(compactCollector.pending.collectorControl, true);
   assert.equal(compactCollector.readiness().wait.requiredSamples, 4);
 }
+// Synthetic constant predictors isolate inference semantics; these are not training models.
+for (const controlProfile of [undefined, "target-value-v1"]) {
+  for (const scenario of [
+    { act: 0.5, targetValue: -0.8, legacyChoice: "attack", targetChoice: "wait" },
+    { act: -0.5, targetValue: 0.8, legacyChoice: "wait", targetChoice: "attack" },
+  ]) {
+    const conditional = new Policy({ storage: null });
+    const model = conditional.createCompactModel({ controlProfile });
+    model.provenance.datasetID = "fixture-inference-only";
+    for (const head of Object.values(model.models)) head.samples = head.hidden.length;
+    model.models.act.outputBias = Math.atanh(scenario.act);
+    model.models.target.outputBias = Math.atanh(scenario.targetValue);
+    conditional.importModel(model);
+    conditional.configure({ mode: "learned", learning: false });
+    let conditionalSends = 0;
+    await conditional.decide(
+      {
+        ...geometryBehavior,
+        sendAttack: async () => {
+          conditionalSends++;
+          return true;
+        },
+      },
+      [a],
+    );
+    const choice = controlProfile ? scenario.targetChoice : scenario.legacyChoice;
+    assert.equal(conditional.proposal.greedyChoice, choice);
+    assert.equal(conditionalSends, choice === "attack" ? 1 : 0);
+    assert.equal(conditional.exportModel().controlProfile, controlProfile);
+  }
+}
+for (const controlProfile of [undefined, "target-value-v1"]) {
+  const retry = new Policy({ storage: null });
+  const model = retry.createCompactModel({ controlProfile });
+  model.provenance.datasetID = "fixture-inference-only";
+  for (const head of Object.values(model.models)) head.samples = head.hidden.length;
+  model.models.wait.outputBias = Math.atanh(0.5);
+  model.models.act.outputBias = Math.atanh(0.8);
+  model.models.target.outputBias = 2;
+  model.models.target.output[4] = -10;
+  retry.importModel(model);
+  retry.configure({ mode: "learned", learning: false });
+  const attempts = [];
+  await retry.decide(
+    {
+      ...geometryBehavior,
+      canAttackPlayerNow: () => true,
+      sendAttack: async (enemy) => {
+        attempts.push(enemy.smallID());
+        return false;
+      },
+    },
+    [a, { ...b, numTilesOwned: () => 20 }],
+  );
+  assert.deepEqual(
+    attempts,
+    controlProfile ? [2] : [2, 3],
+    "Target-value control must not retry an inferior-to-WAIT target after rejection",
+  );
+}
 process.stdout.write("hybrid combat funnel tests passed\n");
+
+// Repeating WAIT in the same tick keeps the first pending identity, not a second label.
+{
+  const busy = new Policy({ storage: null });
+  ready(busy);
+  busy.models.wait.weights[0] = 2;
+  await busy.decide(behavior, [a]);
+  const firstStep = busy.pending.decisionStep;
+  const firstSequence = busy.pending.decisionSequence;
+  await busy.decide(behavior, [a]);
+  assert.equal(busy.pending.decisionStep, firstStep, "busy WAIT must retain original step");
+  assert.equal(
+    busy.pending.decisionSequence,
+    firstSequence,
+    "busy WAIT must retain original proposal",
+  );
+  assert.equal(busy.control.controlledWaits, 2, "both WAIT decisions still control");
+  const proof = busy.exportLedger().entries.find((entry) => entry.phase === "controlled-wait-busy");
+  assert.equal(proof.owner.decisionStep, firstStep);
+  assert.equal(busy.proposal.observationOmissionSequence, proof.sequence);
+  assert.equal(busy.exportLedger().entries.filter((entry) => entry.kind === "outcome").length, 0);
+}

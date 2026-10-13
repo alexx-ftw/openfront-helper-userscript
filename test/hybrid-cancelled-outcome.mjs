@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { outcomeTransitionFlags } from "../scripts/headless/hybrid-evaluation-contract.mjs";
 
 // Exercise the actual producer helpers and both callers without launching games.
 const source = readRepositoryFile("scripts/headless/opponent-adapter.js");
@@ -26,7 +27,7 @@ const api = executeClassicScript(
     "\nclass Caller {" +
     finalize +
     "}\n({ installHybridRuntimeEvidence, cancelledHybridOutcome, finalize: Caller.prototype.finalizeHybridCombatObservation });",
-  { fs, os, path, process },
+  { fs, os, path, process, outcomeTransitionFlags },
 );
 const pending = {
   episodeId: 3,

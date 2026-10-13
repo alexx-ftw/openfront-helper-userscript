@@ -50,9 +50,49 @@ try {
   assert.equal(result.batches[0].officialEvidence, false);
   assert.equal(result.status, "evaluated");
 
+  const boundedStart = calls.length;
+  const bounded = await trainAndEvaluate(
+    { ...options, collectionStop: "seed-bound", out: path.join(directory, "seed-bound") },
+    {},
+    { evaluate: fake, inspect },
+  );
+  const boundedCalls = calls.slice(boundedStart);
+  assert.deepEqual(
+    boundedCalls.filter((request) => request.collect).flatMap((request) => request.seeds),
+    options.trainingSeeds,
+    "Declared seed-bound collection must continue beyond readiness without repeating seeds",
+  );
+  assert.equal(boundedCalls.at(-1).collect, false);
+  assert.equal(
+    boundedCalls.at(-1).model,
+    path.join(boundedCalls.at(-2).out, "trained-model.json"),
+    "Holdout uses the final declared checkpoint, not the first ready checkpoint",
+  );
+  assert.deepEqual(boundedCalls.at(-1).seeds, options.holdoutSeeds);
+  assert.deepEqual(bounded.unusedTrainingSeeds, []);
+  assert.equal(bounded.automaticActivation, false);
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(directory, "seed-bound", "plan.json"))).settings
+      .collectionStop,
+    "seed-bound",
+  );
+  assert.equal(
+    parseTrainingArgs(["--out", "bounded", "--collection-stop", "seed-bound"]).collectionStop,
+    "seed-bound",
+  );
+  await assert.rejects(
+    trainAndEvaluate(
+      { ...options, collectionStop: "unbounded", out: path.join(directory, "invalid-stop") },
+      {},
+      { evaluate: fake, inspect },
+    ),
+    /Invalid collection stop/,
+  );
+  assert.equal(fs.existsSync(path.join(directory, "invalid-stop")), false);
+
   let attempts = 0;
   const cold = await trainAndEvaluate(
-    { ...options, out: path.join(directory, "cold") },
+    { ...options, collectionStop: "seed-bound", out: path.join(directory, "cold") },
     {},
     {
       evaluate: async (request) => {
@@ -65,6 +105,51 @@ try {
   assert.equal(attempts, 3);
   assert.equal(cold.status, "cold");
   assert.equal(cold.holdout, null, "Never launch cold holdout or fabricate readiness");
+
+  const readiness = [true, true, false];
+  const coolingStart = calls.length;
+  const cooling = await trainAndEvaluate(
+    { ...options, collectionStop: "seed-bound", out: path.join(directory, "ready-then-cold") },
+    {},
+    {
+      evaluate: fake,
+      inspect: () => ({ ready: readiness.shift(), hash: "fixed", trainingSeeds: [] }),
+    },
+  );
+  assert.equal(calls.length - coolingStart, 3, "Cold final checkpoint must not launch holdout");
+  assert.equal(cooling.status, "cold");
+  assert.equal(cooling.holdout, null);
+  assert.deepEqual(cooling.unusedTrainingSeeds, []);
+
+  assert.equal(
+    parseTrainingArgs(["--out", "profile", "--control-profile", "target-value-v1"]).controlProfile,
+    "target-value-v1",
+  );
+  const profiledStart = calls.length;
+  await trainAndEvaluate(
+    { ...options, controlProfile: "target-value-v1", out: path.join(directory, "profile") },
+    {},
+    { evaluate: fake, inspect },
+  );
+  assert.ok(calls.length - profiledStart >= 2);
+  assert.ok(
+    calls.slice(profiledStart).every((request) => request["control-profile"] === "target-value-v1"),
+    "The declared control profile must reach both collection and frozen holdout",
+  );
+  await assert.rejects(
+    trainAndEvaluate(
+      {
+        ...options,
+        policy: "ridge",
+        controlProfile: "target-value-v1",
+        out: path.join(directory, "ridge-profile"),
+      },
+      {},
+      { evaluate: fake, inspect },
+    ),
+    /Control profile requires compact-neural/,
+  );
+  assert.equal(fs.existsSync(path.join(directory, "ridge-profile")), false);
 
   await assert.rejects(
     trainAndEvaluate(

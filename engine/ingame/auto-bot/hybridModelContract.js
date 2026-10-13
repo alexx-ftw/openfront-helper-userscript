@@ -87,16 +87,19 @@ const HybridCombatContract = {};
     }
   }
 
-  function create({ featureProfile, provenance, normalizer: supplied } = {}) {
+  function create({ featureProfile, controlProfile, provenance, normalizer: supplied } = {}) {
     if (featureProfile !== undefined && featureProfile !== "frontier-v1") throw new Error("Invalid feature profile");
+    if (controlProfile !== undefined && controlProfile !== "target-value-v1") throw new Error("Invalid control profile");
     const identity = { schema: featureProfile ? frontierSchema : schema,
       ...(featureProfile ? { featureProfile } : {}) };
     const names = featuresFor(identity);
     const result = { schema: identity.schema, ...(featureProfile ? { featureProfile } : {}),
+      ...(controlProfile === undefined ? {} : { controlProfile }),
       features: names, architecture,
       normalizer: supplied ?? normalizer(names,
         featureProfile ? "fixed-normalizer-frontier-v1" : "fixed-normalizer-v1"),
-      actions: { macro: ["wait", "act"], micro: "exact-player-id-land-target" },
+      actions: { macro: ["wait", "act"], micro: "exact-player-id-land-target",
+        ...(controlProfile === undefined ? {} : { macroValue: "best-target-vs-wait-v1" }) },
       reward: "own-land-share-change-at-commitment-end",
       provenance: provenance ?? { implementation: "ofh", trainer: architecture.version,
         datasetID: "online-own-receipts", featureVersion: identity.schema } };
@@ -106,9 +109,11 @@ const HybridCombatContract = {};
   }
 
   function validate(snapshot) {
+    if (snapshot?.controlProfile !== undefined && snapshot.controlProfile !== "target-value-v1") throw new Error("Invalid control profile");
     if (!snapshot || JSON.stringify(snapshot.features) !== JSON.stringify(featuresFor(snapshot)) ||
         JSON.stringify(snapshot.architecture) !== JSON.stringify(architecture) ||
-        JSON.stringify(snapshot.actions) !== JSON.stringify({ macro: ["wait", "act"], micro: "exact-player-id-land-target" }) ||
+        JSON.stringify(snapshot.actions) !== JSON.stringify({ macro: ["wait", "act"], micro: "exact-player-id-land-target",
+          ...(snapshot.controlProfile === undefined ? {} : { macroValue: "best-target-vs-wait-v1" }) }) ||
         !["own-land-share-change-at-commitment-end", "potential-shaped-land-delta-ticks-v2", "discounted-terminal-win-return-v1"].includes(snapshot.reward)) throw new Error("Incompatible compact neural contract");
     validateProvenance(snapshot);
     validateNormalizer(snapshot.normalizer, snapshot);
@@ -126,7 +131,8 @@ const HybridCombatContract = {};
         snapshot.offline.originModelIdentity !== snapshot.offline.modelIdentity) throw new Error("Invalid return trainer provenance");
     const origin = JSON.parse(snapshot.offline.originModelIdentity);
     validate(origin);
-    if (origin.schema !== snapshot.schema || JSON.stringify(origin.normalizer) !== JSON.stringify(snapshot.normalizer) ||
+    if (origin.schema !== snapshot.schema || origin.controlProfile !== snapshot.controlProfile ||
+        JSON.stringify(origin.actions) !== JSON.stringify(snapshot.actions) || JSON.stringify(origin.normalizer) !== JSON.stringify(snapshot.normalizer) ||
         JSON.stringify(origin.provenance) !== JSON.stringify(snapshot.provenance)) throw new Error("Incompatible return origin contract");
     if (snapshot.offline.originalDecisionSteps !== undefined || snapshot.offline.coverage !== undefined) {
       validateDecisionCoverage(snapshot.offline.originalDecisionSteps, snapshot.offline.coverage);

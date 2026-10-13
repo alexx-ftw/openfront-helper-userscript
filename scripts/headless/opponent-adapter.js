@@ -13,7 +13,7 @@ import { getSpawnTiles } from "../../openfront-engine/src/core/execution/Util.ts
 import { GameUpdateType } from "../../openfront-engine/src/core/game/GameUpdates.ts";
 import { unpackMotionPlans } from "../../openfront-engine/src/core/game/MotionPlans.ts";
 import { ClientMsgRateLimiter } from "../../openfront-engine/src/server/ClientMsgRateLimiter.ts";
-import { FifoTransport } from "./hybrid-evaluation-contract.mjs";
+import { FifoTransport, outcomeTransitionFlags } from "./hybrid-evaluation-contract.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUNDLE_PATH =
@@ -121,9 +121,7 @@ export class HybridRuntimeEvidence {
       tick: event.actionTick,
       nextTick: event.outcomeTick,
       first: step === 0,
-      terminated: event.terminal === true,
-      truncated: event.truncated === true,
-      envError: event.envError === true,
+      ...outcomeTransitionFlags(event),
       reason: event.reason ?? null,
       potentialID: "observed-own-land-share-v1",
       potentialSource: "policy-gate-ownLandShare",

@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { houseIntentBudgetOracle } from "../scripts/headless/evaluate-hybrid-combat.mjs";
+import {
+  validateTransitions,
+  transitionDiagnostic,
+} from "../scripts/headless/hybrid-evaluation-contract.mjs";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -92,6 +96,49 @@ try {
   const empty = new HybridRuntimeEvidence({ runIdentity: "launch-empty" }).snapshot();
   assert.equal(empty.safety.reserveChecks, 0, "active but unexercised is zero");
   assert.equal(empty.latencyScope, "hybrid-decision-wall-ms");
+  const intervention = new HybridRuntimeEvidence({ runIdentity: "wait-intervention" });
+  const cancelledWait = {
+    ...row,
+    kind: "hybrid-combat-outcome",
+    action: "wait",
+    actionTick: 10,
+    outcomeTick: 12,
+    reward: null,
+    terminal: false,
+    truncated: true,
+    cancelled: true,
+    reason: "competing-attack-emission",
+  };
+  intervention.record(cancelledWait);
+  intervention.record({
+    ...cancelledWait,
+    actionTick: 12,
+    outcomeTick: 13,
+    cancelled: false,
+    truncated: false,
+    reason: null,
+    reward: 0.1,
+  });
+  const interventionRows = intervention.snapshot().transitions;
+  assert.equal(interventionRows[0].truncated, false, "censored WAIT does not end the game episode");
+  assert.equal(interventionRows[0].observationTruncated, true);
+  validateTransitions(interventionRows);
+  assert.equal(
+    transitionDiagnostic(interventionRows[0], { gammaTick: 0.9, coefficient: 1 }).usable,
+    false,
+  );
+  assert.equal(cancelledWait.truncated, true, "original censored outcome remains intact");
+  const capped = new HybridRuntimeEvidence({ runIdentity: "capped" });
+  capped.record({ ...cancelledWait, reason: "max_ticks" });
+  capped.record({
+    ...cancelledWait,
+    actionTick: 12,
+    outcomeTick: 13,
+    cancelled: false,
+    truncated: false,
+    reason: null,
+  });
+  assert.throws(() => validateTransitions(capped.snapshot().transitions), /closed/);
   assert.throws(() => new HybridRuntimeEvidence({ runIdentity: " " }));
   const fifo = new HybridFifoDispatcher({ delayTicks: 10 });
   assert.deepEqual(fifo.dispatch("seat1", 0, [{ type: "attack", troops: 1 }]), []);

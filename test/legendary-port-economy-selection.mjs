@@ -100,6 +100,14 @@ const behaviorBase = (player, others, shared) => {
           .reduce((total, unit) => total + (unit.isUnderConstruction() ? 0 : unit.level()), 0)
       : 0;
   behavior.cost = (type) => portCost(behavior.ownedLevels(type));
+  // The ranked planner now collects live buildable quotes up front.
+  player.buildables = async (_tile, types) =>
+    Array.from(types ?? [], (type) => ({
+      type,
+      cost: behavior.cost(type),
+      canBuild: true,
+      canUpgrade: false,
+    }));
   behavior.legendaryCostFactor = () => 1;
   behavior.availableGoldAfterReserve = () => 10_000_000n;
   behavior.probeLegendaryThroughputUpgradeCandidates = async () => [];

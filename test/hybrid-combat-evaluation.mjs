@@ -16,6 +16,7 @@ import {
   readRecords,
   scorePairedRuns,
   validateModel,
+  modelProvenance,
   validateProvenance,
   evaluate,
   nativeEventLimit,
@@ -84,6 +85,36 @@ assert.throws(
       "100",
     ]),
   /requires compact-neural/,
+);
+for (const policy of ["ridge", "compact-neural"]) {
+  const args = [
+    "--collect",
+    "--policy",
+    policy,
+    "--control-profile",
+    "target-value-v1",
+    "--seeds",
+    "control",
+    "--timeout-ms",
+    "100",
+  ];
+  if (policy === "ridge") assert.throws(() => parseArgs(args), /requires compact-neural/);
+  else assert.equal(parseArgs(args)["control-profile"], "target-value-v1");
+}
+assert.throws(
+  () =>
+    parseArgs([
+      "--collect",
+      "--policy",
+      "compact-neural",
+      "--control-profile",
+      "unknown",
+      "--seeds",
+      "control",
+      "--timeout-ms",
+      "100",
+    ]),
+  /Unsupported control profile/,
 );
 assert.throws(() => validateSeedIdentities(["Aa", "BB"], []), /effective engine PRNG/);
 // Distinct printable hashes 0/1 enter the same actual house PRNG stream.
@@ -723,6 +754,35 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const fixtureBundle = path.join(temporary, "fixture.user.js");
 fs.copyFileSync(path.join(root, "openfront-helper.user.js"), fixtureBundle);
 const fixtureEnvironment = { OFH_BUNDLE_PATH: fixtureBundle };
+const controlSource = ["hybridModelContract.js", "hybridCombat.js"]
+  .map((file) => fs.readFileSync(path.join(root, "engine/ingame/auto-bot", file), "utf8"))
+  .join("\n");
+const controlApi = executeClassicScript(controlSource + "\nwindow.__OFH_hybridCombat;", {
+  window: {},
+  console,
+  performance,
+  state: { settings: { winFixes: true } },
+});
+for (const featureProfile of [undefined, "frontier-v1"]) {
+  const defaultModel = controlApi.createCompactModel({ featureProfile });
+  const profiledModel = controlApi.createCompactModel({
+    featureProfile,
+    controlProfile: "target-value-v1",
+  });
+  controlApi.importModel(profiledModel);
+  assert.equal(JSON.stringify(controlApi.exportModel()), JSON.stringify(profiledModel));
+  assert.deepEqual(
+    Object.values(controlApi.exportModel().models).map((head) => head.samples),
+    [0, 0, 0],
+  );
+  const defaultIdentity = modelProvenance(defaultModel, "native-source");
+  const profiledIdentity = modelProvenance(profiledModel, "native-source");
+  assert.notEqual(defaultIdentity.modelHash, profiledIdentity.modelHash);
+  assert.notEqual(defaultIdentity.featureHash, profiledIdentity.featureHash);
+  assert.equal(defaultIdentity.normalizerHash, profiledIdentity.normalizerHash);
+  assert.equal(defaultIdentity.rewardHash, profiledIdentity.rewardHash);
+}
+
 const bridge = spawnSync(
   process.execPath,
   [
@@ -1040,6 +1100,7 @@ const frontierCollection = await evaluate(
     collect: true,
     policy: "compact-neural",
     "feature-profile": "frontier-v1",
+    "control-profile": "target-value-v1",
     seeds: ["frontier-train"],
     timeoutMs: 100,
     out: path.join(temporary, "frontier-collect"),
@@ -1049,6 +1110,12 @@ const frontierCollection = await evaluate(
     const snapshot = JSON.parse(fs.readFileSync(input.modelPath, "utf8"));
     assert.equal(snapshot.schema, "ofh-combat-compact-tanh-v3");
     assert.equal(snapshot.featureProfile, "frontier-v1");
+    assert.equal(snapshot.controlProfile, "target-value-v1");
+    assert.equal(snapshot.actions.macroValue, "best-target-vs-wait-v1");
+    assert.deepEqual(
+      Object.values(snapshot.models).map((head) => head.samples),
+      [0, 0, 0],
+    );
     const match = run(input.seed, input.mode, false);
     return {
       ...match,
@@ -1066,6 +1133,26 @@ const frontierCollection = await evaluate(
   },
 );
 const frontierFile = path.join(frontierCollection.outDir, "trained-model.json");
+const unprofiledFrontier = JSON.parse(fs.readFileSync(frontierFile, "utf8"));
+delete unprofiledFrontier.model.controlProfile;
+delete unprofiledFrontier.model.actions.macroValue;
+const unprofiledFrontierPath = path.join(temporary, "unprofiled-frontier.json");
+fs.writeFileSync(unprofiledFrontierPath, JSON.stringify(unprofiledFrontier));
+await assert.rejects(
+  evaluate(
+    {
+      collect: true,
+      policy: "compact-neural",
+      "control-profile": "target-value-v1",
+      model: unprofiledFrontierPath,
+      seeds: ["control-profile-mismatch"],
+      timeoutMs: 100,
+      out: path.join(temporary, "control-profile-mismatch"),
+    },
+    fixtureEnvironment,
+  ),
+  /control profile mismatch/,
+);
 await evaluate(
   {
     collect: true,

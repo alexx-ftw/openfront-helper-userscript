@@ -635,6 +635,7 @@ async function testLifecycleRestartsEnabledEngineBehindStaleLoadedFlag() {
 
 async function testBridgeFaultInjectionRegressions() {
   const cases = [
+    ["partial previous disposal", testPartialPreviousDisposalRestoresRuntime],
     ["normal rollback ordering", testActivationFailureRollsBackInOrderExactlyOnce],
     ["rejected candidate cleanup", testRejectedCandidateCleanupRestoresWithoutReactivation],
     ["false candidate cleanup", testFalseCandidateCleanupWithholdsPreviousReactivation],
@@ -654,6 +655,30 @@ async function testBridgeFaultInjectionRegressions() {
   if (failures.length > 0) {
     throw new AggregateError(failures, "hot-reload bridge regression cases failed");
   }
+}
+
+async function testPartialPreviousDisposalRestoresRuntime() {
+  let engineRunning = true;
+  let panelPresent = true;
+  const failure = new Error("Atom cleanup failed after teardown");
+  const harness = makeHotReloadBridgeHarness({
+    previousActivation() {
+      engineRunning = true;
+      panelPresent = true;
+      return true;
+    },
+  });
+  harness.previous.disposeForHotReload = async () => {
+    engineRunning = false;
+    panelPresent = false;
+    throw failure;
+  };
+  assert.equal(await captureRejection(harness.reload()), failure);
+  assert.equal(engineRunning, true, "failed disposal must recover the running engine");
+  assert.equal(panelPresent, true, "failed disposal must recover the panel");
+  assert.equal(harness.counts.previousActivations, 1);
+  assert.equal(harness.counts.candidateActivations, 0);
+  assertRestoredTerminalState(harness);
 }
 
 async function testBuildPublishesThreeArtifactsAtomically() {

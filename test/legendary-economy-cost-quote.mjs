@@ -104,9 +104,24 @@ assert.deepEqual(
   "the stale owned-level estimate would defer the same City build",
 );
 
+const quoteFailure = new Error("worker unavailable");
 behavior.player.buildables = async () => {
-  throw new Error("worker unavailable");
+  throw quoteFailure;
 };
+await assert.rejects(
+  behavior.legendaryConstructionCandidates({
+    config: {},
+    citiesDisabled: false,
+    cityCount: 2,
+    hasCoastalTiles: false,
+    hasOceanPortTiles: false,
+    missileSilosEnabled: false,
+    nukesEnabled: false,
+  }),
+  (error) => error === quoteFailure,
+  "unexpected worker failure must propagate unchanged",
+);
+behavior.player.buildables = async () => null;
 const fallbackCandidates = await behavior.legendaryConstructionCandidates({
   config: {},
   citiesDisabled: false,
@@ -116,11 +131,11 @@ const fallbackCandidates = await behavior.legendaryConstructionCandidates({
   missileSilosEnabled: false,
   nukesEnabled: false,
 });
-assert.equal(fallbackCandidates[0].cost, localEstimate, "a failed quote retains the estimate");
+assert.equal(fallbackCandidates[0].cost, localEstimate, "an absent quote retains the estimate");
 assert.equal(
   behavior.legendaryConstructionActionGroups(fallbackCandidates, true)[0][0].type,
   "Wait",
-  "a failed quote does not make the captured City appear affordable",
+  "an absent quote does not make the captured City appear affordable",
 );
 
 const originalOwnedLevels = behavior.ownedLevels;

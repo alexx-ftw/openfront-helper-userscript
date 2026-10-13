@@ -37,7 +37,7 @@ try {
   player.conquer(source);
   const defender = game.player("defender");
   defender.conquer(target);
-  const raceTarget = game.ref(80, 2);
+  const raceTarget = game.ref(80, 10);
   defender.conquer(raceTarget);
   defender.conquer(game.ref(80, 3));
   player.addGold(100_000_000n);
@@ -167,6 +167,8 @@ try {
       unblockedSiloIds: [silo.id()],
       at: game.ticks(),
     };
+    const demand = { ...state.nukeWantSlots };
+    assert.equal(nuke.blastHitsFriendlyLand(target, UnitType.AtomBomb), false);
     assert.equal(await bot.nationBot.structureBehavior.maybeUpgradeSiloForNukeDemand(), true);
     assert.equal(upgrades.length, 2, "shared construction emits through the native menu");
     assert.equal(upgrades[1].unitId, silo.id());
@@ -174,6 +176,13 @@ try {
     assert.equal(wireMessages.length, 4);
     assert.deepEqual(wireMessages[3], wireMessages[1]);
     assert.equal(launches.length, 2, "servicing capacity cannot emit another bomb");
+    player.conquer(game.ref(80, 2));
+    assert.equal(nuke.blastHitsFriendlyLand(target, UnitType.AtomBomb), true);
+    assert.equal(await bot.nationBot.structureBehavior.maybeUpgradeSiloForNukeDemand(), false);
+    assert.equal(state.nukeWantSlots, null, "friendly blast closes the investment demand");
+    assert.equal(upgrades.length, 2, "unsafe demand cannot fund another upgrade");
+    assert.equal(wireMessages.length, 4, "unsafe demand cannot emit another binary frame");
+    state.nukeWantSlots = { ...demand };
     player.conquer(target);
     assert.equal(await bot.nationBot.structureBehavior.maybeUpgradeSiloForNukeDemand(), false);
     assert.equal(state.nukeWantSlots, null);

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createAttackBehaviorSandbox } from "./helpers/attack-behavior-sandbox.mjs";
 import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
+import { outcomeTransitionFlags } from "../scripts/headless/hybrid-evaluation-contract.mjs";
 
 // Production callers, not a second policy implementation. Removing the native
 // geometry bridge or final purchase veto must fail these assertions.
@@ -86,7 +87,7 @@ sandbox.window = {};
   assert.ok(start >= 0 && end > start);
   const Evidence = executeClassicScript(
     adapterSource.slice(start, end).replace("export class", "class") + "\nHybridRuntimeEvidence",
-    { structuredClone },
+    { structuredClone, outcomeTransitionFlags },
   );
   const evidence = new Evidence({ runIdentity: "attack-admission-test" });
   evidence.admission({
@@ -1179,7 +1180,7 @@ function economicRealm() {
   delete sandbox.window.__OFH_attackAdmission;
   delete sandbox.window.__OFH_hybridSafety;
 }
-{
+for (const collectorControl of [false, true]) {
   const fixture = createAttackBehaviorSandbox();
   fixture.window = {};
   const rows = [];
@@ -1206,9 +1207,14 @@ function economicRealm() {
   sender.resolveBoatTroops = (troops) => troops;
   sender.recordOutboundAttackIntent = () => {};
   sender.recordBoatDestinationIntent = () => {};
-  fixture.discoverCtors = () => ({ attack: () => {}, boat: () => {} });
+  let constructorAvailable = true;
+  let rateCapacity = true;
+  fixture.discoverCtors = () => ({
+    attack: constructorAvailable ? () => {} : null,
+    boat: () => {},
+  });
   fixture.getEventBus = () => ({});
-  fixture.hasAttackIntentRateCapacity = () => true;
+  fixture.hasAttackIntentRateCapacity = () => rateCapacity;
   let emitted = false;
   fixture.emitIntent = () => emitted;
   fixture.setLastAction = () => {};
@@ -1226,9 +1232,11 @@ function economicRealm() {
       decisionSequence: 0,
       modelIdentity: JSON.stringify(policy.exportModel()),
       controlledAction: "wait",
-      collectorControl: true,
-      learned: false,
-      behaviorPolicy: "coverage-driven-safe-wait-collection-v1",
+      collectorControl,
+      learned: !collectorControl,
+      behaviorPolicy: collectorControl
+        ? "coverage-driven-safe-wait-collection-v1"
+        : "deterministic-wait-act-ranked-target",
     };
     return policy.pending;
   };
@@ -1241,6 +1249,15 @@ function economicRealm() {
     "rejected forced emission preserves real WAIT observation",
   );
   emitted = true;
+  constructorAvailable = false;
+  assert.equal(await sender.forceSendAttack(enemy), false);
+  assert.equal(policy.pending, original, "missing constructor must not censor WAIT");
+  constructorAvailable = true;
+  rateCapacity = false;
+  assert.equal(await sender.forceSendAttack(enemy), false);
+  assert.equal(policy.pending, original, "rate rejection must not censor WAIT");
+  rateCapacity = true;
+  assert.equal(rows.filter((row) => row.phase === "emission").length, 0);
   assert.equal(await sender.forceSendAttack(enemy), true);
   assert.equal(policy.pending, null, "actual forced emission cancels collector WAIT");
   wait();
@@ -1256,11 +1273,17 @@ function economicRealm() {
   const outcomes = rows.filter((row) => row.kind === "hybrid-combat-outcome");
   assert.equal(outcomes.length, 3);
   for (const outcome of outcomes) {
-    assert.equal(outcome.collectorControl, true);
+    assert.equal(outcome.collectorControl === true, collectorControl);
     assert.equal(outcome.reward, null);
     assert.equal(outcome.truncated, true);
     assert.equal(outcome.reason, "competing-attack-emission");
-    assert.equal(outcome.behaviorPolicy, "coverage-driven-safe-wait-collection-v1");
+    assert.equal(
+      outcome.behaviorPolicy,
+      collectorControl
+        ? "coverage-driven-safe-wait-collection-v1"
+        : "deterministic-wait-act-ranked-target",
+    );
+    assert.ok(Number.isSafeInteger(outcome.emissionSequence));
   }
   assert.equal(
     JSON.stringify(policy.exportModel()),
