@@ -1,6 +1,6 @@
 # N5: reinforcement observation experiment
 
-Status: design bound to the actual frozen N5 manifest; native collection started on both hosts. Results and holdout remain pending. Immutable manifest: `/home/eros/.local/state/ofh-evaluation/20261013-n5-reinforcement/frozen-plan.json`, SHA256 `d1ca14c6dc6e9da8d91e1d90a5d68dd62986f95924fd35518e66468ece4d134e`.
+Status: design bound to the actual frozen N5 manifest; both hosts completed 112 accepted training games and 24 holdout games each. No demonstrated Neural advantage. See [final results](hybrid-neural-evaluation-20261013-n5.md). Immutable manifest: `/home/eros/.local/state/ofh-evaluation/20261013-n5-reinforcement/frozen-plan.json`, SHA256 `d1ca14c6dc6e9da8d91e1d90a5d68dd62986f95924fd35518e66468ece4d134e`.
 
 ## Question
 

@@ -1,6 +1,6 @@
 # Reinforcement observation: next evaluation
 
-Status: unit regressions, native receipt characterization on Linux and native Windows, and the isolated full test chain passed. Fresh cold-model collection is running on both hosts; full holdout evaluation remains pending. No model activation or strength claim.
+Status: unit regressions, native receipt characterization on Linux and native Windows, isolated full tests and normal commit hooks passed. Both hosts completed 112 accepted training games and 24 holdout games each; Neural shows no demonstrated advantage. See [final results](hybrid-neural-evaluation-20261013-n5.md). No model activation or strength claim.
 
 ## Finding
 
@@ -21,7 +21,7 @@ The observation retains `preexistingCommitmentTroops` and `commitmentScope:remai
 - The official GameImpl/GameRunner/Executor native fixture passed: old ID `ayyxm29h`, replacement `xzz4q63d`; original commitment 20,000 troops, 19,672.01926517857 absorbed after the old execution advanced. The old ID did not confirm the new intent. The replacement remained live for 12 observed ticks; outcome tick 65, reward 0.5, one ACT and one target update, no WAIT update.
 - That native fixture uses an observer-only Ridge adapter on a declared 32×16 map with fixture troop setup. It is not a full match, compact geometry proof, sender-guard parity check or evidence of improved play.
 
-Final native rerun EXIT0: policy SHA256 `737a4e0e7db2a4f1ea93f693aff7dbac0005a9e173f47d12ea5e07d74a30a2f8`; test SHA256 `9270460d9fb79a6dbe3a305151373deca8137647485d8e781946708ba2f9e2ad`. It ran without preparation environment flags, verified actual ACT and target parameter changes, and preserved the same measured receipts and outcome. Log: `/tmp/ofh-n5-native-final.log`. The full combat unit suite also returned EXIT0 (`/tmp/ofh-n5-unit-recovery.log`); targeted strict lint and formatting returned EXIT0 (`/tmp/ofh-n5-final-style.log`). Independent scoped review accepted this exact policy hash; it did not independently execute native tests. Primitive nonempty string IDs are required; object IDs are explicitly rejected.
+Final native rerun EXIT0: policy SHA256 `737a4e0e7db2a4f1ea93f693aff7dbac0005a9e173f47d12ea5e07d74a30a2f8`; test SHA256 `9270460d9fb79a6dbe3a305151373deca8137647485d8e781946708ba2f9e2ad`. It ran without preparation environment flags, verified actual ACT and target parameter changes, and preserved the same measured receipts and outcome. Durable logs under `/home/eros/.local/state/ofh-evaluation/20261013-n5-reinforcement/`: `isolated-tests.log`, `porty-native-fixture.log`, `global-tests-r2.log` and `normal-commit-r2.log`. Earlier temporary logs were lost on reboot. Independent scoped review accepted this exact policy hash; it did not independently execute native tests. Primitive nonempty string IDs are required; object IDs are explicitly rejected.
 
 ## Next experiment boundary
 
