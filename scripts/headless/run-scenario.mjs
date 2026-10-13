@@ -415,9 +415,22 @@ for (const scenario of selected) {
     process.stdout.write(`FAIL (no result line; child ${status})\n`);
     continue;
   }
-  const ok = scenario.assert(result.result ?? result, logText);
+  const scenarioResult = result.result ?? result;
+  const missileFixtureComplete =
+    scenario.env.OFH_INJECT_HOSTILE_ATOM !== "1" ||
+    (scenarioResult.hostileMissileFixture?.injected === true &&
+      scenarioResult.hostileMissileFixture.seen === true &&
+      scenarioResult.hostileMissileFixture.resolved === true);
+  const childFinishedNormally =
+    run.signal === null &&
+    (run.code === 0 ||
+      (run.code === 2 &&
+        scenarioResult.won === false &&
+        scenarioResult.intentBudgetViolated !== true &&
+        missileFixtureComplete));
+  const ok = childFinishedNormally && scenario.assert(scenarioResult, logText);
   if (!ok) failures += 1;
-  process.stdout.write(ok ? "PASS\n" : `FAIL (expected: ${scenario.expect})\n`);
+  process.stdout.write(ok ? "PASS\n" : `FAIL (child ${status}; expected: ${scenario.expect})\n`);
 }
 
 process.stdout.write(`[run-scenario] ${selected.length - failures}/${selected.length} passed\n`);

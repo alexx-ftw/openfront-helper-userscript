@@ -314,24 +314,39 @@ function makeWorld({
     plannedGroups.push(actions.map((candidate) => candidate.type));
     return "built";
   };
-  assert.equal(
-    await behavior.doHandleLegendaryStructures({
-      config: behavior.game.config(),
-      citiesDisabled: false,
-      cityCount: 1,
-      difficulty: Difficulty.Legendary,
-      hasCoastalTiles: false,
-      hasOceanPortTiles: false,
-      missileSilosEnabled: true,
-      nukesEnabled: true,
-      economyGrowthPriority: false,
-    }),
-    true,
-  );
+  const decision = {
+    config: behavior.game.config(),
+    citiesDisabled: false,
+    cityCount: 1,
+    difficulty: Difficulty.Legendary,
+    hasCoastalTiles: false,
+    hasOceanPortTiles: false,
+    missileSilosEnabled: true,
+    nukesEnabled: true,
+    economyGrowthPriority: false,
+  };
+  assert.equal(await behavior.doHandleLegendaryStructures(decision), true);
   assert.deepEqual(
     { arsenalAttempts, firstSiloAttempts, plannedGroups },
     { arsenalAttempts: [], firstSiloAttempts: [], plannedGroups: [[UNIT.Factory]] },
     "the guarded leader defers discretionary offense to the Defense Post",
+  );
+
+  let surplusUpgradeAttempts = 0;
+  behavior.maybeUpgradeSiloFromSurplus = async () => {
+    surplusUpgradeAttempts++;
+    return true;
+  };
+  behavior.legendaryConstructionActionGroupResult = async () => "skip";
+  assert.equal(
+    await behavior.doHandleLegendaryStructures(decision),
+    false,
+    "an unfulfilled Defense Post lead guard must not fall through to surplus Silo leveling",
+  );
+  assert.equal(
+    surplusUpgradeAttempts,
+    0,
+    "surplus Silo leveling remains blocked until the lead guard is met",
   );
 }
 

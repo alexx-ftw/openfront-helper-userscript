@@ -3052,6 +3052,7 @@
           ? candidates.filter((candidate) => candidate.type !== UNIT.MissileSilo)
           : candidates,
         economyGrowthPriority,
+        !leadGuardShortfall,
       );
     }
 
@@ -3059,7 +3060,12 @@
     // has priority, and the first built/wait result ends the decision. With
     // the construction dump enabled (OFH_CONSTRUCTION_DUMP), the decision
     // appends one inert sample — see recordConstructionPlannerSample.
-    async runLegendaryConstructionGroups(cityCount, candidates, economyGrowthPriority) {
+    async runLegendaryConstructionGroups(
+      cityCount,
+      candidates,
+      economyGrowthPriority,
+      allowSiloSurplusUpgrade = true,
+    ) {
       // The headless structure-trace wrapper is async; await also accepts the
       // synchronous production array without changing its ranking or order.
       const actionGroups = await this.legendaryConstructionActionGroups(
@@ -3082,7 +3088,9 @@
       if (dumpSample !== null) {
         this.recordConstructionPlannerSample(dumpSample, plannerOutcome);
       }
-      if (plannerOutcome === "none") return this.maybeUpgradeSiloFromSurplus();
+      if (plannerOutcome === "none" && allowSiloSurplusUpgrade) {
+        return this.maybeUpgradeSiloFromSurplus();
+      }
       return plannerOutcome === "built";
     }
 

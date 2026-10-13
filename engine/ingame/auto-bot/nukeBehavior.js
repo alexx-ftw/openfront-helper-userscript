@@ -112,6 +112,10 @@
     return out;
   }
 
+  async function nukeFinalLaunchCheckPasses(check, buildable) {
+    return !check || check(buildable);
+  }
+
   // ===========================================================================
   // euclDistFN — src/core/game/GameMap.ts:454. Returns a predicate (gm, tile) =>
   // distance(root, tile) within `dist`. Only the `center=false` branch is used by
@@ -846,7 +850,18 @@
             silos,
           )
         ) {
-          if (await this.sendNuke(cand.tile, selectedNuke.type, target)) return true;
+          if (await this.sendNuke(
+            cand.tile,
+            selectedNuke.type,
+            target,
+            0,
+            (buildable) => this.nukeHasPositiveExpectedValue(
+              cand,
+              target,
+              { ...selectedNuke, cost: buildable.cost },
+              silos,
+            ),
+          )) return true;
         }
       }
       return false;
@@ -2235,7 +2250,8 @@
     // This preserves arrival staggering without blocking the bot or depending
     // on real-time timers, which would drift when game speed changes.
     async sendNuke(tile, nukeType, targetPlayer, waitTicks = 0, salvo = null) {
-      const salvoMetadata = salvo;
+      const finalLaunchCheck = typeof salvo === "function" ? salvo : null;
+      const salvoMetadata = finalLaunchCheck ? null : salvo;
       const delay = Math.max(0, Math.ceil(Number(waitTicks) || 0));
       this.observeHostileNukeThreats();
       if (delay > 0) {
@@ -2283,7 +2299,8 @@
         !this.isEligibleNukeTarget(targetPlayer, false) ||
         !this.isValidNukeDestination(tile, false, targetPlayer) ||
         this.blastHitsFriendlyLand(tile, nukeType) ||
-        !this.nukeLaunchRouteViable(tile, nukeType, targetPlayer, salvoMetadata)
+        !this.nukeLaunchRouteViable(tile, nukeType, targetPlayer, salvoMetadata) ||
+        !(await nukeFinalLaunchCheckPasses(finalLaunchCheck, buildable))
       ) return false;
       // DIVERGENCE: the source can change while the worker prices this shot.
       if (!this.emitNukeWithSalvoFlight(buildable, tile, salvoMetadata)) return false;

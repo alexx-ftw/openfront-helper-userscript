@@ -38,7 +38,7 @@ function makeBehavior({ clear, expectedValueMin }) {
   behavior.probeCanBuildNuke = async () => true;
   behavior.nukeHasPositiveExpectedValue = async (cand) => cand.value >= expectedValueMin;
   const sent = [];
-  behavior.sendNuke = async (...args) => sent.push(args);
+  behavior.sendNuke = async (...args) => sent.push(args.slice(0, 3));
   const tail = { sam: 0, hydrogen: 0 };
   behavior.maybeDestroyEnemySam = async () => {
     tail.sam += 1;
@@ -278,7 +278,7 @@ assert.deepEqual(crossTarget.tail, { sam: 1, hydrogen: 1 });
 // 6. A valid retarget keeps priority and stops after its successful launch.
 const crossTargetAlternateWins = makeCrossTargetBehavior(new Set(["A", "B"]));
 await crossTargetAlternateWins.behavior.maybeSendNuke();
-assert.deepEqual(crossTargetAlternateWins.expectedValueChecks, ["B:B"]);
+assert.deepEqual(crossTargetAlternateWins.expectedValueChecks, ["B:B", "B:B"]);
 assert.deepEqual(crossTargetAlternateWins.sendTargets, [crossTargetAlternateWins.targetB]);
 assert.deepEqual(crossTargetAlternateWins.sent, [
   [crossTargetAlternateWins.candidateB.tile, UNIT.AtomBomb],

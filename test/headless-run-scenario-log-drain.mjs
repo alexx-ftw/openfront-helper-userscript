@@ -45,15 +45,16 @@ childProcess.spawn = () => {
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
   child.kill = () => {};
+  const result = JSON.parse(process.env.OFH_FIXTURE_RESULT);
   let ended = 0;
   const onEnd = () => {
     ended += 1;
-    if (ended === 2) child.emit("close", 0, null);
+    if (ended === 2) child.emit("close", Number(process.env.OFH_FIXTURE_CHILD_EXIT ?? 0), null);
   };
   child.stdout.once("end", onEnd);
   child.stderr.once("end", onEnd);
   queueMicrotask(() => {
-    child.stdout.end(Buffer.from(JSON.stringify({ phase: "result", result: { stopReason: "winner" } }) + "\\n"));
+    child.stdout.end(Buffer.from(JSON.stringify({ phase: "result", result }) + "\\n"));
     child.stderr.end();
   });
   return child;
@@ -62,11 +63,17 @@ moduleApi.syncBuiltinESMExports();
 `,
 );
 
-function runFixture(name, logError = "none") {
+function runFixture(
+  name,
+  logError = "none",
+  childExit = 0,
+  fixture = {},
+  scenario = "control-ffa",
+) {
   const outDir = path.join(tempDir, name);
   const child = spawnSync(
     process.execPath,
-    ["--require", preloadPath, runnerPath, "--only", "control-ffa", "--out", outDir],
+    ["--require", preloadPath, runnerPath, "--only", scenario, "--out", outDir],
     {
       cwd: process.cwd(),
       encoding: "utf8",
@@ -74,6 +81,8 @@ function runFixture(name, logError = "none") {
       env: {
         ...process.env,
         OFH_FIXTURE_LOG_ERROR: logError,
+        OFH_FIXTURE_CHILD_EXIT: String(childExit),
+        OFH_FIXTURE_RESULT: JSON.stringify({ stopReason: "winner", won: false, ...fixture }),
         OFH_RUNNER_TIMEOUT_MS: "3000",
       },
     },
@@ -93,6 +102,55 @@ try {
   assert.match(
     fs.readFileSync(path.join(delayedWrite.outDir, "control-ffa.log"), "utf8"),
     /"phase":"result"/,
+  );
+
+  const cleanLoss = runFixture("clean-loss", "none", 2);
+  assert.equal(cleanLoss.error, undefined, "normal defeat exit must not hang");
+  assert.equal(cleanLoss.status, 0, "a clean defeat may satisfy a mechanism scenario");
+  assert.match(cleanLoss.stdout, /1\/1 passed/);
+
+  const childFailure = runFixture("child-failure", "none", 1);
+  assert.equal(childFailure.error, undefined, "child failure probe must not hang");
+  assert.equal(childFailure.status, 1, "a nonzero simulation exit must fail the runner");
+  assert.match(childFailure.stdout, /FAIL \(child exit 1;/);
+
+  const budgetFailure = runFixture("budget-failure", "none", 2, { intentBudgetViolated: true });
+  assert.equal(budgetFailure.status, 1, "a budget-violating defeat must fail the runner");
+  assert.match(budgetFailure.stdout, /FAIL \(child exit 2;/);
+
+  const inconsistentWin = runFixture("inconsistent-win", "none", 2, { won: true });
+  assert.equal(inconsistentWin.status, 1, "exit 2 must not be accepted for a reported win");
+
+  const completeMissileFixture = runFixture(
+    "complete-missile-fixture",
+    "none",
+    2,
+    {
+      goalRequirements: { ownStructuresNuked: 1 },
+      hostileMissileFixture: { injected: true, seen: true, resolved: true },
+    },
+    "hostile-atom-defense",
+  );
+  assert.equal(
+    completeMissileFixture.status,
+    0,
+    "a completed hostile missile fixture may end in defeat",
+  );
+
+  const incompleteMissileFixture = runFixture(
+    "incomplete-missile-fixture",
+    "none",
+    2,
+    {
+      goalRequirements: { ownStructuresNuked: 1 },
+      hostileMissileFixture: { injected: true, seen: false, resolved: false },
+    },
+    "hostile-atom-defense",
+  );
+  assert.equal(
+    incompleteMissileFixture.status,
+    1,
+    "an incomplete missile fixture must fail the runner",
   );
 
   const logError = runFixture("log-error", "async");

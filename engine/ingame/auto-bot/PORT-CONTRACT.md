@@ -672,6 +672,10 @@ territory tile into counterforce planning. Every hostile SAM able to intercept
 that route joins the salvo targets, including when the nuke target also owns
 SAMs; duplicate launchers are removed. Without a blocked candidate, the existing
 structure-route fallback still applies when the target has no SAM coverage.
+Legendary clear-shot value is rechecked against live target structures after
+the final asynchronous buildability, counterforce, and route checks and before
+the launch intent is emitted; a stale candidate falls through to the next
+ranked tile.
 
 Legendary's preemptive border-force nuke compares the hostile army with our
 garrison after subtracting only outbound intents not yet reflected in the troop
@@ -689,7 +693,8 @@ routine Legendary SAM parity does not suppress that land-defense response. The
 actual owned structure snapshot, so an emergency-built SAM or Silo cannot leave
 Defense Posts permanently gated off. An unaffordable urgent post reserves its
 construction slot, but an affordable post with no legal placement does not
-starve all lower-priority construction.
+starve all lower-priority construction. While the Defense Post lead guard is
+short, discretionary Silo placements and surplus-funded Silo upgrades both wait.
 
 A failed hostile-Silo SAM placement retains its bounded retry cadence but no
 longer reserves every construction slot between retries. Likewise, the

@@ -1067,7 +1067,7 @@ async function fireCandidateAtDifficulty(difficulty, value, expectedValue) {
     [],
     difficulty,
   );
-  return sent;
+  return sent.map((args) => args.slice(0, 3));
 }
 assert.deepEqual(
   await fireCandidateAtDifficulty("Impossible", 0, true),

@@ -1072,6 +1072,80 @@ for (const rejection of ["captured-first", "captured-all", "none"]) {
   launchSink = null;
 }
 
+{
+  const { game, player, nukeTarget, behavior } = makeSalvoWorld();
+  const previousDifficulty = sandbox.currentDifficulty;
+  sandbox.currentDifficulty = () => "Legendary";
+  const firstCity = {
+    tile: () => 20,
+    level: () => 1,
+    type: () => UNIT.City,
+  };
+  const secondCity = {
+    tile: () => 30,
+    level: () => 1,
+    type: () => UNIT.City,
+  };
+  let cities = [firstCity, secondCity];
+  nukeTarget.units = (type) => (type === UNIT.City ? cities : []);
+  game.config = () => ({
+    nukeMagnitudes: () => ({ inner: 1, outer: 2 }),
+    isUnitDisabled: () => false,
+  });
+  game.euclideanDistSquared = (from, to) => (from - to) ** 2;
+  behavior.observeHostileNukeThreats = () => {};
+  behavior.isEligibleNukeTarget = () => true;
+  behavior.isValidNukeDestination = () => true;
+  behavior.blastHitsFriendlyLand = () => false;
+  behavior.isUnderHeavyAttack = () => false;
+  behavior.findStrategicBorderArmyTarget = () => null;
+  behavior.probeCanBuildNuke = async () => true;
+  behavior.shouldHoldCounterforceNuke = async () => false;
+  behavior.nukeLaunchRouteViable = () => true;
+  behavior.nukeStructureValue = () => 1_000_000;
+  behavior.rememberSuccessfulNukeLaunch = async () => {};
+  player.gold = () => 2_000_000n;
+  assert.equal(
+    await behavior.nukeHasPositiveExpectedValue(
+      { tile: 20, coveringSamLevels: 0 },
+      nukeTarget,
+      { type: UNIT.AtomBomb, cost: 750_000n },
+      [],
+    ),
+    true,
+    "the fixture starts with enough live structure value to justify the first shot",
+  );
+  player.buildables = async () => {
+    cities = cities.filter((city) => city !== firstCity);
+    return [{ type: UNIT.AtomBomb, cost: 750_000n, canBuild: true }];
+  };
+  const emitted = [];
+  launchSink = emitted;
+  try {
+    assert.equal(
+      await behavior.fireLegendaryClearFallthrough(
+        [
+          { tile: 20, value: 100 },
+          { tile: 30, value: 50 },
+        ],
+        nukeTarget,
+        { type: UNIT.AtomBomb, cost: 750_000n },
+        [],
+      ),
+      true,
+      "an EV-stale first shot falls through to the next candidate",
+    );
+    assert.deepEqual(
+      emitted.map((shot) => shot.tile),
+      [30],
+      "the launch probe rejects the cleared structure and preserves the next valuable target",
+    );
+  } finally {
+    sandbox.currentDifficulty = previousDifficulty;
+    launchSink = null;
+  }
+}
+
 for (const capture of ["before-due", "poor", "price", "price-poor", "buildable"]) {
   const { behavior, game, player, world, nukeTarget } = makeSalvoWorld();
   player.isPlayer = nukeTarget.isPlayer = () => true;
