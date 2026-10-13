@@ -201,6 +201,58 @@ const wrappedGame = gameApiSandbox.__createGameApi({}).game;
     "a blast covering a SAM prices the counterforce value instead of scoring zero",
   );
 
+  const boundaryScoreBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  boundaryScoreBehavior.game = {
+    config: () => ({ nukeMagnitudes: () => ({ inner: 2, outer: 3 }) }),
+    euclideanDistSquared: (a, b) => (a - b) ** 2,
+    nearbyUnits: () => [],
+  };
+  boundaryScoreBehavior.recentlySentNukes = [];
+  boundaryScoreBehavior.friendlyFirePenalty = () => 0;
+  boundaryScoreBehavior.rankableSiloTiles = () => [100];
+  const cityAt = (tile) => ({ type: () => UNIT.City, level: () => 4, tile: () => tile });
+  assert.equal(
+    boundaryScoreBehavior.nukeTileScore(100, [], [cityAt(104)], UNIT.AtomBomb),
+    0,
+    "a structure strictly past the blast edge receives no score because the game leaves it alive",
+  );
+  assert.equal(
+    boundaryScoreBehavior.nukeTileScore(100, [], [cityAt(103)], UNIT.AtomBomb),
+    100_000,
+    "a structure at the exact blast edge is destroyed too and contributes its replacement value",
+  );
+
+  // The same inclusive-edge rule prices friendly losses and the hydrogen
+  // finisher; the engine deletes edge tiles for all three scorers.
+  const edgePenaltyBehavior = Object.create(sandbox.__NukeBehavior.prototype);
+  edgePenaltyBehavior.game = {
+    euclideanDistSquared: (a, b) => (a - b) ** 2,
+  };
+  edgePenaltyBehavior.friendlyNukeStructures = () => [
+    { tile: 103, value: 500, replacementValue: 500 },
+  ];
+  assert.ok(
+    edgePenaltyBehavior.friendlyFirePenalty(100, { inner: 2, outer: 3 }) > 0,
+    "a friendly structure exactly on the blast edge is charged as destroyed",
+  );
+  const edgeFinisher = Object.create(sandbox.__NukeBehavior.prototype);
+  edgeFinisher.game = {
+    euclideanDistSquared: (a, b) => (a - b) ** 2,
+  };
+  edgeFinisher.friendlyFirePenalty = () => 0;
+  const edgeFinisherTarget = {
+    units: (type) => (type === UNIT.City ? [cityAt(103)] : []),
+  };
+  assert.equal(
+    edgeFinisher.postSalvoHydrogenHasValue(
+      { nukeMagnitudes: () => ({ inner: 2, outer: 3 }) },
+      edgeFinisherTarget,
+      { targetTile: 100 },
+    ),
+    true,
+    "the hydrogen finisher counts an enemy structure exactly on the blast edge",
+  );
+
   // Target-distance ranking must use ready silo origins. A cooling near silo
   // cannot make a remote tile look like an easy delivery for a distant ready
   // tube; when every tube is cooling, preserve the prior fallback ordering.
@@ -773,6 +825,40 @@ assert.equal(
   ),
   false,
   "Legendary skips an ordinary nuke whose vulnerable value is below its launch cost",
+);
+const boundaryValueGuard = Object.create(sandbox.__NukeBehavior.prototype);
+boundaryValueGuard.game = {
+  euclideanDistSquared: (a, b) => (a - b) ** 2,
+  config: () => ({ nukeMagnitudes: () => ({ outer: 30 }) }),
+};
+boundaryValueGuard.isUnderHeavyAttack = () => false;
+boundaryValueGuard.findStrategicBorderArmyTarget = () => null;
+boundaryValueGuard.readySiloShotCapacity = () => 1;
+boundaryValueGuard.nukeStructureValue = () => 1_000_000;
+const boundaryValueTarget = (tile) => ({
+  smallID: () => 2,
+  units: (type) =>
+    type === UNIT.City ? [{ type: () => UNIT.City, level: () => 4, tile: () => tile }] : [],
+});
+assert.equal(
+  await boundaryValueGuard.nukeHasPositiveExpectedValue(
+    { tile: 0, coveringSamLevels: 0 },
+    boundaryValueTarget(31),
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [],
+  ),
+  false,
+  "a City strictly past the blast edge cannot make an otherwise sub-value nuke appear profitable",
+);
+assert.equal(
+  await boundaryValueGuard.nukeHasPositiveExpectedValue(
+    { tile: 0, coveringSamLevels: 0 },
+    boundaryValueTarget(30),
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [],
+  ),
+  true,
+  "the same City exactly on the blast edge is destroyed as well and remains eligible by expected value",
 );
 const counterforceValueGuard = Object.create(sandbox.__NukeBehavior.prototype);
 const counterforcePlayer = makeArmyPlayer(1, 1_000_000);

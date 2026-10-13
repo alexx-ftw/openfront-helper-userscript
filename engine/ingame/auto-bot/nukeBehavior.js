@@ -132,6 +132,11 @@
     }
   }
 
+  // NukeExecution destroys every tile at distance squared <= outer².
+  function isInsideNukeDestructionRadius(game, center, tile, outerRadius) {
+    return game.euclideanDistSquared(center, tile) <= outerRadius * outerRadius;
+  }
+
   // ===========================================================================
   // Bezier curve helpers — src/core/utilities/Line.ts (ported VERBATIM, only TS
   // types dropped). CubicBezierCurve + DistanceBasedBezierCurve back the parabola
@@ -1044,9 +1049,10 @@
       ) return true;
       const structures = unitsOfTypes(target);
       const magnitude = this.game.config().nukeMagnitudes(selectedNuke.type);
-      const outerDist = euclDistFN(candidate.tile, magnitude.outer, false);
       const vulnerableValue = structures
-        .filter((unit) => outerDist(this.game, unit.tile()))
+        .filter((unit) => isInsideNukeDestructionRadius(
+          this.game, candidate.tile, unit.tile(), magnitude.outer,
+        ))
         .reduce((sum, unit) => sum + this.nukeStructureValue(unit), 0);
       if (vulnerableValue <= 0) return false;
       const coveringSamLevels = Number(candidate.coveringSamLevels || 0);
@@ -1122,7 +1128,7 @@
      * assault or direct retaliation keeps the emergency path responsive;
      * ordinary target selection follows the surplus policy.
      */
-    shouldDeferNukeForEconomy(nukeTarget, nukeCost) {
+    shouldDeferNukeForEconomy(nukeTarget, nukeCost, excludedNukeClaimIds = null) {
       if (this.hasActiveMaritimeInvasion()) return true;
       // A Hydro Legendary nation with a live SAM has already paid for the
       // defensive prerequisite. Once an Atom is affordable, withholding it
@@ -1150,7 +1156,7 @@
       }
       if (this.isRetaliationNukeTarget(nukeTarget)) return false;
       {
-        return policy.call(this.structureBehavior, nukeCost) === true;
+        return policy.call(this.structureBehavior, nukeCost, excludedNukeClaimIds) === true;
       }
     }
 
@@ -2065,7 +2071,8 @@
 
     /**
      * Penalty for a candidate tile whose blast radii would also hit friendly
-     * structures: every structure strictly inside the outer circle is destroyed.
+     * structures: every structure within the outer circle (inclusive edge) is
+     * destroyed.
      * Uses the existing replacement multiplier for the complete destruction area.
      */
     friendlyFirePenalty(tile, magnitude, replacementValues = false) {
@@ -2074,7 +2081,7 @@
       const outerSquared = magnitude.outer * magnitude.outer;
       let destroyedValue = 0;
       for (const entry of friendlyStructures) {
-        if (this.game.euclideanDistSquared(tile, entry.tile) < outerSquared) {
+        if (this.game.euclideanDistSquared(tile, entry.tile) <= outerSquared) {
           destroyedValue += replacementValues ? entry.replacementValue : entry.value;
         }
       }
@@ -2104,9 +2111,10 @@
 
     nukeTileScore(tile, silos, targets, nukeType) {
       const magnitude = this.game.config().nukeMagnitudes(nukeType);
-      const dist = euclDistFN(tile, magnitude.outer, false);
       let tileValue = targets
-        .filter((unit) => dist(this.game, unit.tile()))
+        .filter((unit) => isInsideNukeDestructionRadius(
+          this.game, tile, unit.tile(), magnitude.outer,
+        ))
         .map((unit) => {
           const level = unit.level();
           switch (unit.type()) {
@@ -2961,9 +2969,9 @@
     }
 
     blastStructureValue(tile, structures, radius) {
-      // NukeExecution destroys structures strictly inside the circular blast.
+      // NukeExecution destroys structures within the circular blast (inclusive edge).
       return structures
-        .filter((unit) => this.game.euclideanDistSquared(tile, unit.tile()) < radius * radius)
+        .filter((unit) => this.game.euclideanDistSquared(tile, unit.tile()) <= radius * radius)
         .reduce((sum, unit) => sum + this.nukeStructureValue(unit), 0);
     }
 
@@ -3020,21 +3028,48 @@
       const salvo = this.getSamSalvo(plan);
       const flightTicks = salvo.waits.map((_, index) => plan.launchSequence?.[index]?.flightTicks);
       const plannedLastArrivalTick = this.samSalvoLastArrivalTick(salvo, flightTicks);
-      if (!await this.canStartSamSalvo(plan, nukeTarget, salvo, atomCost)) return false;
-      this.ensureSamDemandRequest(plan, salvo);
-      // Plan metadata carried by every delayed entry of this salvo so
-      // processPendingNukeLaunches can re-validate the enemy SAM layout
-      // mid-flight (see samSalvoStillViable). plannedCoveringLevel records the
-      // hostile SAM level sum the bomb count was sized against at planning time.
       const salvoPlan = this.nextSamSalvoPlan({
         ...plan,
         lastArrivalTick: plannedLastArrivalTick,
       });
+      const claimIds = typeof autoBotBuildClaimNukeLaunches === "function"
+        ? autoBotBuildClaimNukeLaunches(
+          this.game,
+          this.player,
+          {
+            nukeType: UNIT.AtomBomb,
+            targetTile: plan.targetTile,
+            cost: atomCost,
+            count: salvo.bombsToFire,
+            salvoId: salvoPlan.salvoId,
+          },
+        )
+        : Array.from({ length: salvo.bombsToFire }, () => null);
+      if (claimIds === null) return false;
+      salvo.claimIds = claimIds;
+      // Plan metadata carried by every delayed entry of this salvo so
+      // processPendingNukeLaunches can re-validate the enemy SAM layout
+      // mid-flight (see samSalvoStillViable). plannedCoveringLevel records the
+      // hostile SAM level sum the bomb count was sized against at planning time.
       let result;
+      let demandStarted = false;
       try {
-        result = await this.launchSamSalvoBombs(plan, nukeTarget, salvo, flightTicks, salvoPlan);
+        if (!await this.canStartSamSalvo(plan, nukeTarget, salvo, atomCost)) return false;
+        this.ensureSamDemandRequest(plan, salvo);
+        demandStarted = true;
+        result = await this.launchSamSalvoBombs(
+          plan, nukeTarget, salvo, flightTicks, salvoPlan,
+        );
       } finally {
-        this.finishSamDemandRequest();
+        for (const claimId of claimIds) {
+          const queued = this._pendingNukeLaunches.some(
+            (pending) => pending.salvo?.claimId === claimId,
+          );
+          if (!queued && typeof autoBotBuildReleaseNukeLaunchClaim === "function") {
+            autoBotBuildReleaseNukeLaunchClaim(this.game, this.player, claimId);
+          }
+        }
+        if (demandStarted) this.finishSamDemandRequest();
       }
       if (!result.complete) return result.firedOrQueued;
       // Hydrogen finisher (goal rule): the saturating atoms exist to strip the
@@ -3055,7 +3090,10 @@
         return false;
       }
       const salvoCost = BigInt(atomCost) * BigInt(salvo.bombsToFire);
-      if (await this.shouldDeferNukeForEconomy(nukeTarget, salvoCost)) return false;
+      const excludedClaims = new Set(
+        (salvo.claimIds ?? []).filter((claimId) => claimId !== null && claimId !== undefined),
+      );
+      if (await this.shouldDeferNukeForEconomy(nukeTarget, salvoCost, excludedClaims)) return false;
       return this.player.gold() >= salvoCost;
     }
 
@@ -3088,6 +3126,7 @@
           ...salvoPlan,
           remainingLaunches: salvo.bombsToFire - index,
           flightTicks: flightTicks[index],
+          claimId: salvo.claimIds[index],
         };
         const wait = Math.max(salvo.waits[index], queued ? 1 : 0);
         const sent = await this.sendNuke(
@@ -3766,6 +3805,10 @@
         ? this.getAvailableSiloEntries(this.player.units(UNIT.MissileSilo), tile, new Set())[0]?.flightTicks
         : undefined;
       if (!this.emitNukeBuildable(buildable, tile, salvo)) return false;
+      if (salvo?.claimId !== null && salvo?.claimId !== undefined &&
+          typeof autoBotBuildReleaseNukeLaunchClaim === "function") {
+        autoBotBuildReleaseNukeLaunchClaim(this.game, this.player, salvo.claimId);
+      }
       if (Number.isFinite(liveFlight)) salvo.flightTicks = liveFlight;
       if (salvo) {
         // Every launched atom of a salvo keeps counting toward its
@@ -3867,7 +3910,7 @@
       // replacement loss for, matching the tile scorer's counterforce logic.
       const enemyValue = unitsOfTypes(target)
         .filter((unit) =>
-          this.game.euclideanDistSquared(pending.targetTile, unit.tile()) <
+          this.game.euclideanDistSquared(pending.targetTile, unit.tile()) <=
             magnitude.outer * magnitude.outer)
         .reduce((sum, unit) =>
           sum + this.nukeStructureValue(unit) * this.mirvCapableSiloPriority(unit), 0);
@@ -3940,6 +3983,7 @@
     }
 
     finishPendingNukePass(abortedSalvoIds, remaining, droppedAbortedEntries) {
+      const previous = this._pendingNukeLaunches;
       const kept =
         abortedSalvoIds.size > 0
           ? remaining.filter(
@@ -3948,6 +3992,15 @@
             )
           : remaining;
       this._pendingNukeLaunches = kept;
+      const keptClaimIds = new Set(kept.map((pending) => pending.salvo?.claimId));
+      if (typeof autoBotBuildReleaseNukeLaunchClaim === "function") {
+        for (const pending of previous) {
+          const claimId = pending.salvo?.claimId;
+          if (claimId !== null && claimId !== undefined && !keptClaimIds.has(claimId)) {
+            autoBotBuildReleaseNukeLaunchClaim(this.game, this.player, claimId);
+          }
+        }
+      }
       for (const salvoId of abortedSalvoIds) this._salvoFiredCounts?.delete(salvoId);
       if (
         kept.length === 0 &&

@@ -9414,3 +9414,26 @@ Restored the batch penetration re-check to count every live covering SAM (salvo-
 ## 1.12.217 full-basket evidence (2026-10-10)
 
 Ran the whole fixed basket (35 rows, OFH_SIM_PARALLELISM=2, results.jsonl in /tmp/ofh-matrix/basket-2026-10-10): 5 wins / 30 losses. team-none basket-05 WON @13831 - the first team-none win on this engine generation (the 2026-10-10 stale-baseline note recorded 0/5 for 1.12.196-1.12.210 and called the set a drift detector). team-temp 2/5 (12561, 10061), team-25mm 1/5 (19141), ffa-n20 1/5 (102211, survival win), team-5mm 0/5, ffa-n2 0/5 (longest loss 51751), ffa-n4 0/5. n=1 per seed, so this is a signal, not a proven win-rate: the team-none win needs the next basket to confirm whether the salvo re-arm + gate work actually moved team survival. No Legendary-specific claim.
+
+## Inclusive blast edge + salvo claim release (2026-10-13)
+
+The 2026-10-08 friendly-fire section recorded "the exact boundary survives";
+the engine source says otherwise: NukeExecution destroys every tile at
+euclidean distance squared <= outer^2 (openfront-engine
+src/core/execution/NukeExecution.ts; GameMap euclDistFN center=false is
+inclusive). All bot scorers now share that rule: nukeTileScore, the
+nukeHasPositiveExpectedValue vulnerable-value gate, friendlyFirePenalty,
+blastStructureValue and postSalvoHydrogenHasValue use an inclusive outer edge,
+with updated edge assertions in nuke-economy-policy and nuke-salvo-recheck.
+A new salvo regression pins that a fireSamSalvo start-check rejection releases
+every unqueued ledger claim (capacity returns to the full silo level).
+
+Fresh deterministic matrix (post-gold-fix, /tmp/ofh-matrix/
+scenarios-2026-10-13-post-gold-fix): baikal-nuke-wars led with a 52% peak
+territory share and 15 own detonations, then died at tick 4434 — survival
+after dominance remains the recorded open gap. luna-nuke-wars survived all
+12951 ticks with 42 atoms + 4 hydrogen launched and the best economy, but lost
+the conquest to Luna 21 while two late invasion beachheads stayed unrecaptured.
+The anti-SAM aim filter still requires the SAM strictly inside the blast
+(deliberately conservative); water-nuke boundary scoring stays approximate.
+No win-rate claim.

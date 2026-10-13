@@ -617,8 +617,11 @@ Atom, Hydrogen and MIRV dispatches also reserve native silo capacity until their
 new missile appears, or the same six-tick dispatch grace expires. Source prediction
 and salvo planning replay those unacknowledged intents in emission order against
 all current silos, including newly built closer ones; acknowledged missiles are
-counted only through the native silo queue. Outside this dispatch round trip,
-source prediction retains the validated readiness policy.
+counted only through the native silo queue. Before a SAM-overwhelm salvo starts,
+each planned Atom also claims its silo capacity and gold in the same ledger. Those
+queue-owned claims survive retries, transfer to the six-tick dispatch grace when
+emitted, and release when a queued shot is dropped or its salvo aborts. Outside
+this dispatch round trip, source prediction retains the validated readiness policy.
 The receipt matcher uses new own missile IDs, type and destination. Manual shots
 to the same destination during that round trip, and receipts first seen after
 their dispatch grace expired, cannot be distinguished from later bot receipts.

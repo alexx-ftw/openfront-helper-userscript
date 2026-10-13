@@ -81,11 +81,13 @@
     return id === null || id === undefined ? "" : String(id);
   }
 
-  function autoBotBuildReservedGold(game, player) {
+  function autoBotBuildReservedGold(game, player, excludedClaimId = null) {
     const tick = autoBotBuildTick(game);
     const playerId = autoBotBuildPlayerId(player);
     return (autoBotBuildReservations.get(game) ?? []).reduce(
-      (total, reservation) => reservation.expiresAt > tick && reservation.playerId === playerId
+      (total, reservation) => (reservation.queueOwned === true || reservation.expiresAt > tick) &&
+        reservation.playerId === playerId &&
+        !autoBotBuildClaimExcluded(reservation.claimId, excludedClaimId)
         ? total + reservation.cost : total,
       0n,
     );
@@ -104,7 +106,8 @@
     const tick = autoBotBuildTick(game);
     const playerId = autoBotBuildPlayerId(player);
     const records = (autoBotBuildReservations.get(game) ?? []).filter(
-      (record) => record.expiresAt > tick && record.playerId === playerId && record.nuke,
+      (record) => record.queueOwned !== true && record.expiresAt > tick &&
+        record.playerId === playerId && record.nuke,
     );
     const claimed = new Set(records.filter((record) => record.receipt !== undefined)
       .map((record) => record.receipt));
@@ -126,9 +129,34 @@
     return records.filter((record) => record.receipt === undefined);
   }
 
-  function autoBotBuildNukeSlots(game, player) {
+  function autoBotBuildClaimExcluded(claimId, excludedClaimId) {
+    return excludedClaimId instanceof Set
+      ? excludedClaimId.has(claimId)
+      : claimId === excludedClaimId;
+  }
+
+  function autoBotBuildReserveNearestNukeSlot(slots, silos, game, targetTile) {
+    let source = null;
+    let distance = Infinity;
+    for (const silo of silos) {
+      if (slots.get(String(silo.id())) <= 0) continue;
+      const candidate = game.manhattanDist(silo.tile(), targetTile);
+      if (candidate < distance) {
+        source = silo;
+        distance = candidate;
+      }
+    }
+    if (source) slots.set(String(source.id()), slots.get(String(source.id())) - 1);
+  }
+
+  function autoBotBuildNukeSlots(game, player, excludedClaimId = null, includeEmpty = false) {
     const pending = autoBotBuildPendingNukes(game, player);
-    if (pending.length === 0) return null;
+    const playerId = autoBotBuildPlayerId(player);
+    const claims = (autoBotBuildReservations.get(game) ?? []).filter(
+      (record) => record.queueOwned === true && record.playerId === playerId &&
+        !autoBotBuildClaimExcluded(record.claimId, excludedClaimId),
+    );
+    if (pending.length === 0 && claims.length === 0 && !includeEmpty) return null;
     const silos = player.units("Missile Silo");
     if (silos.some((silo) => typeof silo.id !== "function" ||
       typeof silo.level !== "function" || typeof silo.missileTimerQueue !== "function")) return null;
@@ -137,20 +165,55 @@
         ? 0 : Math.max(0, silo.level() - silo.missileTimerQueue().length)]));
     // DIVERGENCE: replay unacknowledged intents against today's sources; a new
     // closer silo can change the native source of the entire buffered prefix.
-    for (const record of pending) {
-      let source = null;
-      let distance = Infinity;
-      for (const silo of silos) {
-        if (slots.get(String(silo.id())) <= 0) continue;
-        const candidate = game.manhattanDist(silo.tile(), record.targetTile);
-        if (candidate < distance) {
-          source = silo;
-          distance = candidate;
-        }
-      }
-      if (source) slots.set(String(source.id()), slots.get(String(source.id())) - 1);
+    for (const record of pending.concat(claims)) {
+      autoBotBuildReserveNearestNukeSlot(slots, silos, game, record.targetTile);
     }
     return slots;
+  }
+
+  function autoBotBuildClaimNukeLaunches(
+    game,
+    player,
+    { nukeType, targetTile, cost, count, salvoId } = {},
+  ) {
+    const shots = Number(count);
+    const unitCost = autoBotBuildCost({ cost });
+    const playerId = autoBotBuildPlayerId(player);
+    if (game === null || typeof game !== "object" || !playerId ||
+        !Number.isInteger(shots) || shots <= 0 || unitCost === null) return null;
+    const tick = autoBotBuildTick(game);
+    const reservations = (autoBotBuildReservations.get(game) ?? []).filter(
+      (reservation) => reservation.queueOwned === true || reservation.expiresAt > tick,
+    );
+    autoBotBuildReservations.set(game, reservations);
+    const gold = player?.gold?.();
+    if (typeof gold !== "bigint" ||
+        gold - autoBotBuildReservedGold(game, player) < unitCost * BigInt(shots)) return null;
+    if (!autoBotBuildNukeSlotsAvailable(game, player, shots)) return null;
+    const claimIds = Array.from({ length: shots }, () => Symbol("nuke-launch-claim"));
+    for (const claimId of claimIds) {
+      reservations.push({
+        queueOwned: true,
+        playerId,
+        cost: unitCost,
+        nuke: nukeType,
+        targetTile,
+        salvoId,
+        claimId,
+      });
+    }
+    return claimIds;
+  }
+
+  function autoBotBuildReleaseNukeLaunchClaim(game, player, claimId) {
+    if (claimId === null || claimId === undefined) return false;
+    const playerId = autoBotBuildPlayerId(player);
+    const reservations = autoBotBuildReservations.get(game) ?? [];
+    const index = reservations.findIndex((record) => record.queueOwned === true &&
+      record.playerId === playerId && record.claimId === claimId);
+    if (index < 0) return false;
+    reservations.splice(index, 1);
+    return true;
   }
 
   function autoBotBuildDispatch(buildMenu, buildable, tile) {
@@ -188,62 +251,92 @@
     return !admission?.blocked && (admission?.notBeforeTick == null || tick >= admission.notBeforeTick);
   }
 
+  function autoBotBuildReservationClaim(reservations, playerId, trackNuke, nuclear) {
+    const claimId = nuclear && typeof trackNuke === "object" && trackNuke !== null
+      ? trackNuke.claimId : null;
+    if (claimId === null || claimId === undefined) return { claimId, claim: null };
+    const claim = reservations.find((record) => record.queueOwned === true &&
+      record.playerId === playerId && record.claimId === claimId);
+    return claim ? { claimId, claim } : null;
+  }
+
+  function autoBotBuildNukeCapacityAvailable(game, player, claimId, claim) {
+    const slots = autoBotBuildNukeSlots(game, player, claimId, claim !== null);
+    return !slots || [...slots.values()].some((count) => count > 0);
+  }
+
+  function autoBotBuildNukeSlotsAvailable(game, player, required) {
+    const slots = autoBotBuildNukeSlots(game, player, null, true);
+    return slots !== null && [...slots.values()].reduce((total, count) => total + count, 0) >= required;
+  }
+
   function autoBotPrepareBuildReservation({ game, player, buildable, trackNuke, tile }) {
     const cost = autoBotBuildCost(buildable);
     if (cost === null) return null;
     const tick = autoBotBuildTick(game);
     const playerId = autoBotBuildPlayerId(player);
     const reservations = (autoBotBuildReservations.get(game) ?? []).filter(
-      (reservation) => reservation.expiresAt > tick,
+      (reservation) => reservation.queueOwned === true || reservation.expiresAt > tick,
     );
     autoBotBuildReservations.set(game, reservations);
-    const reserved = autoBotBuildReservedGold(game, player);
+    const nuclear = trackNuke && typeof player?.units === "function";
+    const nukeClaim = autoBotBuildReservationClaim(reservations, playerId, trackNuke, nuclear);
+    if (nukeClaim === null) return null;
+    const { claimId, claim } = nukeClaim;
+    const reserved = autoBotBuildReservedGold(game, player, claimId);
     const gold = player?.gold?.();
     if (typeof gold !== "bigint" || gold - reserved < cost) return null;
-    const nuclear = trackNuke && typeof player?.units === "function";
-    if (nuclear) {
-      const slots = autoBotBuildNukeSlots(game, player);
-      if (slots && ![...slots.values()].some((count) => count > 0)) return null;
-    }
+    if (nuclear && !autoBotBuildNukeCapacityAvailable(game, player, claimId, claim)) return null;
     if (!autoBotEconomicPurchaseAllowed({ game, player, buildable, tile, reserved, tick })) return null;
-    return { cost, tick, playerId, reservations, nuclear };
+    return { cost, tick, playerId, reservations, nuclear, claim };
+  }
+
+  function autoBotPrepareBuildIntent(buildMenu, buildable, tile, context) {
+    const [game, player, trackNuke = false] = context;
+    if (!autoBotTickActionAllowed() || game === null || typeof game !== "object") return null;
+    const dispatch = autoBotBuildDispatch(buildMenu, buildable, tile);
+    if (!dispatch) return null;
+    const reservation = autoBotPrepareBuildReservation({ game, player, buildable, trackNuke, tile });
+    return reservation ? { player, trackNuke, dispatch, reservation } : null;
+  }
+
+  function autoBotBuildIntentAvailable(buildable) {
+    if (typeof hasIntentRateLimitCapacity === "function" && !hasIntentRateLimitCapacity()) {
+      return false;
+    }
+    return typeof tryAcquireIntentRateLimit !== "function" ||
+      tryAcquireIntentRateLimit(String(buildable.type));
+  }
+
+  function autoBotRecordBuildReservation({ reservation, buildable, tile, trackNuke, knownIds }) {
+    const { cost, tick, playerId, reservations, nuclear, claim } = reservation;
+    const record = {
+      playerId,
+      cost,
+      expiresAt: tick + AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS,
+      ...(nuclear ? { nuke: buildable.type, targetTile: tile, knownIds,
+        salvoId: trackNuke?.salvoId ?? null } : {}),
+    };
+    if (claim) Object.assign(claim, { queueOwned: false, ...record });
+    else reservations.push(record);
   }
 
   function sendAutoBotBuildOrUpgrade(buildMenu, buildable, tile, ...context) {
-    const [game, player, trackNuke = false] = context;
-    if (!autoBotTickActionAllowed()) return false;
-    if (game === null || typeof game !== "object") return false;
-    const dispatch = autoBotBuildDispatch(buildMenu, buildable, tile);
-    if (!dispatch) return false;
-    const reservation = autoBotPrepareBuildReservation({ game, player, buildable, trackNuke, tile });
-    if (!reservation) return false;
-    const { cost, tick, playerId, reservations, nuclear } = reservation;
+    const prepared = autoBotPrepareBuildIntent(buildMenu, buildable, tile, context);
+    if (!prepared || !autoBotBuildIntentAvailable(buildable)) return false;
+    const { player, trackNuke, dispatch, reservation } = prepared;
+    const { nuclear } = reservation;
     // The build menu emits straight onto the EventBus, bypassing emitIntent's
     // consuming gate — but the server's ClientMsgRateLimiter still counts
     // these. Acquire the shared client token here so construction bursts (a
     // structure pass every few ticks under siege, a staggered
     // SAM-overwhelm salvo coming due) are paced locally and cleanly retried
     // by their callers instead of silently dropped server-side.
-    if (typeof hasIntentRateLimitCapacity === "function" && !hasIntentRateLimitCapacity()) {
-      return false;
-    }
-    if (
-      typeof tryAcquireIntentRateLimit === "function" &&
-      !tryAcquireIntentRateLimit(String(buildable.type))
-    ) {
-      return false;
-    }
     const knownIds = nuclear
       ? new Set(player.units(buildable.type).map((unit) => String(unit.id()))) : null;
     if (!autoBotTickActionAllowed()) return false;
     dispatch();
-    reservations.push({
-      playerId,
-      cost,
-      expiresAt: tick + AUTO_BOT_BUILD_RESERVATION_GRACE_TICKS,
-      ...(nuclear ? { nuke: buildable.type, targetTile: tile, knownIds,
-        salvoId: trackNuke?.salvoId ?? null } : {}),
-    });
+    autoBotRecordBuildReservation({ reservation, buildable, tile, trackNuke, knownIds });
     return true;
   }
 

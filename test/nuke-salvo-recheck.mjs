@@ -49,6 +49,10 @@ const sandbox = {
   WORKER_TIMEOUT_MS: 1000,
   withTimeout: async (promise) => promise,
   getBuildMenu: () => buildMenu,
+  document: {
+    querySelector: (selector) => (selector === "build-menu" ? buildMenu : null),
+  },
+  window: {},
   sendAutoBotBuildOrUpgrade: (menu, buildable, tile) => {
     menu.sendBuildOrUpgrade(buildable, tile);
     if (launchSink) launchSink.push({ type: buildable.type, tile });
@@ -66,8 +70,23 @@ sandbox.globalThis = sandbox;
 executeClassicScript(read("engine/ingame/shared-utils.js"), sandbox, {
   filename: "shared-utils.vm.js",
 });
+const stubBuildSender = sandbox.sendAutoBotBuildOrUpgrade;
+executeClassicScript(read("engine/ingame/auto-bot/context.js"), sandbox, {
+  filename: "context.vm.js",
+});
+const sharedNukeLedger = {
+  claim: sandbox.autoBotBuildClaimNukeLaunches,
+  release: sandbox.autoBotBuildReleaseNukeLaunchClaim,
+  slots: sandbox.autoBotBuildNukeSlots,
+  send: sandbox.sendAutoBotBuildOrUpgrade,
+};
+sandbox.getBuildMenu = () => buildMenu;
+sandbox.sendAutoBotBuildOrUpgrade = stubBuildSender;
+sandbox.autoBotBuildClaimNukeLaunches = undefined;
+sandbox.autoBotBuildReleaseNukeLaunchClaim = undefined;
+sandbox.autoBotBuildNukeSlots = undefined;
 executeClassicScript(
-  `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${read("engine/ingame/auto-bot/structureBehavior.js")}\n${read("engine/ingame/auto-bot/nukeBehavior.js")}\nglobalThis.__NukeBehavior = NukeBehavior; globalThis.__StructureBehavior = StructureBehavior;`,
+  `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${read("engine/ingame/auto-bot/structureBehavior.js")}\n${read("engine/ingame/auto-bot/mirvBehavior.js")}\n${read("engine/ingame/auto-bot/nukeBehavior.js")}\nglobalThis.__NukeBehavior = NukeBehavior; globalThis.__StructureBehavior = StructureBehavior; globalThis.__MirvBehavior = MirvBehavior;`,
   sandbox,
   {
     filename: "nuke-salvo-recheck.vm.js",
@@ -130,6 +149,66 @@ function makeSalvoWorld() {
   });
   return { world, game, player, nukeTarget, behavior };
 }
+
+sandbox.autoBotBuildNukeSlots = sharedNukeLedger.slots;
+// The salvo excludes only its own queued claims from the gold-policy check.
+for (const [otherClaimCost, canStart] of [
+  [10n, true],
+  [11n, false],
+]) {
+  const { game, player, nukeTarget, behavior } = makeSalvoWorld();
+  const silo = {
+    id: () => 7,
+    level: () => 3,
+    tile: () => 10,
+    missileTimerQueue: () => [],
+    isUnderConstruction: () => false,
+  };
+  player.gold = () => 110n;
+  player.units = (type) => (type === UNIT.MissileSilo ? [silo] : []);
+  game.manhattanDist = (from, to) => Math.abs(from - to);
+  const otherClaims = sharedNukeLedger.claim(game, player, {
+    nukeType: UNIT.MIRV,
+    targetTile: 20,
+    cost: otherClaimCost,
+    count: 1,
+    salvoId: "other-salvo",
+  });
+  const ownClaims = sharedNukeLedger.claim(game, player, {
+    nukeType: UNIT.AtomBomb,
+    targetTile: 30,
+    cost: 20n,
+    count: 2,
+    salvoId: "current-salvo",
+  });
+  assert.ok(otherClaims);
+  assert.ok(ownClaims);
+  behavior.hasActiveMaritimeInvasion = () => false;
+  behavior.isUnderHeavyAttack = () => false;
+  behavior.isRetaliationNukeTarget = () => false;
+  behavior.blastHitsFriendlyLand = () => false;
+  const construction = Object.create(sandbox.__StructureBehavior.prototype);
+  Object.assign(construction, { game, player });
+  construction.hasActiveMaritimeInvasion = () => false;
+  construction.economicConstructionPressure = () => null;
+  construction.legendaryAtomWarChest = () => 0n;
+  construction.offensiveNukeDefenseReserve = () => 60n;
+  behavior.structureBehavior = construction;
+  assert.equal(
+    await behavior.canStartSamSalvo(
+      { targetTile: 30 },
+      nukeTarget,
+      { bombsToFire: 2, claimIds: ownClaims },
+      20n,
+    ),
+    canStart,
+    `an unrelated ${otherClaimCost}-gold queued claim remains reserved`,
+  );
+  for (const claimId of [...otherClaims, ...ownClaims]) {
+    sharedNukeLedger.release(game, player, claimId);
+  }
+}
+sandbox.autoBotBuildNukeSlots = undefined;
 
 {
   const { game, nukeTarget, behavior } = makeSalvoWorld();
@@ -1086,8 +1165,22 @@ for (const lane of ["ordinary", "freeze"]) {
   const sam = world.sam("covered-target", 1);
   world.targetSams.push(sam);
   world.covering.push({ unit: sam, distSquared: 0 });
-  const silo = { id: () => 7, level: () => 2, isUnderConstruction: () => false };
-  player.units = (type) => (type === UNIT.MissileSilo ? [silo] : []);
+  const firedAtomTicks = [];
+  const firedAtoms = [];
+  let nextAtomId = 0;
+  const silo = {
+    id: () => 7,
+    level: () => 2,
+    tile: () => 10,
+    missileTimerQueue: () => firedAtomTicks,
+    isUnderConstruction: () => false,
+  };
+  player.units = (type) => {
+    if (type === UNIT.MissileSilo) return [silo];
+    if (type === UNIT.AtomBomb) return firedAtoms;
+    return [];
+  };
+  game.manhattanDist = (from, to) => Math.abs(from - to);
   game.config = () => ({
     maxSamRange: () => 150,
     samRange: () => 150,
@@ -1102,26 +1195,114 @@ for (const lane of ["ordinary", "freeze"]) {
     { silo, slots: 2, flightTicks: 20, interceptable: false },
   ];
   const candidates = [{ tile: 20, value: 100 }];
-  const selected = { type: UNIT.AtomBomb, cost: 1n };
+  const atomCost = lane === "ordinary" ? 20n : 1n;
+  const selected = { type: UNIT.AtomBomb, cost: atomCost };
   const emitted = [];
+  const previousBuildMenu = buildMenu;
+  buildMenu = {
+    sendBuildOrUpgrade(buildable, tile) {
+      if (buildable.type === UNIT.AtomBomb) {
+        firedAtomTicks.push(world.tick);
+        firedAtoms.push({ id: () => `atom-${++nextAtomId}`, targetTile: () => tile });
+      }
+    },
+  };
   launchSink = emitted;
   sandbox.state.nukeWantSlots = null;
+  sandbox.autoBotBuildClaimNukeLaunches = sharedNukeLedger.claim;
+  sandbox.autoBotBuildReleaseNukeLaunchClaim = sharedNukeLedger.release;
+  sandbox.autoBotBuildNukeSlots = sharedNukeLedger.slots;
+  sandbox.sendAutoBotBuildOrUpgrade = (menu, buildable, tile, ...context) => {
+    const sent = sharedNukeLedger.send(menu, buildable, tile, ...context);
+    if (sent && launchSink) launchSink.push({ type: buildable.type, tile });
+    return sent;
+  };
   if (lane === "ordinary") {
-    await behavior.fireNukeFromCandidates(candidates, nukeTarget, selected, [silo], "Legendary");
-  } else {
-    behavior.freezeGiantStrikeTarget = () => nukeTarget;
-    behavior.selectAffordableNuke = async () => selected;
-    behavior.collectNukeCandidates = async () => candidates;
-    await behavior.maybeFreezeGiantStrike([silo], "Legendary");
+    player.gold = () => 100n;
+    behavior.cost = async () => atomCost;
+    behavior.hasActiveMaritimeInvasion = () => false;
+    behavior.isUnderHeavyAttack = () => false;
+    behavior.isRetaliationNukeTarget = () => false;
+    const construction = Object.create(sandbox.__StructureBehavior.prototype);
+    Object.assign(construction, { game, player });
+    construction.hasActiveMaritimeInvasion = () => false;
+    construction.economicConstructionPressure = () => null;
+    construction.legendaryAtomWarChest = () => 0n;
+    construction.offensiveNukeDefenseReserve = () => 60n;
+    behavior.structureBehavior = construction;
   }
-  assert.equal(emitted.length, 1, `${lane}: launch the first atom now`);
-  assert.equal(
-    behavior._pendingNukeLaunches.length,
-    1,
-    `${lane}: queue the second atom required to overcome one SAM charge`,
-  );
-  assert.equal(behavior._pendingNukeLaunches[0].salvo.plannedCoveringLevel, 1);
-  launchSink = null;
+  try {
+    if (lane === "ordinary") {
+      await behavior.fireNukeFromCandidates(candidates, nukeTarget, selected, [silo], "Legendary");
+    } else {
+      behavior.freezeGiantStrikeTarget = () => nukeTarget;
+      behavior.selectAffordableNuke = async () => selected;
+      behavior.collectNukeCandidates = async () => candidates;
+      await behavior.maybeFreezeGiantStrike([silo], "Legendary");
+    }
+    assert.equal(emitted.length, 1, `${lane}: launch the first atom now`);
+    assert.equal(
+      behavior._pendingNukeLaunches.length,
+      1,
+      `${lane}: queue the second atom required to overcome one SAM charge`,
+    );
+    const queuedAtom = behavior._pendingNukeLaunches[0];
+    assert.equal(queuedAtom.salvo.plannedCoveringLevel, 1);
+    assert.equal(queuedAtom.salvo.totalBombs, 2, `${lane}: the plan requires two Atom shots`);
+    assert.equal(queuedAtom.nukeType, UNIT.AtomBomb);
+    assert.ok(queuedAtom.dueTick > world.tick, `${lane}: the second Atom is delayed`);
+    assert.equal(firedAtomTicks.length, 1, `${lane}: the first Atom occupies one of two slots`);
+
+    if (lane === "ordinary") {
+      player.gold = () => 100_000_000n;
+      const mirv = new sandbox.__MirvBehavior({ chance: () => false }, game, player, {
+        maybeSendAttackEmoji() {},
+        sendEmoji() {},
+      });
+      mirv.cost = async () => 1n;
+      mirv.teamHasWon = () => false;
+      mirv.selectWinFixMirvTarget = () => nukeTarget;
+      mirv.wasRecentlyMirved = () => false;
+      let mirvLaunches = 0;
+      mirv.maybeSendMIRV = async () => {
+        mirvLaunches++;
+        return true;
+      };
+      assert.equal(
+        [...sharedNukeLedger.slots(game, player, null, true).values()].reduce(
+          (total, count) => total + count,
+          0,
+        ),
+        0,
+        "the shared projection reserves the queued Atom after acknowledging the first launch",
+      );
+      assert.equal(mirv.hasReadyMIRVSlot(), false, "the queued Atom uses the final projected slot");
+      assert.equal(
+        await mirv.considerMIRV(),
+        false,
+        "a delayed salvo Atom reserves the Silo's last slot against an otherwise eligible MIRV",
+      );
+      assert.equal(mirvLaunches, 0, "MIRV eligibility rejects before attempting a launch");
+      behavior.rearmAbortedSamDemand = () => {};
+      behavior.finishPendingNukePass(new Set([queuedAtom.salvo.salvoId]), [queuedAtom], []);
+      assert.equal(
+        [...sharedNukeLedger.slots(game, player, null, true).values()].reduce(
+          (total, count) => total + count,
+          0,
+        ),
+        1,
+        "aborting a queued salvo releases its claim and returns the still-free Silo slot",
+      );
+      assert.equal(mirv.hasReadyMIRVSlot(), true, "MIRV can use the slot after the salvo aborts");
+    }
+  } finally {
+    launchSink = null;
+    buildMenu = previousBuildMenu;
+    sandbox.sendAutoBotBuildOrUpgrade = stubBuildSender;
+    sandbox.autoBotBuildClaimNukeLaunches = undefined;
+    sandbox.autoBotBuildReleaseNukeLaunchClaim = undefined;
+    sandbox.autoBotBuildNukeSlots = undefined;
+  }
 }
 sandbox.currentDifficulty = previousSalvoDifficulty;
 
@@ -1846,12 +2027,19 @@ for (const [flightTicks, dueTick, expectedLaunch] of [
     outerScore < enemyOnlyScore,
     "an outer-radius clip is still penalized against a clean enemy tile",
   );
-  ownStructures[0].tile = () => tileOf(530, 500);
+  ownStructures[0].tile = () => tileOf(531, 500);
   scoreTick++;
   assert.equal(
     scorer.nukeTileScore(candidate, silos, enemyStructures, UNIT.AtomBomb),
     enemyOnlyScore,
-    "a structure exactly on the engine's indestructible outer boundary carries no loss penalty",
+    "a structure just past the outer boundary carries no loss penalty",
+  );
+  ownStructures[0].tile = () => tileOf(530, 500);
+  scoreTick++;
+  assert.equal(
+    scorer.nukeTileScore(candidate, silos, enemyStructures, UNIT.AtomBomb),
+    innerScore,
+    "a structure exactly on the outer boundary is destroyed too and carries the same penalty",
   );
 
   // A permanent teammate's City cluster inside the inner radius counts as
@@ -3493,6 +3681,55 @@ for (const fallbackKind of ["sam-demand", "higher-value"]) {
   );
   assert.deepEqual(demandCalls, [[demandTarget, false, null]]);
   assert.deepEqual(clearTargets, [demandTarget]);
+}
+
+{
+  const { game, player, nukeTarget, behavior } = makeSalvoWorld();
+  const silo = {
+    id: () => 9,
+    level: () => 3,
+    tile: () => 10,
+    missileTimerQueue: () => [],
+    isUnderConstruction: () => false,
+  };
+  player.units = (type) => (type === UNIT.MissileSilo ? [silo] : []);
+  game.manhattanDist = (from, to) => Math.abs(from - to);
+  sandbox.autoBotBuildClaimNukeLaunches = sharedNukeLedger.claim;
+  sandbox.autoBotBuildReleaseNukeLaunchClaim = sharedNukeLedger.release;
+  sandbox.autoBotBuildNukeSlots = sharedNukeLedger.slots;
+  behavior.getSamSalvo = () => ({ bombsToFire: 2, waits: [0, 0] });
+  behavior.hasPendingNukeLaunches = () => false;
+  behavior.blastHitsFriendlyLand = () => true;
+  sandbox.state.nukeWantSlots = null;
+  const ledgerCapacity = () =>
+    [...sharedNukeLedger.slots(game, player, null, true).values()].reduce(
+      (total, count) => total + count,
+      0,
+    );
+  assert.equal(
+    await behavior.fireSamSalvo(
+      {
+        targetTile: 20,
+        totalBombs: 2,
+        siloEntries: [],
+        launchSequence: [{ flightTicks: 20 }, { flightTicks: 20 }],
+      },
+      nukeTarget,
+      20n,
+    ),
+    false,
+    "a salvo whose start check rejects after claiming cannot fire",
+  );
+  assert.equal(
+    ledgerCapacity(),
+    3,
+    "a start-check rejection releases every unqueued claim back to the ledger",
+  );
+  assert.equal(behavior._pendingNukeLaunches.length, 0);
+  assert.equal(sandbox.state.nukeWantSlots, null);
+  sandbox.autoBotBuildClaimNukeLaunches = undefined;
+  sandbox.autoBotBuildReleaseNukeLaunchClaim = undefined;
+  sandbox.autoBotBuildNukeSlots = undefined;
 }
 
 await import("./nuke-campaign-scenario.mjs");

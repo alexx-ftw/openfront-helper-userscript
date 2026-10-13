@@ -2746,7 +2746,6 @@
       // structures planner spending the same surplus on economy while the
       // nuclear lane waits on cooldowns.
       if (await this.maybeUpgradeSiloForNuclearSlotPressure()) return true;
-      if (await this.maybeUpgradeSiloFromSurplus()) return true;
 
       // Cap relief needs the authoritative City upgrade price before the
       // candidate set is built. The probe is tick-cached and its per-level
@@ -2764,7 +2763,11 @@
         missileSilosEnabled,
         nukesEnabled,
       });
-      return this.runLegendaryConstructionGroups(cityCount, candidates, economyGrowthPriority);
+      return this.runLegendaryConstructionGroups(
+        cityCount,
+        candidates,
+        economyGrowthPriority,
+      );
     }
 
     // Ranked-group execution: the economic group first when economy growth
@@ -2792,6 +2795,7 @@
       if (dumpSample !== null) {
         this.recordConstructionPlannerSample(dumpSample, plannerOutcome);
       }
+      if (plannerOutcome === "none") return this.maybeUpgradeSiloFromSurplus();
       return plannerOutcome === "built";
     }
 
@@ -3840,13 +3844,13 @@
      * probing tiles, so the nuclear behavior can make the same resource decision
      * without duplicating placement work.
      */
-    spendableConstructionGold() {
+    spendableConstructionGold(excludedNukeClaimIds = null) {
       let availableGold;
       {
         availableGold = BigInt(this.player.gold() || 0n);
       }
       const committed = typeof autoBotBuildReservedGold === "function"
-        ? autoBotBuildReservedGold(this.game, this.player) : 0n;
+        ? autoBotBuildReservedGold(this.game, this.player, excludedNukeClaimIds) : 0n;
       availableGold = availableGold > committed ? availableGold - committed : 0n;
 
       // This is the budget available to ordinary construction and defensive
@@ -4237,7 +4241,7 @@
      * next productive build and the next SAM action. NukeBehavior supplies the
      * actual perceived nuke cost and owns the emergency/retaliation exceptions.
      */
-    shouldDeferOffensiveNuke(nukeCost = 0n) {
+    shouldDeferOffensiveNuke(nukeCost = 0n, excludedNukeClaimIds = null) {
       if (!state.settings.winFixes) return false;
       if (this.hasActiveMaritimeInvasion()) return true;
 
@@ -4255,7 +4259,7 @@
         ? 0n
         : (this.economicConstructionPressure()?.cost ?? 0n);
       const reserve = economic + this.offensiveNukeDefenseReserve();
-      return this.spendableConstructionGold() < cost + reserve;
+      return this.spendableConstructionGold(excludedNukeClaimIds) < cost + reserve;
     }
 
     shouldDeferOffensiveWarship(warshipCost = 0n) {

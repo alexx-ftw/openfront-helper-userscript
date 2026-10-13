@@ -12,6 +12,7 @@ const UNIT = {
   AtomBomb: "AtomBomb",
   HydrogenBomb: "HydrogenBomb",
   MIRV: "MIRV",
+  Factory: "Factory",
 };
 const Difficulty = {
   Easy: "Easy",
@@ -163,4 +164,54 @@ function makeWorld({
 }
 
 await import("./silo-demand-upgrade-preference.mjs");
+
+// 10. Generic surplus leveling yields to an available economy build action.
+{
+  const { behavior, emitted } = makeWorld();
+  const economyBuilds = [];
+  const config = behavior.game.config();
+  behavior.debugStructureLaneCount = () => {};
+  behavior.legendaryMissileDefenseUrgent = () => false;
+  behavior.maybeOpenLegendaryArsenal = async () => false;
+  behavior.ownProjectedSamCapacity = () => 1;
+  behavior.maybeUpgradeLegendarySam = async () => false;
+  behavior.maybeArmFreezeStrikeSilo = async () => false;
+  behavior.maybeUpgradeSiloForNuclearSlotPressure = async () => false;
+  behavior.computeTroopCapPressure = () => false;
+  behavior.legendaryConstructionCandidates = async () => [];
+  behavior.legendaryConstructionActionGroups = () => [
+    [
+      {
+        type: UNIT.Factory,
+        action: "build",
+        cost: 1n,
+        factoryPlacementTile: 500,
+      },
+    ],
+  ];
+  behavior.maybeSpawnStructure = async (type) => {
+    economyBuilds.push(type);
+    return true;
+  };
+
+  assert.equal(
+    await behavior.doHandleLegendaryStructures({
+      config,
+      citiesDisabled: false,
+      cityCount: 1,
+      hasCoastalTiles: false,
+      hasOceanPortTiles: false,
+      missileSilosEnabled: true,
+      nukesEnabled: true,
+      economyGrowthPriority: true,
+    }),
+    true,
+  );
+  assert.deepEqual(
+    { economyBuilds, siloUpgrades: emitted.length },
+    { economyBuilds: [UNIT.Factory], siloUpgrades: 0 },
+    "the available economy action keeps priority over generic Silo surplus",
+  );
+}
+
 process.stdout.write("silo surplus upgrade tests passed\n");
