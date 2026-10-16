@@ -297,9 +297,49 @@
     }
   }
 
+  let tradeStructureLookupGame = null;
+  let tradeStructureLookupTick = NaN;
+  const tradeStructureLookups = new Map();
+
+  function indexTradeStructuresByTile(game, allowedTypes) {
+    const byTile = new Map();
+    const units = typeof getCachedGameUnits === "function"
+      ? getCachedGameUnits(game, ...allowedTypes) : game?.units?.(...allowedTypes) || [];
+    for (const unit of units) {
+      const unitTile = unit.tile?.();
+      let bucket = byTile.get(unitTile);
+      if (!bucket) {
+        bucket = [];
+        byTile.set(unitTile, bucket);
+      }
+      bucket.push(unit);
+    }
+    return byTile;
+  }
+
+  function getTradeStructuresAtTile(game, tile, allowedTypes) {
+    const tick = Number(game?.ticks?.());
+    if (game !== tradeStructureLookupGame || !Number.isFinite(tick) || tick !== tradeStructureLookupTick) {
+      tradeStructureLookupGame = game;
+      tradeStructureLookupTick = tick;
+      tradeStructureLookups.clear();
+    }
+    // With no tick contract, retain a live scan rather than a stale index.
+    if (!Number.isFinite(tick)) {
+      return (game?.units?.(...allowedTypes) || []).filter((unit) => unit.tile?.() === tile);
+    }
+    const key = allowedTypes.join("\u0001");
+    let byTile = tradeStructureLookups.get(key);
+    if (!byTile) {
+      byTile = indexTradeStructuresByTile(game, allowedTypes);
+      tradeStructureLookups.set(key, byTile);
+    }
+    return byTile.get(tile) || [];
+  }
+
   function findExactOwnedStructure(game, tile, allowedTypes, owner) {
     {
-      for (const unit of game?.units?.(...allowedTypes) || []) {
+      for (const unit of getTradeStructuresAtTile(game, tile, allowedTypes)) {
         if (matchesOwnedStructure(unit, allowedTypes, owner) && unit.tile?.() === tile) {
           return unit;
         }
@@ -465,7 +505,7 @@
 
   function findTrainStationAtTile(game, tile, allowedTypes = ["City", "Port"], owner = null) {
     if (tile == null) return null;
-    const exact = (game?.units?.(...allowedTypes) || []).find((unit) =>
+    const exact = getTradeStructuresAtTile(game, tile, allowedTypes).find((unit) =>
       isTrainStationUnit(unit, allowedTypes, owner) && unit.tile?.() === tile);
     if (exact) return exact;
     const nearby = game?.nearbyUnits?.(tile, 2, allowedTypes);
@@ -483,23 +523,23 @@
 
   function findNearestOwnedFactory(game, tile, owner) {
     if (tile == null || !owner) return null;
-    let candidates;
-    {
-      candidates = (owner.units?.("Factory") || [])
-        .map(getActiveTrainFactory)
-        .filter(Boolean)
-        .map(({ factory, tile: factoryTile }) => ({
-          factory,
-          distance: toFiniteNumber(game?.manhattanDist?.(tile, factoryTile), NaN),
-        }))
-        .filter(({ distance }) => Number.isFinite(distance))
-        .sort((a, b) => a.distance - b.distance);
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (const factory of owner.units?.("Factory") || []) {
+      const active = getActiveTrainFactory(factory);
+      if (!active) continue;
+      const distance = toFiniteNumber(game?.manhattanDist?.(tile, active.tile), NaN);
+      // Strict comparison retains the original stable-sort winner on a tie.
+      if (Number.isFinite(distance) && distance < nearestDistance) {
+        nearest = factory;
+        nearestDistance = distance;
+      }
     }
     const maxRange = Math.max(
       1,
       toFiniteNumber(game?.config?.().trainStationMaxRange?.(), 100),
     );
-    return candidates[0]?.distance <= maxRange ? candidates[0].factory : null;
+    return nearestDistance <= maxRange ? nearest : null;
   }
 
   function isTrackedTrainFactory(unit, trainOwner) {
@@ -691,8 +731,34 @@
 
     const players = getCachedPlayerViews(game);
     const boatRoutes = collectCompletedBoatTradeRoutes(game, updates);
-    const events = Object.values(updates).filter(Array.isArray).flat();
-    for (const event of events) processTradeBalanceEvent(event, players, boatRoutes);
+    processTradeBalanceEvents(updates, players, boatRoutes);
+  }
+
+  function createTradePlayerNameLookup(players) {
+    const byName = new Map();
+    // Match findPlayerByTradeName: all display names have priority over all
+    // internal names, and the first player wins among duplicate names.
+    for (const player of players) {
+      const name = normalizeTradeName(getPlayerDisplayName(player));
+      if (name && !byName.has(name)) byName.set(name, player);
+    }
+    for (const player of players) {
+      const name = normalizeTradeName(player?.name?.());
+      if (name && !byName.has(name)) byName.set(name, player);
+    }
+    return byName;
+  }
+
+  function processTradeBalanceEvents(updates, players, boatRoutes) {
+    let byName = null;
+    for (const events of Object.values(updates)) {
+      if (!Array.isArray(events)) continue;
+      for (const event of events) {
+        if (event?.message !== "events_display.received_gold_from_trade") continue;
+        if (byName === null) byName = createTradePlayerNameLookup(players);
+        processTradeBalanceEvent(event, players, boatRoutes, byName);
+      }
+    }
   }
 
   function getTradeEventRoute(receiverId, partnerId, boatRoutes) {
@@ -705,12 +771,14 @@
     };
   }
 
-  function processTradeBalanceEvent(event, players, boatRoutes) {
+  function processTradeBalanceEvent(event, players, boatRoutes, byName = null) {
     if (event?.message !== "events_display.received_gold_from_trade") return;
     const receiverId = Number(event.playerID);
     const goldAmount = getTradeEventGoldAmount(event.goldAmount);
     const partnerName = String(event.params?.name ?? "Unknown");
-    const partner = findPlayerByTradeName(players, partnerName);
+    const partner = byName
+      ? byName.get(normalizeTradeName(partnerName)) ?? null
+      : findPlayerByTradeName(players, partnerName);
     const partnerId = partner ? getPlayerSmallId(partner) : `name:${partnerName}`;
     const { direction, route } = getTradeEventRoute(receiverId, Number(partnerId), boatRoutes);
     const sourceUnit = direction === "export" ? route?.destinationUnit : null;

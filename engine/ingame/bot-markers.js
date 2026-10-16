@@ -52,6 +52,7 @@
   // getPlayerMarkerId) only run during a scan.
   let botMarkerScanCache = [];
   let lastBotMarkerScanAt = 0;
+  let botMarkerScanGame = null;
   const BOT_MARKER_SCAN_MS = 500;
 
   function collectBotMarkerScan(game) {
@@ -63,7 +64,7 @@
         continue;
       }
       const markerId = getPlayerMarkerId(player, index);
-      result.push({ player, markerId });
+      result.push({ player, markerId, locationTick: NaN, nameLocation: null });
     }
     return result;
   }
@@ -108,14 +109,21 @@
     botMarkerEntries.clear();
     botMarkerScanCache = [];
     lastBotMarkerScanAt = 0;
+    botMarkerScanGame = null;
   }
 
   function scheduleBotMarkerFrame() {
     runtimeState.botMarkerAnimationFrame = requestAnimationFrame(syncBotMarkers);
   }
 
-  function botMarkerScreenPosition(context, player) {
-    const nameLocation = player.nameLocation?.();
+  function botMarkerScreenPosition(context, scanEntry, tick) {
+    // Name locations change with game updates; camera transforms change per frame.
+    // Without a usable tick, keep reading live data rather than caching forever.
+    if (!Number.isFinite(tick) || scanEntry.locationTick !== tick) {
+      scanEntry.nameLocation = scanEntry.player.nameLocation?.();
+      scanEntry.locationTick = tick;
+    }
+    const nameLocation = scanEntry.nameLocation;
     if (!nameLocation) return null;
     const screenPosition = context.transform.worldToScreenCoordinates(nameLocation);
     if (!Number.isFinite(screenPosition?.x) || !Number.isFinite(screenPosition?.y)) {
@@ -133,8 +141,8 @@
     return screenPosition;
   }
 
-  function renderBotMarkerEntry(context, container, scanEntry) {
-    const screenPosition = botMarkerScreenPosition(context, scanEntry.player);
+  function renderBotMarkerEntry(context, container, scanEntry, tick) {
+    const screenPosition = botMarkerScreenPosition(context, scanEntry, tick);
     if (!screenPosition) {
       const existing = botMarkerEntries.get(scanEntry.markerId);
       if (existing) hideBotMarkerEntry(existing);
@@ -171,14 +179,16 @@
     }
 
     const now = performance.now();
-    if (now - lastBotMarkerScanAt >= BOT_MARKER_SCAN_MS) {
+    if (botMarkerScanGame !== context.game || now - lastBotMarkerScanAt >= BOT_MARKER_SCAN_MS) {
       botMarkerScanCache = collectBotMarkerScan(context.game);
       pruneBotMarkerCache();
       lastBotMarkerScanAt = now;
+      botMarkerScanGame = context.game;
     }
 
+    const tick = Number(context.game.ticks?.());
     for (const scanEntry of botMarkerScanCache) {
-      renderBotMarkerEntry(context, container, scanEntry);
+      renderBotMarkerEntry(context, container, scanEntry, tick);
     }
 
     scheduleBotMarkerFrame();

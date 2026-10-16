@@ -374,6 +374,10 @@
     const points = [];
     const padding = ECONOMY_HEATMAP_VIEWPORT_PADDING;
     const zoomScale = getHeatmapZoomScale(transform);
+    // The game camera is affine. Sample it once rather than allocating the
+    // game's intermediate canvas/screen coordinates for every source each frame.
+    const projector = typeof mapMakeProjector === "function" ? mapMakeProjector(transform) : null;
+    const projected = { x: 0, y: 0 };
 
     for (const source of sources) {
       if (source.tile == null) {
@@ -381,11 +385,11 @@
       }
 
       {
-        const worldPoint = {
-          x: game.x(source.tile),
-          y: game.y(source.tile),
-        };
-        const screenPoint = transform.worldToScreenCoordinates(worldPoint);
+        projected.x = game.x(source.tile);
+        projected.y = game.y(source.tile);
+        const screenPoint = projector
+          ? mapProject(projector, projected.x, projected.y, projected)
+          : transform.worldToScreenCoordinates(projected);
         if (
           Number.isFinite(screenPoint?.x) &&
           Number.isFinite(screenPoint?.y) &&

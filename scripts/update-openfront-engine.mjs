@@ -6,8 +6,16 @@ const repositoryRoot = resolve(import.meta.dirname, "..");
 const engineDirectory = resolve(repositoryRoot, "openfront-engine");
 
 function git(arguments_, options = {}) {
+  // Commit hooks export repository-local paths. Let each -C invocation resolve
+  // its own repository, particularly the submodule's index and git directory.
+  const env = { ...process.env };
+  delete env.GIT_INDEX_FILE;
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_COMMON_DIR;
   const output = execFileSync("/usr/bin/git", arguments_, {
     cwd: repositoryRoot,
+    env,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "inherit"],
     ...options,

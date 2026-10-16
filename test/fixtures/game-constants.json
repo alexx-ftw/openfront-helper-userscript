@@ -3300,6 +3300,16 @@
     "initializerPreview": "2500"
   },
   {
+    "id": "engine/ingame/estate-panel.js:ESTATE_SLICE_STEPS#1",
+    "file": "engine/ingame/estate-panel.js",
+    "name": "ESTATE_SLICE_STEPS",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "94f8607915dff25f013e45fc0642fb9830b0fb25ab0ab46d477eaf1061def379",
+    "initializerLength": 3,
+    "initializerPreview": "512"
+  },
+  {
     "id": "engine/ingame/gold-per-minute.js:APS_STRUCTURES#1",
     "file": "engine/ingame/gold-per-minute.js",
     "name": "APS_STRUCTURES",

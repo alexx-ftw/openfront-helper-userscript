@@ -4,18 +4,20 @@
 // its own parcel. Click a column to sort, click a row to pan the camera there.
 //
 // Seeds come from player.borderTiles() (async worker call); the flood-fill that
-// counts each component is client-side & synchronous (game.neighbors / ownerID).
-// Recomputed on a throttle while the panel is open, never per frame.
+// counts each component client-side in bounded slices, yielding between slices
+// so a large territory does not freeze input. Recomputed only while open.
 
   const ESTATE_PANEL_ID = "openfront-helper-estate-panel";
   const ESTATE_PANEL_STYLE_ID = "openfront-helper-estate-panel-styles";
   const ESTATE_PANEL_POS_KEY = "openfrontHelperEstatePanelPos";
   const ESTATE_COMPUTE_MS = 2500;
+  const ESTATE_SLICE_STEPS = 512;
 
   let estatePanelOpen = false;
   let estateSortDir = 1; // 1 = most tiles first, -1 = fewest first
   let estateData = []; // [{ key, tiles, cx, cy }]
   let estateComputing = false;
+  let estateRefreshGeneration = 0;
 
   function setEstateComputing(value) {
     estateComputing = value;
@@ -256,42 +258,72 @@
     }
   }
 
-  function computeEstateComponent(game, seed, mySmallId, visited) {
-    visited.add(seed);
-    const stack = [seed];
-    let size = 0;
-    let sumX = 0;
-    let sumY = 0;
-    let minRef = seed;
-    while (stack.length > 0) {
-      const tile = stack.pop();
-      size += 1;
-      sumX += game.x(tile);
-      sumY += game.y(tile);
-      if (tile < minRef) minRef = tile;
-      for (const neighbor of game.neighbors(tile)) {
-        if (visited.has(neighbor)) continue;
-        if (estateNeighborOwner(game, neighbor) !== mySmallId) continue;
-        visited.add(neighbor);
-        stack.push(neighbor);
-      }
-    }
-    return {
-      key: String(minRef),
-      tiles: size,
-      cx: sumX / size,
-      cy: sumY / size,
+  function createEstateScan(game, borderTiles, mySmallId) {
+    const scan = {
+      game, mySmallId,
+      seeds: borderTiles[Symbol.iterator](),
+      visited: new Set(),
+      stack: [],
+      components: [],
+      component: null,
     };
+    // Reuse the callback; GameView.forEachNeighbor avoids an array per tile.
+    scan.visitNeighbor = (neighbor) => {
+      if (scan.visited.has(neighbor)) return;
+      if (estateNeighborOwner(game, neighbor) !== mySmallId) return;
+      scan.visited.add(neighbor);
+      scan.stack.push(neighbor);
+    };
+    return scan;
   }
 
-  function computeEstateComponents(game, borderTiles, mySmallId) {
-    const visited = new Set();
-    const components = [];
-    for (const seed of borderTiles) {
-      if (visited.has(seed)) continue;
-      components.push(computeEstateComponent(game, seed, mySmallId, visited));
+  function advanceEstateSeed(scan) {
+    if (scan.component) {
+      const { minRef, size, sumX, sumY } = scan.component;
+      scan.components.push({ key: String(minRef), tiles: size, cx: sumX / size, cy: sumY / size });
+      scan.component = null;
     }
-    return components;
+    const seed = scan.seeds.next();
+    if (seed.done) return true;
+    // The worker's border response can already be stale by the time it arrives.
+    if (!scan.visited.has(seed.value) && estateNeighborOwner(scan.game, seed.value) === scan.mySmallId) {
+      scan.visited.add(seed.value);
+      scan.stack.push(seed.value);
+      scan.component = { minRef: seed.value, size: 0, sumX: 0, sumY: 0 };
+    }
+    return false;
+  }
+
+  function advanceEstateScan(scan, maxSteps = ESTATE_SLICE_STEPS) {
+    const { game } = scan;
+    for (let step = 0; step < maxSteps; step += 1) {
+      if (scan.stack.length === 0) {
+        if (advanceEstateSeed(scan)) return scan.components;
+        continue;
+      }
+      const tile = scan.stack.pop();
+      const component = scan.component;
+      component.size += 1;
+      component.sumX += game.x(tile);
+      component.sumY += game.y(tile);
+      if (tile < component.minRef) component.minRef = tile;
+      if (typeof game.forEachNeighbor === "function") {
+        game.forEachNeighbor(tile, scan.visitNeighbor);
+      } else {
+        for (const neighbor of game.neighbors(tile)) scan.visitNeighbor(neighbor);
+      }
+    }
+    return null;
+  }
+
+  async function computeEstateComponents(game, borderTiles, mySmallId, isCurrent) {
+    const scan = createEstateScan(game, borderTiles, mySmallId);
+    while (isCurrent()) {
+      const components = advanceEstateScan(scan);
+      if (components !== null) return components;
+      await new Promise((resolve) => { window.setTimeout(resolve, 0); });
+    }
+    return null;
   }
 
   async function refreshEstates() {
@@ -317,13 +349,18 @@
 
     setEstateComputing(true);
     try {
+      const generation = estateRefreshGeneration;
+      const isCurrent = () => estatePanelOpen && generation === estateRefreshGeneration &&
+        getOpenFrontGameContext()?.game === game;
       const mySmallId = Number(me.smallID());
       const result = await me.borderTiles();
       const borderTiles = result?.borderTiles;
-      if (!borderTiles || !estatePanelOpen) {
+      if (!borderTiles || !isCurrent()) {
         return;
       }
-      estateData = computeEstateComponents(game, borderTiles, mySmallId);
+      const components = await computeEstateComponents(game, borderTiles, mySmallId, isCurrent);
+      if (components === null || !isCurrent()) return;
+      estateData = components;
       renderEstatePanel();
     } finally {
       setEstateComputing(false);
@@ -331,6 +368,7 @@
   }
 
   function setEstatePanelEnabled(enabled) {
+    estateRefreshGeneration += 1;
     estatePanelOpen = Boolean(enabled);
     if (estatePanelOpen) {
       ensureEstatePanel();

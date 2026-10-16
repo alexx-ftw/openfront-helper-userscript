@@ -5,6 +5,7 @@
   // two querySelector calls per ally on every animation frame.
   const allyMarkerElements = new Map();
   const allyLineElements = new Map();
+  const allyElementRenderStates = new WeakMap();
 
   function ensureAllyMarkerStyles() {
     if (document.getElementById(ALLY_MARKER_STYLE_ID)) {
@@ -269,22 +270,54 @@
     return marker;
   }
 
-  function updateAllyMarker(marker, line, timing, screenPos, hoveredScreenPos) {
-    line.setAttribute("x1", String(hoveredScreenPos.x));
-    line.setAttribute("y1", String(hoveredScreenPos.y));
-    line.setAttribute("x2", String(screenPos.x));
-    line.setAttribute("y2", String(screenPos.y));
-    for (const element of [marker, line]) {
+  function getAllyElementRenderState(element) {
+    let cached = allyElementRenderStates.get(element);
+    if (!cached) {
+      cached = {};
+      allyElementRenderStates.set(element, cached);
+    }
+    return cached;
+  }
+
+  function updateAllyLineCoordinate(line, cached, name, value) {
+    if (cached[name] === value) return;
+    line.setAttribute(name, String(value));
+    cached[name] = value;
+  }
+
+  function updateAllyUrgency(element, cached, urgencyClass) {
+    if (cached.urgencyClass !== urgencyClass) {
       element.classList.remove(
         "openfront-helper-ally-warning",
         "openfront-helper-ally-critical",
       );
-      if (timing.urgencyClass) element.classList.add(timing.urgencyClass);
+      if (urgencyClass) element.classList.add(urgencyClass);
+      cached.urgencyClass = urgencyClass;
     }
-    const remaining = marker.querySelector(".openfront-helper-ally-remaining");
-    if (remaining) remaining.textContent = timing.remaining;
-    marker.style.setProperty("--ally-x", `${screenPos.x}px`);
-    marker.style.setProperty("--ally-y", `${screenPos.y}px`);
+  }
+
+  function updateAllyMarker(marker, line, timing, screenPos, hoveredScreenPos) {
+    const cachedMarker = getAllyElementRenderState(marker);
+    const cachedLine = getAllyElementRenderState(line);
+    updateAllyLineCoordinate(line, cachedLine, "x1", hoveredScreenPos.x);
+    updateAllyLineCoordinate(line, cachedLine, "y1", hoveredScreenPos.y);
+    updateAllyLineCoordinate(line, cachedLine, "x2", screenPos.x);
+    updateAllyLineCoordinate(line, cachedLine, "y2", screenPos.y);
+    updateAllyUrgency(marker, cachedMarker, timing.urgencyClass);
+    updateAllyUrgency(line, cachedLine, timing.urgencyClass);
+    if (cachedMarker.remaining !== timing.remaining) {
+      const remaining = marker.querySelector(".openfront-helper-ally-remaining");
+      if (remaining) remaining.textContent = timing.remaining;
+      cachedMarker.remaining = timing.remaining;
+    }
+    if (cachedMarker.x !== screenPos.x) {
+      marker.style.setProperty("--ally-x", `${screenPos.x}px`);
+      cachedMarker.x = screenPos.x;
+    }
+    if (cachedMarker.y !== screenPos.y) {
+      marker.style.setProperty("--ally-y", `${screenPos.y}px`);
+      cachedMarker.y = screenPos.y;
+    }
   }
 
   function removeInactiveAllyMarkers(activeIds) {
@@ -302,7 +335,7 @@
 
   function updateVisibleAllyMarkers(container, lineSvg, overlay, transform, hoveredScreenPos) {
     const activeIds = new Set();
-    const players = Array.from(overlay.game.playerViews?.() || []);
+    const players = getCachedPlayerViews(overlay.game);
     for (const [index, player] of players.entries()) {
       if (!player?.isAlive?.() || !isAlliedPlayer(overlay.player, player)) continue;
       const nameLocation = player.nameLocation?.();

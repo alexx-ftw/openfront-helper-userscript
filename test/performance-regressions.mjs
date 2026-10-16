@@ -825,4 +825,71 @@ assert.equal(overlayAnimationFrames.size, 1, "re-enabling a layer must restart t
 runNextOverlayFrame();
 assert.equal(overlayDraws, 6, "a restarted layer must draw again");
 
+// Bot positions update on simulation ticks while camera projection stays live.
+const markerSandbox = { window: { innerWidth: 1000, innerHeight: 800 } };
+executeClassicScript(
+  fs.readFileSync(path.join(ROOT, "engine/ingame/bot-markers.js"), "utf8"),
+  markerSandbox,
+);
+let locationReads = 0;
+let markerLocation = { x: 20, y: 30 };
+let cameraOffset = 0;
+const markerScan = {
+  player: {
+    nameLocation() {
+      locationReads += 1;
+      return markerLocation;
+    },
+  },
+  locationTick: NaN,
+};
+const markerContext = {
+  transform: {
+    worldToScreenCoordinates: (location) => ({
+      x: location.x + cameraOffset,
+      y: location.y,
+    }),
+  },
+};
+for (let frame = 0; frame < 60; frame += 1) {
+  markerSandbox.botMarkerScreenPosition(markerContext, markerScan, 1);
+}
+assert.equal(locationReads, 1, "stationary tick reads each bot location only once");
+cameraOffset = 100;
+assert.equal(
+  markerSandbox.botMarkerScreenPosition(markerContext, markerScan, 1).x,
+  120,
+  "panning must project cached locations on every frame",
+);
+markerLocation = { x: 50, y: 60 };
+assert.equal(markerSandbox.botMarkerScreenPosition(markerContext, markerScan, 2).x, 150);
+assert.equal(locationReads, 2, "the next tick refreshes the location");
+markerLocation = undefined;
+assert.equal(markerSandbox.botMarkerScreenPosition(markerContext, markerScan, 3), null);
+markerLocation = { x: 70, y: 80 };
+assert.equal(markerSandbox.botMarkerScreenPosition(markerContext, markerScan, 4).x, 170);
+markerSandbox.botMarkerScreenPosition(markerContext, markerScan, NaN);
+markerSandbox.botMarkerScreenPosition(markerContext, markerScan, NaN);
+assert.equal(locationReads, 6, "missing ticks must read live locations each frame");
+
+let markerGame = { ticks: () => 1 };
+let markerScans = 0;
+Object.assign(markerSandbox, {
+  runtimeState: { botMarkersEnabled: true },
+  performance: { now: () => 0 },
+  getOpenFrontGameContext: () => ({ game: markerGame }),
+  ensureBotMarkerContainer: () => ({}),
+  getCachedPlayerViews: () => {
+    markerScans += 1;
+    return [];
+  },
+  requestAnimationFrame: () => 1,
+});
+markerSandbox.syncBotMarkers();
+markerSandbox.syncBotMarkers();
+assert.equal(markerScans, 1, "initial render scans immediately and reuses the roster");
+markerGame = { ticks: () => 1 };
+markerSandbox.syncBotMarkers();
+assert.equal(markerScans, 2, "switching games refreshes the roster even at the same tick");
+
 process.stdout.write("performance regression tests passed\n");
