@@ -58,8 +58,14 @@
   ],
   "limitations": [
     "Two short engine matches do not establish improved win rate.",
-    "Measured bot phase timing does not establish absence of browser rendering stutters.",
-    "npm test has a pre-existing engine submodule HEAD versus origin/main mismatch."
+    "Measured bot phase timing does not establish absence of browser rendering stutters."
   ],
-  "regressionStatus": "pending final integration"
+  "regressionStatus": "passed after integrating origin/work (1.13.1)",
+  "checks": {
+    "npm test": "passed",
+    "npm run quality:global": "passed",
+    "npm run build": "passed",
+    "git diff --check": "passed"
+  },
+  "integrationNote": "The remote compatibility fix checks the pinned engine gitlink rather than the moving origin/main reference; the complete suite passes after integration."
 }

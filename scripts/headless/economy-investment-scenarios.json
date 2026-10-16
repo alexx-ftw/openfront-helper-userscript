@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "inland-alps-rich-team",
+      "role": "high-gold team economy: City branch versus duplicate Factory",
+      "environment": {
+        "OFH_GAME_MAP": "Alps",
+        "OFH_GAME_MAP_SIZE": "Normal",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "8",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "5000000",
+        "OFH_MAX_TICKS": "6000",
+        "OFH_BOT_DIFFICULTY": "Legendary",
+        "OFH_PROFILE_BOT": "1"
+      }
+    },
+    {
+      "id": "ffa-europe-low-gold",
+      "role": "free-for-all survival and economic sequencing from a constrained treasury",
+      "environment": {
+        "OFH_GAME_MAP": "Europe",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_GAME_MODE": "ffa",
+        "OFH_NATIONS": "50",
+        "OFH_BOTS": "180",
+        "OFH_STARTING_GOLD": "250000",
+        "OFH_MAX_TICKS": "6000",
+        "OFH_BOT_DIFFICULTY": "Legendary",
+        "OFH_PROFILE_BOT": "1"
+      }
+    },
+    {
+      "id": "team-four-islands",
+      "role": "team-separated island economy and reinforcement logistics",
+      "environment": {
+        "OFH_GAME_MAP": "Four Islands",
+        "OFH_GAME_MAP_SIZE": "Normal",
+        "OFH_PLAYER_TEAMS": "4",
+        "OFH_NATIONS": "4",
+        "OFH_BOTS": "120",
+        "OFH_STARTING_GOLD": "1000000",
+        "OFH_MAX_TICKS": "6000",
+        "OFH_BOT_DIFFICULTY": "Legendary",
+        "OFH_PROFILE_BOT": "1"
+      }
+    },
+    {
+      "id": "nuclear-europe-rich",
+      "role": "SAM, silo, and economic opportunity cost with funded hostile Nations",
+      "environment": {
+        "OFH_GAME_MAP": "Europe",
+        "OFH_GAME_MAP_SIZE": "Small",
+        "OFH_PLAYER_TEAMS": "2",
+        "OFH_NATIONS": "50",
+        "OFH_BOTS": "80",
+        "OFH_STARTING_GOLD": "25000000",
+        "OFH_NUKES": "1",
+        "OFH_MAX_TICKS": "6000",
+        "OFH_BOT_DIFFICULTY": "Legendary",
+        "OFH_PROFILE_BOT": "1"
+      }
+    }
+  ]
+}

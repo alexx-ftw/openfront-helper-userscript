@@ -29,7 +29,8 @@ assert.equal(
 );
 assert.equal(
   git(["-C", engineDirectory, "rev-parse", "HEAD"]),
-  git(["-C", engineDirectory, "rev-parse", "refs/remotes/origin/main"]),
+  gitlink.split(" ")[1],
+  "the engine checkout must match the superproject's pinned gitlink, independently of remote updates",
 );
 assert.equal(git(["-C", engineDirectory, "status", "--porcelain"]), "");
 

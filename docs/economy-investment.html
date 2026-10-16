@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Economy investment policy and validation</title>
+  </head>
+  <body>
+    <h1>Economy investment policy — 1.13.0</h1>
+    <p>
+      Economic construction must compare the additional value of the next City, Factory, or Port,
+      its actual next-build cost, and the delay before it can produce. Existing emergency defense,
+      the two-City bootstrap, troop-cap relief, construction legality, and resource reserves remain
+      constraints on discretionary investment. A nearby teammate's treasury is not spendable gold.
+    </p>
+    <h2>Implemented comparison</h2>
+    <p>
+      With winFixes enabled, discretionary economic builds compare 300-tick and 6,000-tick forecasts
+      with respective weights of 0.4 and 0.6. Construction and the geometric delay to the first Port
+      arrival reduce the available earning window. Only positive weighted net forecasts reorder
+      eligible alternatives; unknown or negative forecasts retain the existing order. Legendary's
+      existing wait, mandatory, defense, and troop-capacity priorities remain authoritative. City
+      troop capacity is handled independently: the model does not invent marginal cash from merely
+      redirecting an existing self-owned train to a new City.
+    </p>
+    <p>
+      A per-tick snapshot inspects bounded samples of owners, completed stations, Factory levels,
+      and ocean partners. Rail estimates use local station proximity and a conservative confidence
+      discount, rather than claiming verified rail paths. Port estimates use observed partners on
+      the canonical ocean, geometric distance, and outgoing traffic only. They omit unproven
+      incoming traffic, actual water detours, the pity timer, and proximity/friendship destination
+      bonuses. Congestion uses an already cached global TradeShip family count; when that count is
+      unknown, no Port-income forecast is asserted. Ranking never initiates a world-wide ship
+      enumeration, rail scan, or buildability request.
+    </p>
+    <p>
+      Own, teammate, and rival income estimates are recorded separately. The team objective adds the
+      teammate's matching receipt once and discounts the rival's matching receipt by one half. This
+      utility is not spendable gold: affordability and reserves always use the bot's own treasury.
+      The coefficients are conservative heuristics, not a fitted probability of winning.
+    </p>
+    <p>
+      Once the existing placement-exhaustion guard admits an economic upgrade, the selector reuses
+      the authoritative bounded upgrade probes. Within the same SAM-protection tier it compares the
+      extra production per actual upgrade price. Factory comparisons include the change to all
+      sampled own sources after the owner's completed Factory-level sum increases; each source's
+      ten-tick cooldown is included. Port upgrades use a conservative one-level spawn-probability
+      delta, and City upgrades compare the same added capacity at their actual prices. Disabling
+      winFixes preserves the legacy random selection sequence.
+    </p>
+    <h2>Engine facts</h2>
+    <ul>
+      <li>
+        Cities add troop capacity; they do not directly generate gold. Their commercial value
+        requires a useful rail connection. Normal City and Factory construction takes 20 ticks; a
+        Port takes 50 ticks. Instant-build games remove that delay.
+      </li>
+      <li>
+        Each Factory attempts train spawning by level, with a ten-tick cooldown. More owned Factory
+        levels increase the spawn-rate denominator, so another source has diminishing returns.
+        Trains need reachable City or Port destinations.
+      </li>
+      <li>
+        A train's first ten paying stops yield 10,000 gold for self trade, 25,000 for team or other
+        players, or 35,000 for allies, before player multipliers. External stops also pay the
+        station owner. Repeated stations in one rail cluster are not independent new markets.
+      </li>
+      <li>
+        Sea trade needs a tradeable foreign Port on the same water component. Own Ports alone do not
+        form a sea-trade market. An arriving ship pays both endpoint owners; distance, partner
+        levels, spawn rejections, and global ship congestion affect actual returns.
+      </li>
+      <li>
+        Port and Factory new-build prices share one level-based ladder. City prices have their own
+        ladder. The worker's buildable descriptor remains authoritative at actuation.
+      </li>
+    </ul>
+    <h2>Reproduce validation</h2>
+    <p>
+      The final eight-pair portfolio preserved all eight final states and construction traces: both
+      versions won two matches and survived seven. Five matches per version remained unfinished at
+      the tick limit. There is no measured win-rate gain in this portfolio. A separate full-decision
+      synthetic case changes the choice from Factory to Port when an observed ocean partner is a
+      teammate, and retains Factory for the equivalent rival market. The reproducibility record,
+      bundle hashes, seeds, and paired metrics are saved in
+      <a href="economy-investment-validation.json">economy-investment-validation.json</a>.
+    </p>
+    <p>
+      The final full test suite, global quality checks, TypeScript check, changed-file ESLint, and
+      generated-artifact parity check passed. Deterministic performance tests cap local-distance
+      work at 1,024 comparisons and Port-distance work at 512 comparisons, reuse the snapshot within
+      a tick, and reject new worker, rail-index, or global ship-materialization requests. Candidate
+      selection admits at most three productive types. These bounds cover the new planner's work;
+      they do not claim that every existing game subsystem has zero long frames.
+    </p>
+    <pre><code>npm run test:economy
+npm run check
+npm run build
+npm test</code></pre>
+    <p>
+      The headless scenario portfolio includes inland team play, low-gold FFA, Four Islands, and
+      rich nuclear Europe, with two teams where appropriate and a 6,000-tick horizon. Save the
+      baseline userscript before rebuilding, then compare both bundles with identical seeds:
+    </p>
+    <pre><code>OFH_BASELINE_BUNDLE=/absolute/path/to/baseline.user.js \
+OFH_CANDIDATE_BUNDLE=/absolute/path/to/candidate.user.js \
+OFH_COMPARISON_SEED=economy-investment-gates-v1 \
+OFH_MATCHES=2 OFH_SIM_WORKERS=2 npm run simulate:economy</code></pre>
+    <p>
+      A tick-limit result is unfinished, not proof of defeat. Compare survival, wins, comeback
+      recovery, closeout, income, territory, and construction timing together. CPU measurements
+      depend on the host; bounded-work assertions complement elapsed-time checks. These artificial
+      and engine-generated scenarios do not establish a universal win-rate improvement.
+    </p>
+    <p>
+      The headless harness schedules zero-delay cooperative slices with the same FIFO setImmediate
+      boundary as its tick loop. Real worker timeout deadlines remain real timers. This prevents
+      host timer granularity and profiling overhead from choosing how many game ticks elapse before
+      the next topology slice. The scheduler has a separate cancellation and tick-boundary
+      regression test.
+    </p>
+  </body>
+</html>

@@ -1006,3 +1006,207 @@ function rankLegendaryConstructionActions(candidates, options = {}) {
 function chooseLegendaryConstructionCandidate(candidates, options = {}) {
   return rankLegendaryConstructionCandidates(candidates, options)[0] ?? null;
 }
+
+// Rank productive construction by marginal, relationship-adjusted income over
+// explicit horizons. The caller supplies deltas from a bounded rail/trade
+// snapshot; this helper never scans the map or probes the worker. Capacity is
+// accepted only as a long-horizon gold-equivalent value, kept beside the cash
+// return instead of being inferred from City count.
+function rankEconomicInvestmentCandidates(candidates, options = {}) {
+  const budget = economicInvestmentBudget(options ?? {});
+  if (!budget) return [economicInvestmentWait()];
+
+  const ranked = (Array.isArray(candidates) ? candidates : [])
+    .map((candidate) =>
+      scoreEconomicInvestmentCandidate(candidate, budget),
+    )
+    .filter(Boolean)
+    .sort(compareEconomicInvestmentCandidates);
+  return ranked.length > 0 ? ranked : [economicInvestmentWait()];
+}
+
+function economicInvestmentBudget(options) {
+  const gold = parseEconomicInvestmentGold(options.gold ?? 0n);
+  const reserve = parseEconomicInvestmentGold(options.reserve ?? 0n);
+  if (gold === null || reserve === null) return null;
+
+  const shortHorizon = economicInvestmentTickLimit(
+    options.shortHorizonTicks ?? 300,
+  );
+  const requestedLongHorizon = economicInvestmentTickLimit(
+    options.longHorizonTicks ?? 1800,
+  );
+  if (shortHorizon === null || requestedLongHorizon === null) return null;
+
+  const rawWeight = options.shortWeight ?? 0.4;
+  if (typeof rawWeight !== "number" || !Number.isFinite(rawWeight)) return null;
+  return {
+    available: gold > reserve ? gold - reserve : 0n,
+    shortHorizon,
+    longHorizon: Math.max(shortHorizon, requestedLongHorizon),
+    shortWeight: legendaryClamp(rawWeight, 0, 1),
+  };
+}
+
+function parseEconomicInvestmentGold(value) {
+  if (typeof value === "bigint") return value >= 0n ? value : null;
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+  }
+  if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+  return null;
+}
+
+function economicInvestmentTickLimit(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return null;
+  }
+  return Math.floor(value);
+}
+
+function scoreEconomicInvestmentCandidate(candidate, budget) {
+  if (!candidate || candidate.legal === false || candidate.affordable === false) {
+    return null;
+  }
+  const cost = parseEconomicInvestmentGold(candidate.cost);
+  if (cost === null || cost > budget.available) return null;
+
+  const values = economicInvestmentCandidateValues(candidate);
+  if (values === null) return null;
+  const returns = economicInvestmentReturns(values, budget, cost);
+  if (returns === null) return null;
+
+  const capacityValue = economicInvestmentCapacityValue(
+    values.capacityValue,
+    returns.longLiveTicks,
+    budget.longHorizon,
+    values.survivalFactor,
+  );
+  if (!Number.isFinite(capacityValue)) return null;
+  const weightedNet =
+    returns.shortNet * budget.shortWeight +
+    returns.longNet * (1 - budget.shortWeight);
+  const denominator = Math.max(returns.numericCost, 1);
+  // Wait has score zero, so a candidate must beat it after paying its cost.
+  const investmentScore = (weightedNet + capacityValue) / denominator;
+  if (!Number.isFinite(investmentScore) || investmentScore <= 0) return null;
+
+  return {
+    ...candidate,
+    cost,
+    completionTicks: returns.completionTicks,
+    shortPayoff: returns.shortPayoff,
+    longPayoff: returns.longPayoff,
+    shortNet: returns.shortNet,
+    longNet: returns.longNet,
+    investmentScore,
+  };
+}
+
+function economicInvestmentReturns(values, budget, cost) {
+  const completionTicks = Math.ceil(values.completionTicks);
+  const shortLiveTicks = Math.max(0, budget.shortHorizon - completionTicks);
+  const longLiveTicks = Math.max(0, budget.longHorizon - completionTicks);
+  if (longLiveTicks <= 0) return null;
+
+  const numericCost = Number(cost);
+  if (!Number.isFinite(numericCost)) return null;
+  const shortPayoff = values.shortRate * shortLiveTicks * values.survivalFactor;
+  const longPayoff = values.longRate * longLiveTicks * values.survivalFactor;
+  const shortNet = shortPayoff - numericCost;
+  const longNet = longPayoff - numericCost;
+  if (
+    !Number.isFinite(shortPayoff) ||
+    !Number.isFinite(longPayoff) ||
+    !Number.isFinite(shortNet) ||
+    !Number.isFinite(longNet)
+  ) {
+    return null;
+  }
+  return {
+    completionTicks,
+    longLiveTicks,
+    numericCost,
+    shortPayoff,
+    longPayoff,
+    shortNet,
+    longNet,
+  };
+}
+
+function economicInvestmentCapacityValue(value, liveTicks, horizon, survivalFactor) {
+  return value * (liveTicks / horizon) * survivalFactor;
+}
+
+function economicInvestmentCandidateValues(candidate) {
+  const completionTicks = candidate.completionTicks ?? 0;
+  const shortIncome =
+    candidate.shortIncomePerTick ?? candidate.marginalGoldPerTick ?? 0;
+  const longIncome =
+    candidate.longIncomePerTick ?? candidate.marginalGoldPerTick ?? 0;
+  const capacityValue = candidate.capacityValue ?? 0;
+  const survivalFactor = candidate.survivalFactor ?? 1;
+  if (
+    ![completionTicks, shortIncome, longIncome, capacityValue, survivalFactor].every(
+      (value) => typeof value === "number" && Number.isFinite(value),
+    ) ||
+    completionTicks < 0 ||
+    capacityValue < 0
+  ) {
+    return null;
+  }
+  return {
+    completionTicks,
+    shortRate: shortIncome,
+    longRate: longIncome,
+    capacityValue,
+    survivalFactor: legendaryClamp(survivalFactor, 0, 1),
+  };
+}
+
+function compareEconomicInvestmentCandidates(left, right) {
+  if (left.investmentScore !== right.investmentScore) {
+    return right.investmentScore - left.investmentScore;
+  }
+  if (left.longNet !== right.longNet) return right.longNet - left.longNet;
+  if (left.shortNet !== right.shortNet) return right.shortNet - left.shortNet;
+  if (left.cost !== right.cost) return left.cost < right.cost ? -1 : 1;
+
+  const leftKey = economicInvestmentStableKey(left);
+  const rightKey = economicInvestmentStableKey(right);
+  return compareEconomicInvestmentStableKeys(leftKey, rightKey);
+}
+
+function compareEconomicInvestmentStableKeys(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function economicInvestmentStableKey(candidate) {
+  return [
+    candidate.type ?? "",
+    candidate.action ?? "build",
+    candidate.structureId ?? "",
+    candidate.candidateId ?? "",
+    candidate.tile ?? "",
+    candidate.targetTile ?? "",
+    candidate.id ?? "",
+  ]
+    .map(String)
+    .join("\u0000");
+}
+
+function economicInvestmentWait() {
+  return {
+    action: "wait",
+    type: "Wait",
+    reason: "no-affordable-positive-payback-investment",
+    cost: 0n,
+    shortPayoff: 0,
+    longPayoff: 0,
+    shortNet: 0,
+    longNet: 0,
+    investmentScore: 0,
+  };
+}

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>Economic investment corrections — 1.13.1</title>
+  <main>
+    <h1>Economic investment corrections — 1.13.1</h1>
+    <p>
+      Port forecasts now account for the game's destination weights: destination level, an extra
+      proximity weight, and an extra friendship weight. Both bonuses disappear below the short-range
+      threshold. Equal-distance destinations preserve their observed order, including at the
+      proximity cutoff. Own receipts, teammate receipts, rival spillover, and arrival delay use the
+      same destination distribution.
+    </p>
+    <p>
+      Each sampled coast anchor has its own destination distribution; the forecast averages those
+      distributions instead of mixing minimum distances from incompatible source locations. The
+      forecast remains an advisory approximation. It uses at most eight sampled coast anchors, 32
+      owners, and 64 Port records, with at most 16 records per owner. Distances are geometric, not
+      verified water paths, and the canonical-ocean filter does not establish access to every water
+      component. Proximity rank is relative to the observed sample when those limits truncate the
+      market. Unknown incoming traffic and the spawn rejection timer remain excluded.
+    </p>
+    <p>
+      These work limits apply after obtaining the shared adapter snapshots. The first player or
+      owner-unit query in a tick can still materialize or filter a larger underlying list. That
+      existing cached adapter cost is not bounded by the planner's sample size, so the regression
+      checks do not establish that every game subsystem is free of long frames.
+    </p>
+    <p>
+      Port upgrade ranking now reuses a same-tick cached global TradeShip count. An unknown count
+      leaves marginal upgrade output unproven. It no longer initiates a global unit enumeration to
+      obtain that count. The legacy behavior with winFixes disabled retains its existing random
+      sequence.
+    </p>
+    <p>
+      In normal Hard-or-higher play with an existing completed Port, the earlier naval lane usually
+      warms the global TradeShip snapshot. Before the first Port, or when naval tracking is
+      disabled, that count can remain unknown. Existing first-Port unlocking and construction
+      priorities still apply; the forecast does not assume an empty world to promote a speculative
+      Port investment.
+    </p>
+    <p>
+      The historical 1.13.0 validation remains in
+      <a href="economy-investment.html">the original report</a>. Version-specific validation for
+      this correction is recorded separately to preserve that evidence.
+    </p>
+    <p>
+      Eight paired 6,000-tick matches retained identical final states and construction traces
+      against 1.13.0: both versions won two and survived seven. This establishes regression
+      coverage, without a measured win-rate gain. Bundle hashes, seeds, and outcomes are in
+      <a href="economy-investment-1.13.1-validation.json">the validation record</a>. The full test
+      suite, economic fixtures, and global quality checks passed.
+    </p>
+    <p>
+      A synthetic fixture calls the pinned engine's actual
+      <code>PortExecution.tradingPorts()</code> with 13 destinations. It compares destination
+      multiplicities, payout attribution, arrival delay, and the production investment decision.
+      Equal-distance destinations straddle the fractional proximity cutoff. The teammate market
+      selects Port; the equivalent rival market retains Factory. A second adversarial fixture keeps
+      eight source locations separate: expected arrival is 1,365 ticks, while mixing minimum
+      distances would incorrectly give 300. Work remains bounded at 512 distance evaluations and 64
+      friendship checks.
+    </p>
+    <pre><code>npm run test:economy
+npm test
+npm run quality:global</code></pre>
+  </main>
+</html>

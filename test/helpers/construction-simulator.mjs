@@ -79,49 +79,156 @@ export function expectedRailIncomePerTick({
   stationTypes,
   stationOwners = new Map(),
   factoryLevels = new Map(),
+  factoryOwnerIds = new Map(),
+  stationOwnerIds = new Map(),
   candidate = null,
   goldForTradeStop = defaultGoldForTradeStop,
 }) {
-  const types = new Map(stationTypes);
-  const owners = new Map(stationOwners);
-  const levels = new Map(factoryLevels);
-  if (candidate) {
-    types.set(candidate.id, candidate.type);
-    owners.set(candidate.id, candidate.owner ?? "self");
-    if (candidate.type === "Factory") levels.set(candidate.id, candidate.level ?? 1);
-  }
+  const scenario = normalizeRailIncomeScenario({
+    stationTypes,
+    stationOwners,
+    factoryLevels,
+    factoryOwnerIds,
+    stationOwnerIds,
+    candidate,
+  });
+  const { types, relations, levels, sourceOwners, endpointOwners } = scenario;
+  const factoryLevelsByOwner = sumFactoryLevelsByOwner(types, levels, sourceOwners);
 
   const revenueByStation = new Map();
+  const sourceIncomeByOwner = new Map();
+  const endpointIncomeByOwner = new Map();
   let totalIncomePerTick = 0;
   let totalSpawnProbability = 0;
-  const factoryCount = Array.from(types.values()).filter((type) => type === "Factory").length;
-  const spawnRate = (factoryCount + 10) * 15;
 
   for (const [factory, level] of levels) {
-    if (types.get(factory) !== "Factory" || level <= 0) continue;
-    const reachable = reachableStations(adjacency, factory);
-    const destinations = Array.from(reachable).filter((station) => {
-      const type = types.get(station);
-      return station !== factory && (type === "City" || type === "Port");
-    });
+    if (!isEligibleFactory(types, factory, level)) continue;
+    const sourceOwnerId = sourceOwners.get(factory) ?? "self";
+    const sourceFactoryLevels = factoryLevelsByOwner.get(sourceOwnerId) ?? 0;
+    if (sourceFactoryLevels <= 0) continue;
+    const destinations = reachableTradeDestinations(adjacency, types, factory);
     if (destinations.length === 0) continue;
 
-    const attemptProbability = 1 - (1 - 1 / spawnRate) ** level;
-    const spawnProbability = attemptProbability / (1 + 9 * attemptProbability);
+    const spawnProbability = expectedFactorySpawnProbability(level, sourceFactoryLevels);
     totalSpawnProbability += spawnProbability;
     const destinationProbability = spawnProbability / destinations.length;
-    for (const destination of destinations) {
-      const path = shortestStationPath(adjacency, factory, destination);
-      if (path === null) continue;
-      const routeRevenue = collectRouteTransitRevenue(path, types, goldForTradeStop, {
-        stationRelations: owners,
-        revenueByStation,
-        routeProbability: destinationProbability,
-      });
-      totalIncomePerTick += routeRevenue;
-    }
+    totalIncomePerTick += expectedFactoryRouteIncome({
+      factory,
+      destinations,
+      adjacency,
+      types,
+      relations,
+      endpointOwners,
+      sourceOwnerId,
+      destinationProbability,
+      goldForTradeStop,
+      revenueByStation,
+      sourceIncomeByOwner,
+      endpointIncomeByOwner,
+    });
   }
-  return { totalIncomePerTick, totalSpawnProbability, revenueByStation };
+  const totalEndpointIncomePerTick = sumValues(endpointIncomeByOwner);
+  return {
+    totalIncomePerTick,
+    totalSpawnProbability,
+    revenueByStation,
+    sourceIncomeByOwner,
+    endpointIncomeByOwner,
+    totalEndpointIncomePerTick,
+  };
+}
+
+function normalizeRailIncomeScenario({
+  stationTypes,
+  stationOwners,
+  factoryLevels,
+  factoryOwnerIds,
+  stationOwnerIds,
+  candidate,
+}) {
+  const scenario = {
+    types: new Map(stationTypes),
+    relations: new Map(stationOwners),
+    levels: new Map(factoryLevels),
+    sourceOwners: new Map(factoryOwnerIds),
+    endpointOwners: new Map(stationOwnerIds),
+  };
+  if (!candidate) return scenario;
+
+  scenario.types.set(candidate.id, candidate.type);
+  const ownerId = candidate.ownerId ?? candidate.owner ?? "self";
+  if (candidate.type === "Factory") {
+    scenario.levels.set(candidate.id, candidate.level ?? 1);
+    scenario.sourceOwners.set(candidate.id, ownerId);
+  } else {
+    scenario.relations.set(candidate.id, candidate.relation ?? candidate.owner ?? "self");
+    scenario.endpointOwners.set(candidate.id, ownerId);
+  }
+  return scenario;
+}
+
+function sumFactoryLevelsByOwner(types, levels, sourceOwners) {
+  const totals = new Map();
+  for (const [factory, level] of levels) {
+    if (!isEligibleFactory(types, factory, level)) continue;
+    const ownerId = sourceOwners.get(factory) ?? "self";
+    totals.set(ownerId, (totals.get(ownerId) ?? 0) + level);
+  }
+  return totals;
+}
+
+function isEligibleFactory(types, factory, level) {
+  return types.get(factory) === "Factory" && Number.isFinite(level) && level > 0;
+}
+
+function reachableTradeDestinations(adjacency, types, factory) {
+  return Array.from(reachableStations(adjacency, factory)).filter((station) => {
+    const type = types.get(station);
+    return station !== factory && (type === "City" || type === "Port");
+  });
+}
+
+function expectedFactorySpawnProbability(level, ownerFactoryLevels) {
+  const spawnRate = (ownerFactoryLevels + 10) * 15;
+  const attemptProbability = 1 - (1 - 1 / spawnRate) ** level;
+  return attemptProbability / (1 + 9 * attemptProbability);
+}
+
+function expectedFactoryRouteIncome({
+  factory,
+  destinations,
+  adjacency,
+  types,
+  relations,
+  endpointOwners,
+  sourceOwnerId,
+  destinationProbability,
+  goldForTradeStop,
+  revenueByStation,
+  sourceIncomeByOwner,
+  endpointIncomeByOwner,
+}) {
+  let total = 0;
+  for (const destination of destinations) {
+    const path = shortestStationPath(adjacency, factory, destination);
+    if (path === null) continue;
+    total += collectRouteTransitRevenue(path, types, goldForTradeStop, {
+      stationRelations: relations,
+      revenueByStation,
+      routeProbability: destinationProbability,
+      sourceOwnerId,
+      stationOwnerIds: endpointOwners,
+      sourceIncomeByOwner,
+      endpointIncomeByOwner,
+    });
+  }
+  return total;
+}
+
+function sumValues(map) {
+  let total = 0;
+  for (const value of map.values()) total += value;
+  return total;
 }
 
 function reachableStations(adjacency, source) {
@@ -141,21 +248,66 @@ function collectRouteTransitRevenue(
   path,
   stationTypes,
   goldForTradeStop,
-  { stationRelations, revenueByStation, routeProbability = 1 },
+  {
+    stationRelations,
+    revenueByStation,
+    routeProbability = 1,
+    sourceOwnerId = null,
+    stationOwnerIds = null,
+    sourceIncomeByOwner = null,
+    endpointIncomeByOwner = null,
+  },
 ) {
   let totalRevenue = 0;
   let tradeStopsVisited = 0;
   for (const station of path.slice(1)) {
-    const type = stationTypes.get(station);
-    if (type !== "City" && type !== "Port") continue;
+    if (!isTradeStation(stationTypes, station)) continue;
     const revenue =
       goldForTradeStop(tradeStopsVisited, stationRelations.get(station) ?? "self") *
       routeProbability;
     totalRevenue += revenue;
     revenueByStation.set(station, (revenueByStation.get(station) ?? 0) + revenue);
+    recordSourceIncome(sourceIncomeByOwner, sourceOwnerId, revenue);
+    recordEndpointIncome({
+      endpointIncomeByOwner,
+      stationOwnerIds,
+      stationRelations,
+      station,
+      sourceOwnerId,
+      revenue,
+    });
     tradeStopsVisited += 1;
   }
   return totalRevenue;
+}
+
+function isTradeStation(stationTypes, station) {
+  const type = stationTypes.get(station);
+  return type === "City" || type === "Port";
+}
+
+function recordSourceIncome(sourceIncomeByOwner, ownerId, revenue) {
+  if (sourceIncomeByOwner === null || ownerId === null) return;
+  sourceIncomeByOwner.set(ownerId, (sourceIncomeByOwner.get(ownerId) ?? 0) + revenue);
+}
+
+function recordEndpointIncome({
+  endpointIncomeByOwner,
+  stationOwnerIds,
+  stationRelations,
+  station,
+  sourceOwnerId,
+  revenue,
+}) {
+  if (endpointIncomeByOwner === null || stationOwnerIds === null) return;
+  const relation = stationRelations.get(station) ?? "self";
+  const endpointOwnerId =
+    stationOwnerIds.get(station) ?? (relation === "self" ? sourceOwnerId : station);
+  if (endpointOwnerId === sourceOwnerId) return;
+  endpointIncomeByOwner.set(
+    endpointOwnerId,
+    (endpointIncomeByOwner.get(endpointOwnerId) ?? 0) + revenue,
+  );
 }
 
 function shortestStationPath(adjacency, source, destination) {

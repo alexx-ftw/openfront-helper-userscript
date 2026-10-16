@@ -189,6 +189,12 @@ assert.strictEqual(
 );
 assert.equal(playerUnitCalls, 1, "player units should be read once per family and tick");
 assert.equal(
+  gameApi.cachedUnitCount("Warship"),
+  null,
+  "a player-only cached family is not exposed as a global unit count",
+);
+assert.equal(globalUnitCalls, 0, "a cache miss must not materialize global units");
+assert.equal(
   firstPlayerUnits[0].isFriendly(playerView),
   true,
   "wrapped units should inherit friendliness from their owner",
@@ -200,6 +206,14 @@ assert.deepEqual(
   [2, 3],
   "gameApi should synthesize the core forEachNeighbor contract from client neighbors",
 );
+const mixedGlobalUnits = gameApi.units("Warship", "Transport");
+assert.equal(mixedGlobalUnits.length, 1);
+assert.equal(
+  gameApi.cachedUnitCount("Warship"),
+  null,
+  "a mixed-family snapshot does not satisfy a single-type count lookup",
+);
+assert.equal(globalUnitCalls, 1, "the mixed-family snapshot is materialized once");
 const firstGlobalUnits = gameApi.units("Warship");
 const secondGlobalUnits = gameApi.units("Warship");
 assert.equal(
@@ -212,7 +226,18 @@ assert.strictEqual(
   firstGlobalUnits,
   "gameApi global units should reuse the same snapshot within a game tick",
 );
-assert.equal(globalUnitCalls, 1, "global units should be read once per family and tick");
+assert.equal(globalUnitCalls, 2, "global units should be read once per family and tick");
+assert.equal(
+  gameApi.cachedUnitCount("Warship"),
+  1,
+  "cachedUnitCount reads the exact global family already wrapped this tick",
+);
+assert.equal(
+  gameApi.cachedUnitCount("Transport"),
+  null,
+  "cachedUnitCount does not substitute another unit family's global snapshot",
+);
+assert.equal(globalUnitCalls, 2, "cachedUnitCount performs no extra global unit request");
 const firstPlayers = gameApi.players();
 const secondPlayers = gameApi.players();
 assert.strictEqual(
@@ -227,6 +252,20 @@ const replacementPlayerCore = {
   troops: () => 999,
 };
 await wrappedApi.beginTick(replacementPlayerCore);
+assert.equal(
+  gameApi.cachedUnitCount("Warship"),
+  null,
+  "cachedUnitCount hides a snapshot as soon as the authoritative tick advances",
+);
+assert.equal(globalUnitCalls, 2, "the stale-count check does not refresh global units");
+const refreshedGlobalUnits = gameApi.units("Warship");
+assert.notStrictEqual(
+  refreshedGlobalUnits,
+  firstGlobalUnits,
+  "the global family is materialized again only after the caller requests it",
+);
+assert.equal(gameApi.cachedUnitCount("Warship"), 1);
+assert.equal(globalUnitCalls, 3, "the explicit new-tick request populates one new snapshot");
 assert.notStrictEqual(
   gameApi.myPlayer(),
   playerView,
