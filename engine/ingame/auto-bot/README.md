@@ -1,5 +1,8 @@
 # Auto-Bot
 
+The discretionary economy investment model and reproducible scenario commands are
+documented in [Economy investment policy](../../../docs/economy-investment.html).
+
 Training tool for OpenFront lobbies. Plays the local human
 player automatically (auto-spawn, auto-expand / conquer, auto-build, nukes,
 warships, alliances) by reading the client-side `GameView`/`PlayerView` and

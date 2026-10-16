@@ -44,6 +44,15 @@ an exceptional land assault. The Legendary placement scorer also uses engine rai
 connectivity, friendly ally power/proximity, the own border nearest the team's
 geometric center, and trajectory-aware SAM coverage.
 
+The custom economy investment comparison under `winFixes` is a documented
+`DIVERGENCE`: discretionary City/Factory/Port choices may be ordered by estimated
+marginal return after construction delay across short and long horizons, using
+bounded local trade evidence and owner-local affordability. It must retain the
+two-City bootstrap, emergency defense, troop-cap relief, resource reserves, and
+the existing no-space requirement for ordinary economic upgrades. Forecasts do
+not authorize a build: the worker descriptor and placement guards remain final.
+See `docs/economy-investment.html` for the model and reproducible scenarios.
+
 Commercial City placement ranks owned railway anchors at most once per authoritative
 game tick. The cache is keyed by tick, railroad snapshot identity, and owner; it never
 survives into a later tick, while the anchor offset still rotates on every placement

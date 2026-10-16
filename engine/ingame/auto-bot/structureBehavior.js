@@ -549,6 +549,8 @@
       // src private fields (NationStructureBehavior.ts:126-135).
       this.reachableStationsCache = null;
       this.factoryTradeDestinationsCache = null;
+      this._economicInvestmentSummaryTick = null;
+      this._economicInvestmentSummary = null;
       this._economicPlacementFingerprintTick = null;
       this._economicPlacementFingerprints = new Map();
       this._economicPlacementSnapshotGeometryCache = new WeakMap();
@@ -2159,32 +2161,358 @@
       hasOceanPortTiles,
       prioritizeCityForBorderThreat = false,
     }, profile = null) {
-      // Troop-cap pressure is the strongest City-first signal: production has
-      // stalled at the maxTroops ceiling and only a City (or City level)
-      // restarts it, so the cap-relief City leads the economic order.
+      const context = { config, citiesDisabled, cityCount, hasCoastalTiles, hasOceanPortTiles,
+        prioritizeCityForBorderThreat };
       const capPressure = this.troopCapPressure();
-      const buildOrder = prioritizeCityForBorderThreat || capPressure
-        ? CITY_FIRST_ECONOMIC_STRUCTURE_TYPES
-        : ECONOMIC_STRUCTURE_TYPES;
-      for (const structureType of buildOrder) {
-        if (!this.economicStructureTypeEligible(structureType, {
-          config,
-          citiesDisabled,
-          cityCount,
-          hasCoastalTiles,
-          hasOceanPortTiles,
-          capPressure,
-        })) {
-          continue;
-        }
-        if (
-          await profileStructureAsync(profile, `structures-economy-${structureType}`, () =>
-            this.maybeSpawnStructure(structureType))
-        ) {
-          return true;
-        }
+      const order = this.economicGrowthBuildOrder(context, capPressure);
+      for (const type of order) {
+        if (!this.economicStructureTypeEligible(type, { ...context, capPressure })) continue;
+        if (await profileStructureAsync(profile, `structures-economy-${type}`, () =>
+          this.maybeSpawnStructure(type))) return true;
       }
       return false;
+    }
+
+    economicGrowthBuildOrder(context, capPressure) {
+      const cityFirst = context.prioritizeCityForBorderThreat || capPressure;
+      const original = cityFirst ? CITY_FIRST_ECONOMIC_STRUCTURE_TYPES : ECONOMIC_STRUCTURE_TYPES;
+      if (!state.settings.winFixes || context.cityCount < 2 || cityFirst) return original;
+      const eligible = original.filter((type) => this.economicStructureTypeEligible(type, {
+        ...context, capPressure,
+      }));
+      const ranked = this.rankEconomicInvestments(context, { types: eligible });
+      return this.economicAdvisoryTypeOrder(original, ranked);
+    }
+
+    economicAdvisoryTypeOrder(original, ranked) {
+      // Forecasts are potential returns before placement, not proofs of route
+      // feasibility. Unknown/negative payback must never freeze construction.
+      const preferred = ranked.filter((entry) => entry.action !== "wait" && original.includes(entry.type))
+        .map((entry) => entry.type);
+      return [...new Set([...preferred, ...original])];
+    }
+
+    /**
+     * Build a small per-tick income snapshot without a rail scan or a worker
+     * request. Nearby completed City/Port stations are only a potential-route
+     * proxy; unknown track connectivity is discounted before it reaches the
+     * investment ranker.
+     */
+    getEconomicInvestmentSummary() {
+      const tick = safeStructureGameTick(this.game);
+      if (tick !== null && tick === this._economicInvestmentSummaryTick && this._economicInvestmentSummary) {
+        return this._economicInvestmentSummary;
+      }
+      const destinations = this.collectEconomicInvestmentDestinations();
+      const factory = this.economicFactoryOutputSnapshot();
+      const local = this.economicLocalDestinations(destinations, factory.tiles);
+      const average = (field) => local.length > 0
+        ? local.reduce((sum, entry) => sum + entry[field], 0) / local.length : 0;
+      const portTrade = this.collectEconomicPortPartnerSummary(destinations);
+      const summary = {
+        tick,
+        factoryCount: factory.count,
+        factoryLevels: factory.levels,
+        factoryOutputPerTick: factory.output,
+        marginalFactoryOutputPerTick: factory.marginal,
+        completedDestinationCount: destinations.length,
+        localDestinationCount: local.length,
+        maxDestinationGold: destinations.reduce((best, entry) => Math.max(best, entry.ownGold), 0),
+        maxRivalSpilloverGold: destinations.reduce((best, entry) => Math.max(best, entry.rivalGold), 0),
+        averageOwnDestinationGold: average("ownGold"),
+        averageTeamDestinationGold: average("teamGold"),
+        averageRivalDestinationGold: average("rivalGold"),
+        portTradePartnerLevels: portTrade.partnerLevels,
+        portTradeIncomePerTick: portTrade.incomePerTick,
+        portTeamIncomePerTick: portTrade.teamIncomePerTick,
+        portRivalSpilloverPerTick: portTrade.rivalSpilloverPerTick,
+        portArrivalTicks: portTrade.arrivalTicks || 0,
+        // DIVERGENCE: local station proximity proves a potential connection,
+        // not an existing train route. It may reorder builds but never veto one.
+        routeConfidence: local.length > 0 ? 0.5 : 0,
+        sampledDestinationCount: destinations.length,
+      };
+      if (tick !== null) {
+        this._economicInvestmentSummaryTick = tick;
+        this._economicInvestmentSummary = summary;
+      }
+      return summary;
+    }
+
+    collectEconomicInvestmentDestinations() {
+      const state = { destinations: [], seen: new Set(), inspected: 0 };
+      for (const { owner, relation } of this.economicTradeOwners()) {
+        this.appendEconomicDestinations(owner, relation, state);
+        if (state.destinations.length >= 64 || state.inspected >= 256) break;
+      }
+      return state.destinations;
+    }
+
+    economicTradeOwners() {
+      const player = this.player;
+      if (typeof player?.units !== "function") return [];
+      const owners = [{ owner: player, relation: "self" }];
+      const nearby = player.nearby?.() || [];
+      const seen = new Set([player.smallID?.()]);
+      for (let index = 0; index < nearby.length && index < 64 && owners.length < 33; index++) {
+        const owner = nearby[index];
+        if (!this.economicTradeOwnerEligible(owner, seen)) continue;
+        owners.push({ owner, relation: this.economicTradeRelation(owner) });
+      }
+      return owners;
+    }
+
+    economicTradeOwnerEligible(owner, seen) {
+      if (!owner || owner.isAlive?.() === false || !this.isTradeableStationNeighbor(owner)) return false;
+      const id = owner.smallID?.();
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    }
+
+    appendEconomicDestinations(owner, relation, state) {
+      const units = owner.units(UNIT.City, UNIT.Port) || [];
+      for (let index = 0; index < units.length && index < 32 && state.inspected < 256; index++) {
+        state.inspected++;
+        const unit = units[index];
+        if (!this.economicCompletedUnit(unit)) continue;
+        const key = unit.id?.() ?? unit;
+        if (state.seen.has(key)) continue;
+        state.seen.add(key);
+        state.destinations.push(this.economicDestinationEntry(unit, relation));
+        if (state.destinations.length >= 64) return;
+      }
+    }
+
+    economicCompletedUnit(unit) {
+      return Boolean(unit && unit.isActive?.() !== false && !this.unitUnderConstruction(unit));
+    }
+
+    economicTradeRelation(owner) {
+      if (this.player.isOnSameTeam?.(owner)) return "team";
+      if (this.player.isAlliedWith?.(owner)) return "ally";
+      return "other";
+    }
+
+    economicDestinationEntry(unit, relation) {
+      const gold = Number(this.trainGoldBase(relation, 0));
+      const ownGold = Number.isFinite(gold) && gold > 0 ? gold : 0;
+      return {
+        tile: unit.tile?.(), relation, ownGold,
+        teamGold: relation === "team" ? ownGold : 0,
+        rivalGold: relation === "other" ? ownGold : 0,
+      };
+    }
+
+    economicFactoryOutputSnapshot() {
+      const units = this.player?.units?.(UNIT.Factory) || [];
+      const levels = [];
+      const tiles = [];
+      for (let index = 0; index < units.length && index < 64; index++) {
+        const unit = units[index];
+        if (!this.economicCompletedUnit(unit)) continue;
+        const level = Number(unit.level?.());
+        if (!Number.isSafeInteger(level) || level < 1) continue;
+        levels.push(level);
+        if (Number.isFinite(unit.tile?.())) tiles.push(unit.tile());
+      }
+      const total = levels.reduce((sum, level) => sum + level, 0);
+      const output = levels.reduce((sum, level) => sum + this.economicTrainSourceRate(level, total), 0);
+      const nextOutput = levels.reduce((sum, level) => sum + this.economicTrainSourceRate(level, total + 1), 0)
+        + this.economicTrainSourceRate(1, total + 1);
+      return {
+        count: levels.length, levels: total, tiles: tiles.slice(0, 16),
+        output: units.length <= 64 ? output : 0,
+        marginal: units.length <= 64 ? Math.max(0, nextOutput - output) : 0,
+      };
+    }
+
+    economicTrainSourceRate(level, ownerLevels) {
+      // Config.trainSpawnRate uses the owner's completed LEVEL sum. The
+      // ten-tick cooldown adds nine forced idle ticks after a successful roll.
+      const denominator = (ownerLevels + 10) * 15;
+      const probability = 1 - (1 - 1 / denominator) ** level;
+      return probability / (1 + 9 * probability);
+    }
+
+    economicLocalDestinations(destinations, factoryTiles) {
+      if (typeof this.game?.euclideanDistSquared !== "function") return [];
+      const anchors = factoryTiles.slice(0, 16);
+      for (const entry of destinations) {
+        if (anchors.length >= 16) break;
+        if (entry.relation === "self" && Number.isFinite(entry.tile)) anchors.push(entry.tile);
+      }
+      const rawRange = Number(this.game.config?.()?.trainStationMaxRange?.() ?? 110);
+      const range = Number.isFinite(rawRange) && rawRange > 0 ? rawRange : 110;
+      return destinations.filter((entry) => Number.isFinite(entry.tile) && anchors.some((tile) =>
+        this.game.euclideanDistSquared(tile, entry.tile) <= range * range));
+    }
+
+    economicOceanSourceTiles(destinations) {
+      const sources = [];
+      for (const entry of destinations) {
+        if (sources.length >= 8) break;
+        if (entry.relation === "self" && Number.isFinite(entry.tile) && this.isOceanPortTile(entry.tile)) {
+          sources.push(entry.tile);
+        }
+      }
+      // This adapter is already warmed by structureBuildContext's ocean check.
+      // Never call the fallback border/map classifier just to rank investments.
+      if (sources.length === 0 && this._hasOceanPortTiles === true &&
+          typeof this.player.oceanShoreBorderTiles === "function") {
+        const shore = this.player.oceanShoreBorderTiles();
+        for (let index = 0; index < (shore?.length || 0) && index < 8; index++) sources.push(shore[index]);
+      }
+      return sources;
+    }
+
+    collectEconomicPortPartnerSummary(destinations = []) {
+      const empty = { partnerLevels: 0, incomePerTick: 0, teamIncomePerTick: 0, rivalSpilloverPerTick: 0 };
+      if (typeof this.game?.players !== "function" || typeof this.game.manhattanDist !== "function") return empty;
+      const sources = this.economicOceanSourceTiles(destinations);
+      if (sources.length === 0) return empty;
+      const config = this.game.config();
+      const rawDebuff = Number(config.tradeShipShortRangeDebuff?.() ?? 200);
+      const debuff = Number.isFinite(rawDebuff) ? rawDebuff : 200;
+      const entries = this.economicOceanPartners(sources, debuff);
+      if (entries.length === 0) return empty;
+      return this.economicPortIncomeSummary(entries, config, empty);
+    }
+
+    economicPortIncomeSummary(entries, config, empty) {
+      const totalLevels = entries.reduce((sum, entry) => sum + entry.level, 0);
+      const average = (field) => entries.reduce((sum, entry) => sum + entry[field] * entry.level, 0) / totalLevels;
+      // Reuse an already observed ship-family snapshot. Ranking must not
+      // wrap every ship in the world just to estimate congestion. Unknown
+      // congestion keeps Port value unproven and preserves the legacy order.
+      const shipCount = this.game.cachedUnitCount?.(UNIT.TradeShip);
+      if (!Number.isSafeInteger(shipCount) || shipCount < 0) return empty;
+      const rate = Number(config.tradeShipSpawnRate?.(0, shipCount) ?? 100);
+      if (!Number.isFinite(rate) || rate < 1) return empty;
+      // Outgoing-only lower-bound proxy: partners affect destination choice,
+      // never multiply our source's spawn rate. Incoming traffic is unknown.
+      const spawnPerTick = 1 / (10 * rate);
+      const arrivalDiscount = 0.5;
+      return {
+        partnerLevels: totalLevels,
+        arrivalTicks: Math.ceil(average("distance")),
+        incomePerTick: average("gold") * spawnPerTick * arrivalDiscount,
+        teamIncomePerTick: average("teamGold") * spawnPerTick * arrivalDiscount,
+        rivalSpilloverPerTick: average("rivalGold") * spawnPerTick * arrivalDiscount,
+      };
+    }
+
+    economicOceanPartners(sources, debuff) {
+      const entries = [];
+      const owners = this.game.players() || [];
+      const seen = new Set();
+      let inspected = 0;
+      for (let index = 0; index < owners.length && index < 32 && inspected < 64; index++) {
+        const owner = owners[index];
+        if (!this.economicPortOwnerEligible(owner, seen)) continue;
+        const relation = this.economicTradeRelation(owner);
+        const ports = owner.units?.(UNIT.Port) || [];
+        for (let portIndex = 0; portIndex < ports.length && portIndex < 16 && inspected < 64; portIndex++) {
+          inspected++;
+          const entry = this.economicOceanPartnerEntry(ports[portIndex], sources, relation, debuff);
+          if (entry) entries.push(entry);
+        }
+      }
+      return entries;
+    }
+
+    economicPortOwnerEligible(owner, seen) {
+      if (!owner || owner.isAlive?.() === false || owner.isPlayer?.() === false) return false;
+      const id = owner.smallID?.();
+      if (id === this.player.smallID?.() || seen.has(id)) return false;
+      seen.add(id);
+      return typeof shimCanTrade === "function" ? shimCanTrade(this.player, owner) : false;
+    }
+
+    economicOceanPartnerEntry(port, sources, relation, debuff) {
+      if (!this.economicCompletedUnit(port)) return null;
+      const tile = port.tile?.();
+      if (!Number.isFinite(tile) || !this.isOceanPortTile(tile)) return null;
+      const distance = Math.min(...sources.map((source) => this.game.manhattanDist(source, tile)));
+      const level = Number(port.level?.());
+      if (!Number.isFinite(distance) || distance <= 0 || !Number.isSafeInteger(level) || level < 1) return null;
+      const gold = 75_000 / (1 + Math.exp(-0.03 * (distance - debuff))) + 50 * distance;
+      return { level, distance, gold, teamGold: relation === "team" ? gold : 0, rivalGold: relation === "other" ? gold : 0 };
+    }
+
+    economicInvestmentCandidates(context = {}, options = {}) {
+      const summary = options.summary || this.getEconomicInvestmentSummary();
+      const types = [...new Set((options.types || [UNIT.Factory, UNIT.Port, UNIT.City]).slice(0, 3))];
+      const estimates = this.economicInvestmentEstimates(summary);
+      const candidates = [];
+      for (const type of types) {
+        if (!this.economicInvestmentTypeAllowed(type, context)) continue;
+        const cost = this.getConstructionCost(type);
+        if (this.availableGoldAfterReserve(type) < cost) continue;
+        const estimate = estimates[type];
+        // Equal-side team receipts count once; rival matching payouts are an
+        // externality discount, never fictitious spendable own gold.
+        const income = estimate.own + estimate.team - estimate.rival * 0.5;
+        candidates.push({ type, action: "build", cost,
+          constructionTicks: this.economicInvestmentDuration(type),
+          completionTicks: this.economicInvestmentDuration(type) +
+            (type === UNIT.Port ? (summary.portArrivalTicks || 0) : 0),
+          shortIncomePerTick: income, longIncomePerTick: income,
+          ownIncomePerTick: estimate.own, teamIncomePerTick: estimate.team,
+          rivalIncomePerTick: estimate.rival, survivalFactor: 1, capacityValue: 0,
+          forecastBasis: "bounded-potential-trade-proxy", sourceSummaryTick: summary.tick });
+      }
+      return candidates;
+    }
+
+    economicInvestmentDuration(type) {
+      const config = this.game?.config?.();
+      const duration = config?.unitInfo?.(type)?.constructionDuration;
+      if (Number.isFinite(duration) && duration >= 0) return duration;
+      return type === UNIT.Port ? 50 : 20;
+    }
+
+    economicInvestmentEstimates(summary) {
+      const confidence = summary.routeConfidence || 0;
+      const ownStop = summary.averageOwnDestinationGold || 0;
+      const teamStop = summary.averageTeamDestinationGold || 0;
+      const rivalStop = summary.averageRivalDestinationGold || 0;
+      const factoryDelta = summary.marginalFactoryOutputPerTick || 0;
+      const estimates = {
+        [UNIT.Factory]: { own: factoryDelta * ownStop * confidence, team: factoryDelta * teamStop * confidence,
+          rival: factoryDelta * rivalStop * confidence },
+        // A new self endpoint can redirect an existing train instead of
+        // adding a paid stop. No marginal cash is proven without its route.
+        // Troop capacity remains in the independent City-first/cap lane.
+        [UNIT.City]: { own: 0, team: 0, rival: 0 },
+        [UNIT.Port]: { own: (summary.portTradeIncomePerTick || 0), team: (summary.portTeamIncomePerTick || 0),
+          rival: (summary.portRivalSpilloverPerTick || 0) },
+      };
+      return estimates;
+    }
+
+    economicInvestmentTypeAllowed(type, context) {
+      if (!ECONOMIC_STRUCTURE_TYPES.includes(type)) return false;
+      if (context.config?.isUnitDisabled?.(type) || !autoBotBuildAllowed(type)) return false;
+      if (type === UNIT.City && context.citiesDisabled) return false;
+      if (type === UNIT.Port && context.hasOceanPortTiles === false) return false;
+      const units = this.player.units(type) || [];
+      // The ordinary construction path enforces this too; ranking must not
+      // spend time promoting an in-progress action that cannot be repeated.
+      for (let index = 0; index < units.length && index < 64; index++) {
+        if (this.unitUnderConstruction(units[index])) return false;
+      }
+      return true;
+    }
+
+    rankEconomicInvestments(context = {}, options = {}) {
+      if (typeof rankEconomicInvestmentCandidates !== "function") return [];
+      return rankEconomicInvestmentCandidates(this.economicInvestmentCandidates(context, options), {
+        gold: this.spendableConstructionGold(), reserve: 0n,
+        shortHorizonTicks: options.shortHorizonTicks ?? 300,
+        longHorizonTicks: options.longHorizonTicks ?? 6000,
+        shortWeight: options.shortWeight ?? 0.4,
+      });
     }
 
     economicStructureTypeEligible(
@@ -2246,6 +2574,7 @@
       } else {
         buildOrder = [UNIT.City, UNIT.Factory, UNIT.Port];
       }
+      buildOrder = this.refineHighGoldEconomicOrder(buildOrder, openingOceanPort, { config, hasOceanPortTiles });
       for (const structureType of buildOrder) {
         if (config.isUnitDisabled(structureType)) continue;
         if (structureType === UNIT.Port && !hasOceanPortTiles) continue;
@@ -2253,6 +2582,11 @@
         if (await this.maybeSpawnStructure(structureType)) return true;
       }
       return false;
+    }
+
+    refineHighGoldEconomicOrder(order, openingPort, context) {
+      if (openingPort || this.ownedLevels(UNIT.City) < 2 || this.troopCapPressure()) return order;
+      return this.economicAdvisoryTypeOrder(order, this.rankEconomicInvestments(context, { types: order }));
     }
 
     async maybeSpawnHostileSiloSam() {
@@ -2651,13 +2985,32 @@
           ]
         : [candidates];
       return candidateGroups.map((group) =>
-        rankLegendaryConstructionActions(group, {
+        this.refineLegendaryEconomicActions(rankLegendaryConstructionActions(group, {
           gold: this.player.gold(),
           // The MIRV war chest is only an offensive goal. Productive and
           // defensive candidates must remain rankable while the bot saves it.
           reserve: 0n,
-        }),
+        })),
       );
+    }
+
+    refineLegendaryEconomicActions(actions) {
+      if (!state.settings.winFixes || typeof rankEconomicInvestmentCandidates !== "function" ||
+          actions.some((entry) => entry.action === "wait")) return actions;
+      const eligible = actions.filter((entry) => this.isDiscretionaryEconomicAction(entry));
+      if (eligible.length < 2) return actions;
+      const types = eligible.map((entry) => entry.type);
+      const ranked = this.rankEconomicInvestments({ config: this.game.config(),
+        hasOceanPortTiles: this._hasOceanPortTiles === true }, { types });
+      const order = this.economicAdvisoryTypeOrder(types, ranked);
+      const reordered = [...eligible].sort((left, right) => order.indexOf(left.type) - order.indexOf(right.type));
+      let index = 0;
+      return actions.map((entry) => this.isDiscretionaryEconomicAction(entry) ? reordered[index++] : entry);
+    }
+
+    isDiscretionaryEconomicAction(entry) {
+      return ECONOMIC_STRUCTURE_TYPES.includes(entry.type) && entry.action !== "upgrade" &&
+        (entry.mandatory ?? 0) <= 0 && (entry.safety ?? 0) <= 0 && (entry.capacity ?? 0) <= 0;
     }
 
     legendaryReserveGold() {
@@ -11183,6 +11536,17 @@
       const { upgradable, buByUnitId } =
         await this.probeUpgradableStructures(structures);
       if (upgradable.length === 0) return null;
+      const requestedType = structures[0]?.type?.();
+      if (
+        state.settings.winFixes &&
+        ECONOMIC_STRUCTURE_TYPES.includes(requestedType)
+      ) {
+        return this.findBestEconomicStructureUpgrade(
+          upgradable,
+          buByUnitId,
+          requestedType,
+        );
+      }
       const mkResult = (structure) => ({
         structure,
         bu: buByUnitId.get(structure.id()),
@@ -11201,6 +11565,243 @@
       scored.sort((a, b) => b.score - a.score);
       const selected = this.selectScoredStructureUpgrade(scored);
       return selected ? mkResult(selected) : null;
+    }
+
+    findBestEconomicStructureUpgrade(structures, buByUnitId, type) {
+      const budget = this.economicUpgradeGoldBudget(type);
+      if (budget === null) return null;
+      const outputs = this.economicUpgradeMarginalOutputs(type, structures);
+      if (outputs === null) return null;
+      const samLaunchers = (this.player?.units?.(UNIT.SAMLauncher) || []).filter(
+        (sam) => !this.unitUnderConstruction(sam),
+      );
+      const rankingContext = {
+        buByUnitId,
+        outputs,
+        samLaunchers,
+        budget,
+        type,
+      };
+      const ranked = this.economicStructureUpgradeCandidates(
+        structures,
+        rankingContext,
+      );
+      ranked.sort((left, right) =>
+        this.compareEconomicStructureUpgrades(left, right),
+      );
+      return ranked.length > 0
+        ? { structure: ranked[0].structure, bu: ranked[0].bu }
+        : null;
+    }
+
+    economicStructureUpgradeCandidates(structures, context) {
+      const candidates = [];
+      for (const structure of structures) {
+        const candidate = this.economicStructureUpgradeCandidate(
+          structure,
+          context,
+        );
+        if (candidate !== null) candidates.push(candidate);
+      }
+      return candidates;
+    }
+
+    economicStructureUpgradeCandidate(structure, context) {
+      if (structure?.type?.() !== context.type) return null;
+      const key = this.economicUpgradeStructureKey(structure);
+      const buildable = context.buByUnitId.get(key);
+      const cost = this.economicUpgradeAuthoritativeCost(buildable);
+      const output = context.outputs.get(key);
+      if (
+        cost === null ||
+        cost <= 0n ||
+        cost > context.budget ||
+        !Number.isFinite(output) ||
+        output <= 0
+      ) {
+        return null;
+      }
+      const numericCost = Number(cost);
+      if (!Number.isFinite(numericCost) || numericCost <= 0) return null;
+      const rawProtection = this.structureSamProtectionScore(
+        structure,
+        context.samLaunchers,
+      );
+      return {
+        structure,
+        bu: buildable,
+        cost,
+        output,
+        valuePerGold: output / numericCost,
+        protection: Number.isFinite(rawProtection) ? rawProtection : 0,
+      };
+    }
+
+    economicUpgradeGoldBudget(type) {
+      const value = this.availableGoldAfterReserve(type);
+      if (typeof value === "bigint") return value >= 0n ? value : null;
+      if (typeof value === "number") {
+        return Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+      }
+      if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+      return null;
+    }
+
+    economicUpgradeAuthoritativeCost(buildable) {
+      const value = buildable?.cost;
+      if (buildable?.canUpgrade === false) return null;
+      if (typeof value === "bigint") return value >= 0n ? value : null;
+      if (typeof value === "number") {
+        return Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+      }
+      if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+      return null;
+    }
+
+    economicUpgradeStructureKey(structure) {
+      return structure?.id?.();
+    }
+
+    economicUpgradeMarginalOutputs(type, structures) {
+      switch (type) {
+        case UNIT.City: {
+          const config = this.game?.config?.();
+          const gain = Number(config?.cityTroopIncrease?.() ?? 250_000);
+          if (!Number.isFinite(gain) || gain <= 0) return null;
+          return new Map(
+            structures.map((structure) => [
+              this.economicUpgradeStructureKey(structure),
+              gain,
+            ]),
+          );
+        }
+        case UNIT.Factory:
+          return this.factoryUpgradeMarginalOutputs(structures);
+        case UNIT.Port:
+          return this.portUpgradeMarginalOutputs(structures);
+        default:
+          return null;
+      }
+    }
+
+    factoryUpgradeMarginalOutputs(upgradable) {
+      const levels = this.completedFactoryUpgradeLevels();
+      if (levels === null || levels.length === 0) return null;
+      const totalLevels = levels.reduce((sum, entry) => sum + entry.level, 0);
+      if (!Number.isSafeInteger(totalLevels) || totalLevels <= 0) return null;
+      const currentRate = this.factoryTrainSpawnRate(totalLevels);
+      const upgradedRate = this.factoryTrainSpawnRate(totalLevels + 1);
+      if (currentRate === null || upgradedRate === null) return null;
+      const currentOutput = this.factoryPortfolioSpawnRate(levels, currentRate);
+      if (currentOutput === null) return null;
+      const outputs = new Map();
+      for (const structure of upgradable) {
+        const key = this.economicUpgradeStructureKey(structure);
+        const marginalOutput = this.factoryUpgradeMarginalOutput(
+          levels,
+          key,
+          currentOutput,
+          upgradedRate,
+        );
+        if (marginalOutput === null) return null;
+        if (marginalOutput !== undefined) outputs.set(key, marginalOutput);
+      }
+      return outputs;
+    }
+
+    completedFactoryUpgradeLevels() {
+      const factories = this.player?.units?.(UNIT.Factory);
+      if (!Array.isArray(factories) || factories.length > 64) return null;
+      const levels = [];
+      for (const factory of factories) {
+        if (!factory || this.unitUnderConstruction(factory)) continue;
+        const level = this.economicUpgradeUnitLevel(factory);
+        if (level === null) return null;
+        levels.push({ key: this.economicUpgradeStructureKey(factory), level });
+      }
+      return levels;
+    }
+
+    factoryUpgradeMarginalOutput(levels, key, currentOutput, upgradedRate) {
+      if (!levels.some((entry) => entry.key === key)) return undefined;
+      let upgradedOutput = 0;
+      for (const entry of levels) {
+        const level = entry.level + (entry.key === key ? 1 : 0);
+        const attemptProbability = 1 - Math.pow(1 - 1 / upgradedRate, level);
+        const spawnProbability =
+          attemptProbability / (1 + 9 * attemptProbability);
+        if (!Number.isFinite(spawnProbability) || spawnProbability < 0) {
+          return null;
+        }
+        upgradedOutput += spawnProbability;
+      }
+      return Number.isFinite(upgradedOutput)
+        ? upgradedOutput - currentOutput
+        : null;
+    }
+
+    economicUpgradeUnitLevel(unit) {
+      const value = Number(unit?.level?.());
+      return Number.isSafeInteger(value) && value > 0 ? value : null;
+    }
+
+    factoryTrainSpawnRate(totalLevels) {
+      const config = this.game?.config?.();
+      const value = typeof config?.trainSpawnRate === "function"
+        ? Number(config.trainSpawnRate(totalLevels))
+        : (totalLevels + 10) * 15;
+      return Number.isFinite(value) && value > 1 ? value : null;
+    }
+
+    factoryPortfolioSpawnRate(levels, spawnRate) {
+      let total = 0;
+      for (const entry of levels) {
+        const attemptProbability =
+          1 - Math.pow(1 - 1 / spawnRate, entry.level);
+        const spawnProbability =
+          attemptProbability / (1 + 9 * attemptProbability);
+        if (!Number.isFinite(spawnProbability) || spawnProbability < 0) {
+          return null;
+        }
+        total += spawnProbability;
+      }
+      return Number.isFinite(total) ? total : null;
+    }
+
+    portUpgradeMarginalOutputs(upgradable) {
+      const config = this.game?.config?.();
+      if (typeof config?.tradeShipSpawnRate !== "function") return null;
+      const tradeShipCount = Number(this.game?.unitCount?.(UNIT.TradeShip));
+      if (!Number.isSafeInteger(tradeShipCount) || tradeShipCount < 0) return null;
+      const spawnRate = Number(config.tradeShipSpawnRate(0, tradeShipCount));
+      if (!Number.isFinite(spawnRate) || spawnRate <= 1) return null;
+      const outputs = new Map();
+      for (const port of upgradable) {
+        const level = this.economicUpgradeUnitLevel(port);
+        if (level === null) return null;
+        const currentChance = 1 - Math.pow(1 - 1 / spawnRate, level);
+        const upgradedChance = 1 - Math.pow(1 - 1 / spawnRate, level + 1);
+        const marginalPerTick = (upgradedChance - currentChance) / 10;
+        if (!Number.isFinite(marginalPerTick) || marginalPerTick < 0) return null;
+        outputs.set(this.economicUpgradeStructureKey(port), marginalPerTick);
+      }
+      return outputs;
+    }
+
+    compareEconomicStructureUpgrades(left, right) {
+      if (left.protection !== right.protection) {
+        return right.protection - left.protection;
+      }
+      if (left.valuePerGold !== right.valuePerGold) {
+        return right.valuePerGold - left.valuePerGold;
+      }
+      if (left.output !== right.output) return right.output - left.output;
+      if (left.cost !== right.cost) return left.cost < right.cost ? -1 : 1;
+      const leftId = String(this.economicUpgradeStructureKey(left.structure) ?? "");
+      const rightId = String(this.economicUpgradeStructureKey(right.structure) ?? "");
+      if (leftId < rightId) return -1;
+      if (leftId > rightId) return 1;
+      return 0;
     }
 
     async probeUpgradableStructures(structures) {

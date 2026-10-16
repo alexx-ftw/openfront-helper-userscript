@@ -1035,6 +1035,13 @@
       getWinner: () => (typeof src.getWinner === "function" ? src.getWinner() : null),
       units: (...types) => cachedUnits(src, "game", types),
       unitCount: (type) => cachedUnits(src, "game", [type]).length,
+      cachedUnitCount: (type) => {
+        const tick = typeof src.ticks === "function" ? src.ticks() : null;
+        if (tick === null || tick === undefined || tick !== unitSnapshotTick) return null;
+        const key = `game\u0002${unitTypeKey([type])}`;
+        const units = unitSnapshotCache.get(key);
+        return Array.isArray(units) ? units.length : null;
+      },
       // GameMap surface (sync passthrough)
       ref: mapM("ref"),
       x: mapM("x"),

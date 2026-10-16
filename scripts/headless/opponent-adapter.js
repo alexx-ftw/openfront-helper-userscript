@@ -109,11 +109,27 @@ export function createBundledOpponentHarness(options = {}) {
   window.console = process.env.BLITZBOT_VERBOSE_BUNDLE === "1" ? console : quietConsole;
   window.setInterval = () => 0;
   window.clearInterval = () => undefined;
+  // Cooperative topology work yields with setTimeout(0). A real timer has a
+  // wall-clock minimum, so CPU load used to decide how many game ticks passed
+  // before its next slice. Match the runner's setImmediate tick boundary:
+  // each queued slice now advances in a fixed FIFO order, independently of
+  // profiling/logging overhead. Actual timeout deadlines keep real timers.
+  const cooperativeTimers = new WeakSet();
   window.setTimeout = (fn, ms = 0, ...args) => {
-    const timer = globalThis.setTimeout(fn, ms, ...args);
-    return timer;
+    if (Number(ms) <= 0) {
+      const timer = globalThis.setImmediate(fn, ...args);
+      cooperativeTimers.add(timer);
+      return timer;
+    }
+    return globalThis.setTimeout(fn, ms, ...args);
   };
-  window.clearTimeout = (id) => globalThis.clearTimeout(id);
+  window.clearTimeout = (id) => {
+    if (id && typeof id === "object" && cooperativeTimers.has(id)) {
+      globalThis.clearImmediate(id);
+      return;
+    }
+    globalThis.clearTimeout(id);
+  };
 
   const current = { buildMenu: null, eventsDisplay: { events: [] } };
   const realQuerySelector = window.document.querySelector.bind(window.document);
