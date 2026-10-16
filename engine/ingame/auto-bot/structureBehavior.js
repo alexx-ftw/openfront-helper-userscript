@@ -2223,10 +2223,15 @@
         averageTeamDestinationGold: average("teamGold"),
         averageRivalDestinationGold: average("rivalGold"),
         portTradePartnerLevels: portTrade.partnerLevels,
+        portTradePartnerWeight: portTrade.partnerWeight || 0,
+        portTradePartnerCount: portTrade.partnerPortCount || 0,
         portTradeIncomePerTick: portTrade.incomePerTick,
         portTeamIncomePerTick: portTrade.teamIncomePerTick,
         portRivalSpilloverPerTick: portTrade.rivalSpilloverPerTick,
         portArrivalTicks: portTrade.arrivalTicks || 0,
+        portTradeSampledSourceCount: portTrade.sampledSourceCount || 0,
+        portTradeInspectedPortCount: portTrade.inspectedPortCount || 0,
+        portTradeTruncated: portTrade.truncatedPortScan === true,
         // DIVERGENCE: local station proximity proves a potential connection,
         // not an existing train route. It may reorder builds but never veto one.
         routeConfidence: local.length > 0 ? 0.5 : 0,
@@ -2367,58 +2372,226 @@
     }
 
     collectEconomicPortPartnerSummary(destinations = []) {
-      const empty = { partnerLevels: 0, incomePerTick: 0, teamIncomePerTick: 0, rivalSpilloverPerTick: 0 };
+      const empty = {
+        partnerLevels: 0, incomePerTick: 0, teamIncomePerTick: 0,
+        rivalSpilloverPerTick: 0, sampledSourceCount: 0,
+        inspectedPortCount: 0, truncatedPortScan: false,
+      };
       if (typeof this.game?.players !== "function" || typeof this.game.manhattanDist !== "function") return empty;
       const sources = this.economicOceanSourceTiles(destinations);
       if (sources.length === 0) return empty;
       const config = this.game.config();
       const rawDebuff = Number(config.tradeShipShortRangeDebuff?.() ?? 200);
       const debuff = Number.isFinite(rawDebuff) ? rawDebuff : 200;
-      const entries = this.economicOceanPartners(sources, debuff);
-      if (entries.length === 0) return empty;
-      return this.economicPortIncomeSummary(entries, config, empty);
+      const partnerSnapshot = this.economicOceanPartners(sources, debuff, config);
+      if (partnerSnapshot.entries.length === 0) return {
+        ...empty,
+        sampledSourceCount: partnerSnapshot.sampledSourceCount,
+        inspectedPortCount: partnerSnapshot.inspectedPortCount,
+        truncatedPortScan: partnerSnapshot.truncatedPortScan,
+      };
+      return this.economicPortIncomeSummary(partnerSnapshot.entries, config, empty, {
+        sampledSourceCount: partnerSnapshot.sampledSourceCount,
+        inspectedPortCount: partnerSnapshot.inspectedPortCount,
+        truncatedPortScan: partnerSnapshot.truncatedPortScan,
+      });
     }
 
-    economicPortIncomeSummary(entries, config, empty) {
-      const totalLevels = entries.reduce((sum, entry) => sum + entry.level, 0);
-      const average = (field) => entries.reduce((sum, entry) => sum + entry[field] * entry.level, 0) / totalLevels;
-      // Reuse an already observed ship-family snapshot. Ranking must not
-      // wrap every ship in the world just to estimate congestion. Unknown
-      // congestion keeps Port value unproven and preserves the legacy order.
-      const shipCount = this.game.cachedUnitCount?.(UNIT.TradeShip);
-      if (!Number.isSafeInteger(shipCount) || shipCount < 0) return empty;
-      const rate = Number(config.tradeShipSpawnRate?.(0, shipCount) ?? 100);
-      if (!Number.isFinite(rate) || rate < 1) return empty;
+    economicPortIncomeSummary(entries, config, empty, diagnostics = {}) {
+      // The public helper is also exercised with synthetic inputs. Keep its
+      // work bounded even if a caller accidentally supplies a world-sized list.
+      const boundedEntries = Array.isArray(entries) ? entries.slice(0, 64) : [];
+      const weightedEntries = boundedEntries.filter((entry) => this.economicValidPortWeight(entry));
+      const totalWeight = weightedEntries.reduce((sum, entry) => sum + this.economicPortEntryWeight(entry), 0);
+      if (!Number.isFinite(totalWeight) || totalWeight <= 0) return empty;
+      const sourceSummaries = this.economicPortEntriesAreSourceSummaries(weightedEntries);
+      const partnerCounts = this.economicPortSummaryCounts(weightedEntries, sourceSummaries, totalWeight);
+      const arrivalTicks = this.economicPortArrivalTicks(weightedEntries, sourceSummaries);
+      const spawnPerTick = this.economicPortSpawnPerTick(config);
+      if (spawnPerTick === null) return empty;
       // Outgoing-only lower-bound proxy: partners affect destination choice,
       // never multiply our source's spawn rate. Incoming traffic is unknown.
-      const spawnPerTick = 1 / (10 * rate);
       const arrivalDiscount = 0.5;
       return {
-        partnerLevels: totalLevels,
-        arrivalTicks: Math.ceil(average("distance")),
-        incomePerTick: average("gold") * spawnPerTick * arrivalDiscount,
-        teamIncomePerTick: average("teamGold") * spawnPerTick * arrivalDiscount,
-        rivalSpilloverPerTick: average("rivalGold") * spawnPerTick * arrivalDiscount,
+        ...partnerCounts,
+        sampledSourceCount: diagnostics.sampledSourceCount || 0,
+        inspectedPortCount: diagnostics.inspectedPortCount || 0,
+        truncatedPortScan: Boolean(
+          diagnostics.truncatedPortScan || (Array.isArray(entries) && entries.length > boundedEntries.length),
+        ),
+        arrivalTicks,
+        incomePerTick: this.economicPortWeightedAverage(weightedEntries, "gold", totalWeight) * spawnPerTick * arrivalDiscount,
+        teamIncomePerTick: this.economicPortWeightedAverage(weightedEntries, "teamGold", totalWeight) * spawnPerTick * arrivalDiscount,
+        rivalSpilloverPerTick: this.economicPortWeightedAverage(weightedEntries, "rivalGold", totalWeight) * spawnPerTick * arrivalDiscount,
       };
     }
 
-    economicOceanPartners(sources, debuff) {
-      const entries = [];
+    economicPortSpawnPerTick(config) {
+      // Reuse an observed count; do not materialize all TradeShips for ranking.
+      const shipCount = this.game.cachedUnitCount?.(UNIT.TradeShip);
+      if (!Number.isSafeInteger(shipCount) || shipCount < 0) return null;
+      const rate = Number(config.tradeShipSpawnRate?.(0, shipCount) ?? 100);
+      return Number.isFinite(rate) && rate >= 1 ? 1 / (10 * rate) : null;
+    }
+
+    economicPortEntriesAreSourceSummaries(entries) {
+      return entries.length > 0 && entries.every((entry) => entry.sourceSummary === true);
+    }
+
+    economicPortSummaryCounts(entries, sourceSummaries, totalWeight) {
+      if (sourceSummaries) {
+        return {
+          partnerLevels: entries.reduce((sum, entry) => sum + entry.sourceLevelTotal, 0) / entries.length,
+          partnerWeight: entries.reduce((sum, entry) => sum + entry.sourceWeightTotal, 0) / entries.length,
+          partnerPortCount: entries.reduce((sum, entry) => sum + entry.sourcePortCount, 0) / entries.length,
+        };
+      }
+      return {
+        partnerLevels: entries.reduce((sum, entry) => sum + Number(entry.level), 0),
+        partnerWeight: totalWeight,
+        partnerPortCount: entries.length,
+      };
+    }
+
+    economicPortArrivalTicks(entries, sourceSummaries) {
+      const arrivalEntries = sourceSummaries ? entries.filter((entry) => entry.sourcePortCount > 0) : entries;
+      const arrivalWeight = arrivalEntries.reduce((sum, entry) => sum + this.economicPortEntryWeight(entry), 0);
+      if (arrivalWeight <= 0) return 0;
+      const distance = arrivalEntries.reduce((sum, entry) =>
+        sum + (Number(entry.distance) || 0) * this.economicPortEntryWeight(entry), 0);
+      return Math.ceil(distance / arrivalWeight);
+    }
+
+    economicPortWeightedAverage(entries, field, totalWeight) {
+      return entries.reduce((sum, entry) =>
+        sum + (Number(entry[field]) || 0) * this.economicPortEntryWeight(entry), 0) / totalWeight;
+    }
+
+    economicValidPortWeight(entry) {
+      if (!entry) return false;
+      const distance = Number(entry?.distance);
+      const gold = Number(entry?.gold);
+      const level = Number(entry?.level);
+      const teamGold = Number(entry?.teamGold ?? 0);
+      const rivalGold = Number(entry?.rivalGold ?? 0);
+      return this.economicPortFiniteNonnegative(distance) && this.economicPortFiniteNonnegative(gold) &&
+        this.economicPortFiniteNonnegative(teamGold) && this.economicPortFiniteNonnegative(rivalGold) &&
+        Number.isSafeInteger(level) && level > 0 &&
+        this.economicPortEntryWeight(entry) > 0;
+    }
+
+    economicPortFiniteNonnegative(value) {
+      return Number.isFinite(value) && value >= 0;
+    }
+
+    economicPortEntryWeight(entry) {
+      const weight = Number(entry?.weight ?? entry?.effectiveWeight ?? entry?.level);
+      return Number.isFinite(weight) && weight > 0 ? weight : 0;
+    }
+
+    economicOceanPartners(sources, debuff, config = this.game.config?.()) {
+      // DIVERGENCE: partner eligibility keeps the preloaded canonical-ocean
+      // approximation; candidate Port value averages separate sampled source
+      // anchors instead of claiming one new Port can use every anchor at once.
+      // The first 32 game.players() owners and 64 Port records are a bounded
+      // sample; diagnostics expose truncation to keep this forecast advisory.
+      const candidates = [];
       const owners = this.game.players() || [];
       const seen = new Set();
-      let inspected = 0;
-      for (let index = 0; index < owners.length && index < 32 && inspected < 64; index++) {
-        const owner = owners[index];
-        if (!this.economicPortOwnerEligible(owner, seen)) continue;
-        const relation = this.economicTradeRelation(owner);
-        const ports = owner.units?.(UNIT.Port) || [];
-        for (let portIndex = 0; portIndex < ports.length && portIndex < 16 && inspected < 64; portIndex++) {
-          inspected++;
-          const entry = this.economicOceanPartnerEntry(ports[portIndex], sources, relation, debuff);
-          if (entry) entries.push(entry);
-        }
+      const snapshot = { inspectedPortCount: 0, truncatedPortScan: owners.length > 32 };
+      for (let index = 0; index < owners.length && index < 32 && snapshot.inspectedPortCount < 64; index++) {
+        this.appendEconomicOceanOwnerPorts(owners[index], seen, candidates, snapshot);
+        if (snapshot.inspectedPortCount >= 64 && index + 1 < owners.length) snapshot.truncatedPortScan = true;
       }
-      return entries;
+      const sourceSummaries = [];
+      const scoredEntries = [];
+      const sampledSources = sources.slice(0, 8);
+      for (let sourceIndex = 0; sourceIndex < sampledSources.length; sourceIndex++) {
+        const ranked = this.economicOceanPortsForSource(
+          candidates, sampledSources[sourceIndex], sourceIndex, debuff, config,
+        );
+        scoredEntries.push(...ranked);
+        sourceSummaries.push(this.economicOceanSourceSummary(ranked, sourceIndex));
+      }
+      return {
+        entries: sourceSummaries,
+        scoredEntries,
+        sampledSourceCount: sampledSources.length,
+        inspectedPortCount: snapshot.inspectedPortCount,
+        truncatedPortScan: snapshot.truncatedPortScan,
+      };
+    }
+
+    appendEconomicOceanOwnerPorts(owner, seen, candidates, snapshot) {
+      if (snapshot.inspectedPortCount >= 64 || !this.economicPortOwnerEligible(owner, seen)) return;
+      const relation = this.economicTradeRelation(owner);
+      const ports = owner.units?.(UNIT.Port) || [];
+      if (ports.length > 16) snapshot.truncatedPortScan = true;
+      const count = Math.min(ports.length, 16, 64 - snapshot.inspectedPortCount);
+      for (let index = 0; index < count; index++) {
+        snapshot.inspectedPortCount++;
+        const entry = this.economicOceanPartnerRecord(ports[index], owner, relation);
+        if (entry) candidates.push(entry);
+      }
+      if (snapshot.inspectedPortCount >= 64 && ports.length > count) snapshot.truncatedPortScan = true;
+    }
+
+    economicOceanPortsForSource(candidates, source, sourceIndex, debuff, config) {
+      const entries = [];
+      for (const candidate of candidates) {
+        const entry = this.economicOceanPartnerAtSource(candidate, source, sourceIndex, debuff);
+        if (entry) entries.push(entry);
+      }
+      const ranked = entries.slice().sort((a, b) => a.distance - b.distance);
+      this.assignEconomicOceanPortWeights(ranked, debuff, config);
+      return ranked;
+    }
+
+    economicOceanPartnerAtSource(candidate, source, sourceIndex, debuff) {
+      const distance = Number(this.game.manhattanDist(source, candidate.tile));
+      if (!Number.isFinite(distance) || distance <= 0) return null;
+      const gold = 75_000 / (1 + Math.exp(-0.03 * (distance - debuff))) + 50 * distance;
+      return {
+        ...candidate, sourceIndex, distance, gold,
+        teamGold: candidate.relation === "team" ? gold : 0,
+        rivalGold: candidate.relation === "other" ? gold : 0,
+      };
+    }
+
+    assignEconomicOceanPortWeights(entries, debuff, config) {
+      const bonusLimit = this.economicPortProximityBonusCount(config, entries.length);
+      for (let index = 0; index < entries.length; index++) {
+        const entry = entries[index];
+        const beyondDebuff = entry.distance >= debuff;
+        entry.proximityBonus = beyondDebuff && index < bonusLimit;
+        entry.friendlyBonus = beyondDebuff && entry.friendly;
+        entry.weight = entry.level * (1 + Number(entry.proximityBonus) + Number(entry.friendlyBonus));
+      }
+    }
+
+    economicOceanSourceSummary(entries, sourceIndex) {
+      const weight = entries.reduce((sum, entry) => sum + entry.weight, 0);
+      const weightedAverage = (field) => weight > 0
+        ? entries.reduce((sum, entry) => sum + entry[field] * entry.weight, 0) / weight
+        : 0;
+      return {
+        sourceSummary: true, sourceIndex, level: 1, weight: 1,
+        sourceLevelTotal: entries.reduce((sum, entry) => sum + entry.level, 0),
+        sourceWeightTotal: weight,
+        sourcePortCount: entries.length,
+        distance: weightedAverage("distance"),
+        gold: weightedAverage("gold"),
+        teamGold: weightedAverage("teamGold"),
+        rivalGold: weightedAverage("rivalGold"),
+      };
+    }
+
+    economicPortProximityBonusCount(config, totalPorts) {
+      if (totalPorts <= 0) return 0;
+      const supplied = Number(config?.proximityBonusPortsNb?.(totalPorts));
+      if (Number.isFinite(supplied)) return supplied;
+      // Config.proximityBonusPortsNb uses within(totalPorts / 3, 4, totalPorts).
+      return Math.min(Math.max(totalPorts / 3, 4), totalPorts);
     }
 
     economicPortOwnerEligible(owner, seen) {
@@ -2429,15 +2602,16 @@
       return typeof shimCanTrade === "function" ? shimCanTrade(this.player, owner) : false;
     }
 
-    economicOceanPartnerEntry(port, sources, relation, debuff) {
+    economicOceanPartnerRecord(port, owner, relation) {
       if (!this.economicCompletedUnit(port)) return null;
       const tile = port.tile?.();
       if (!Number.isFinite(tile) || !this.isOceanPortTile(tile)) return null;
-      const distance = Math.min(...sources.map((source) => this.game.manhattanDist(source, tile)));
       const level = Number(port.level?.());
-      if (!Number.isFinite(distance) || distance <= 0 || !Number.isSafeInteger(level) || level < 1) return null;
-      const gold = 75_000 / (1 + Math.exp(-0.03 * (distance - debuff))) + 50 * distance;
-      return { level, distance, gold, teamGold: relation === "team" ? gold : 0, rivalGold: relation === "other" ? gold : 0 };
+      if (!Number.isSafeInteger(level) || level < 1) return null;
+      return {
+        owner, tile, level, relation,
+        friendly: this.player.isFriendly?.(owner) === true,
+      };
     }
 
     economicInvestmentCandidates(context = {}, options = {}) {
@@ -11771,8 +11945,12 @@
     portUpgradeMarginalOutputs(upgradable) {
       const config = this.game?.config?.();
       if (typeof config?.tradeShipSpawnRate !== "function") return null;
-      const tradeShipCount = Number(this.game?.unitCount?.(UNIT.TradeShip));
-      if (!Number.isSafeInteger(tradeShipCount) || tradeShipCount < 0) return null;
+      // `game.unitCount` materializes the full global family through the page
+      // bridge. Port upgrades only use a same-tick snapshot when another lane
+      // has already paid that cost; an unknown count must not be treated as
+      // zero or trigger another global scan.
+      const tradeShipCount = this.economicCachedTradeShipCount();
+      if (tradeShipCount === null) return null;
       const spawnRate = Number(config.tradeShipSpawnRate(0, tradeShipCount));
       if (!Number.isFinite(spawnRate) || spawnRate <= 1) return null;
       const outputs = new Map();
@@ -11786,6 +11964,13 @@
         outputs.set(this.economicUpgradeStructureKey(port), marginalPerTick);
       }
       return outputs;
+    }
+
+    economicCachedTradeShipCount() {
+      const count = this.game?.cachedUnitCount?.(UNIT.TradeShip);
+      return typeof count === "number" && Number.isSafeInteger(count) && count >= 0
+        ? count
+        : null;
     }
 
     compareEconomicStructureUpgrades(left, right) {

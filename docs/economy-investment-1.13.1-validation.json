@@ -1,0 +1,131 @@
+{
+  "version": "1.13.1",
+  "date": "2026-10-16",
+  "engineCommit": "b47aaafb0eeeacb53a357b5cbc97c29ea295490d",
+  "campaignSeed": "economy-investment-gates-v1",
+  "maxTicks": 6000,
+  "baselineVersion": "1.13.0",
+  "baselineBundleSha256": "dde354b51e254402f2086bd2ccab5f98fdb84bfdf39b0761886a6755b92d96f2",
+  "candidateBundleSha256": "70fced98082d5b017690b9d8ad5884e09d47153fc867aa08e2972a474b1d7e48",
+  "headlessAdapterSha256": "2f15071f9b16a84b62450aa94eb815e0237a046f92e63a5c8d63b82705e053c3",
+  "summary": {
+    "pairedMatches": 8,
+    "identicalFinalStates": 8,
+    "identicalConstructionTraces": 8,
+    "baselineWins": 2,
+    "candidateWins": 2,
+    "baselineSurvivals": 7,
+    "candidateSurvivals": 7,
+    "observedWinRateGain": false
+  },
+  "checks": [
+    "npm test passed",
+    "npm run quality:global passed",
+    "npm run test:economy passed including real PortExecution oracle",
+    "changed-test ESLint passed"
+  ],
+  "caveats": [
+    "Reused the immutable 1.13.0 candidate baseline with identical seeds and unchanged headless adapter.",
+    "Five games per variant reached the tick limit; no measured win-rate gain.",
+    "Planner work is bounded after shared adapter snapshots; first-touch underlying snapshot materialization is not bounded by those caps.",
+    "Port forecasts remain sampled geometric proxies and omit unknown incoming traffic and spawn rejection timer."
+  ],
+  "pairs": [
+    {
+      "scenario": "inland-alps-rich-team",
+      "seed": "economy-investment-gates-v1-inland-alps-rich-team-0",
+      "sameFinalState": true,
+      "sameConstructionEvents": true,
+      "baselineWin": false,
+      "candidateWin": false,
+      "baselineAlive": true,
+      "candidateAlive": true,
+      "baselineTicks": 6000,
+      "candidateTicks": 6000
+    },
+    {
+      "scenario": "inland-alps-rich-team",
+      "seed": "economy-investment-gates-v1-inland-alps-rich-team-1",
+      "sameFinalState": true,
+      "sameConstructionEvents": true,
+      "baselineWin": false,
+      "candidateWin": false,
+      "baselineAlive": true,
+      "candidateAlive": true,
+      "baselineTicks": 6000,
+      "candidateTicks": 6000
+    },
+    {
+      "scenario": "ffa-europe-low-gold",
+      "seed": "economy-investment-gates-v1-ffa-europe-low-gold-0",
+      "sameFinalState": true,
+      "sameConstructionEvents": true,
+      "baselineWin": false,
+      "candidateWin": false,
+      "baselineAlive": true,
+      "candidateAlive": true,
+      "baselineTicks": 6000,
+      "candidateTicks": 6000
+    },
+    {
+      "scenario": "ffa-europe-low-gold",
+      "seed": "economy-investment-gates-v1-ffa-europe-low-gold-1",
+      "sameFinalState": true,
+      "sameConstructionEvents": true,
+      "baselineWin": false,
+      "candidateWin": false,
+      "baselineAlive": true,
+      "candidateAlive": true,
+      "baselineTicks": 6000,
+      "candidateTicks": 6000
+    },
+    {
+      "scenario": "team-four-islands",
+      "seed": "economy-investment-gates-v1-team-four-islands-0",
+      "sameFinalState": true,
+      "sameConstructionEvents": true,
+      "baselineWin": true,
+      "candidateWin": true,
+      "baselineAlive": true,
+      "candidateAlive": true,
+      "baselineTicks": 5821,
+      "candidateTicks": 5821
+    },
+    {
+      "scenario": "team-four-islands",
+      "seed": "economy-investment-gates-v1-team-four-islands-1",
+      "sameFinalState": true,
+      "sameConstructionEvents": true,
+      "baselineWin": false,
+      "candidateWin": false,
+      "baselineAlive": true,
+      "candidateAlive": true,
+      "baselineTicks": 6000,
+      "candidateTicks": 6000
+    },
+    {
+      "scenario": "nuclear-europe-rich",
+      "seed": "economy-investment-gates-v1-nuclear-europe-rich-0",
+      "sameFinalState": true,
+      "sameConstructionEvents": true,
+      "baselineWin": false,
+      "candidateWin": false,
+      "baselineAlive": false,
+      "candidateAlive": false,
+      "baselineTicks": 4800,
+      "candidateTicks": 4800
+    },
+    {
+      "scenario": "nuclear-europe-rich",
+      "seed": "economy-investment-gates-v1-nuclear-europe-rich-1",
+      "sameFinalState": true,
+      "sameConstructionEvents": true,
+      "baselineWin": true,
+      "candidateWin": true,
+      "baselineAlive": true,
+      "candidateAlive": true,
+      "baselineTicks": 5981,
+      "candidateTicks": 5981
+    }
+  ]
+}

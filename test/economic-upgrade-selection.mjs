@@ -75,6 +75,7 @@ function makeBehavior({
   factoryUnits = [],
   gold = 1_000_000n,
   tradeShipCount = 0,
+  cachedTradeShipCount = tradeShipCount,
   protectionById = new Map(),
   costsById = new Map(),
   cityTroopIncrease = 250_000,
@@ -82,6 +83,7 @@ function makeBehavior({
   const behavior = Object.create(sandbox.__StructureBehavior.prototype);
   let authoritativeProbeCalls = 0;
   let workerProbeCalls = 0;
+  let cachedUnitCountCalls = 0;
   behavior.player = {
     units(type) {
       if (type === UNIT.Factory) return factoryUnits;
@@ -94,7 +96,13 @@ function makeBehavior({
       trainSpawnRate: (factoryLevels) => (factoryLevels + 10) * 15,
       tradeShipSpawnRate: (_rejections, ships) => 100 + ships,
     }),
-    unitCount: (type) => (type === UNIT.TradeShip ? tradeShipCount : 0),
+    unitCount: () => {
+      throw new Error("economic upgrade ranking must not materialize global units");
+    },
+    cachedUnitCount(type) {
+      cachedUnitCountCalls++;
+      return type === UNIT.TradeShip ? cachedTradeShipCount : null;
+    },
   };
   behavior.availableGoldAfterReserve = () => gold;
   behavior.structureSamProtectionScore = (unit) => protectionById.get(unit.id()) ?? 0;
@@ -125,6 +133,7 @@ function makeBehavior({
   return {
     behavior,
     probeCounts: () => ({ authoritativeProbeCalls, workerProbeCalls }),
+    cachedUnitCountCalls: () => cachedUnitCountCalls,
   };
 }
 
@@ -251,6 +260,40 @@ assert.equal(
   highPort,
   "Port upgrades rank the configured base-rate chance increase per ten-tick check against authoritative cost",
 );
+assert.equal(
+  portSetup.cachedUnitCountCalls(),
+  1,
+  "Port upgrade ranking reads the same-tick cached TradeShip count once",
+);
+
+const unknownPort = makeUnit(UNIT.Port, "port-unknown", 1);
+const unknownPortSetup = makeBehavior({
+  cachedTradeShipCount: null,
+  costsById: new Map([["port-unknown", 1n]]),
+});
+assert.equal(
+  await unknownPortSetup.behavior.findBestStructureToUpgrade([unknownPort]),
+  null,
+  "an unknown cached TradeShip count is not mistaken for zero when valuing a Port upgrade",
+);
+assert.equal(unknownPortSetup.cachedUnitCountCalls(), 1);
+
+const missingCachePort = makeUnit(UNIT.Port, "port-no-cache", 1);
+const missingCacheSetup = makeBehavior({
+  costsById: new Map([["port-no-cache", 1n]]),
+});
+let uncachedUnitCountCalls = 0;
+missingCacheSetup.behavior.game.cachedUnitCount = undefined;
+missingCacheSetup.behavior.game.unitCount = () => {
+  uncachedUnitCountCalls++;
+  return 0;
+};
+assert.equal(
+  await missingCacheSetup.behavior.findBestStructureToUpgrade([missingCachePort]),
+  null,
+  "a missing cached count disables Port marginal ranking instead of falling back to a full global scan",
+);
+assert.equal(uncachedUnitCountCalls, 0);
 
 const affordableCity = makeUnit(UNIT.City, "affordable", 1);
 const unaffordableCity = makeUnit(UNIT.City, "unaffordable", 1);

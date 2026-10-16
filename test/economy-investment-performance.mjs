@@ -305,6 +305,163 @@ assert.equal(
   "unknown ship congestion preserves an empty Port forecast",
 );
 assert.equal(unknownPortUnitListCalls, 0, "unknown congestion never scans global units");
+
+// The production Port partner collector supplies at most 64 entries. Keep the
+// public summary helper bounded too, even when a synthetic caller provides a
+// much larger array. The first 64 entries mix team, allied, and rival Ports at
+// four distance bands so weighting and the resulting Port completion delay
+// are covered without adding any geometry or worker work.
+const expectedWeightedPortEntries = Array.from({ length: 64 }, (_, index) => {
+  const level = (index % 4) + 1;
+  const group = Math.floor(index / 16);
+  const gold = 1_000 + index * 10;
+  return {
+    level,
+    distance: [20, 40, 100, 200][group],
+    gold,
+    teamGold: group === 0 ? gold : 0,
+    rivalGold: group === 2 ? gold : 0,
+  };
+});
+const oversizedPortSentinel = {
+  level: 1_000,
+  distance: 1_000_000,
+  gold: 1_000_000_000,
+  teamGold: 1_000_000_000,
+  rivalGold: 1_000_000_000,
+};
+let oversizedPortEntryReads = 0;
+const oversizedPortEntryIndices = new Set();
+const oversizedPortEntries = new Proxy(
+  Array.from({ length: 10_000 }, (_, index) =>
+    index < expectedWeightedPortEntries.length
+      ? expectedWeightedPortEntries[index]
+      : oversizedPortSentinel,
+  ),
+  {
+    get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/.test(property)) {
+        oversizedPortEntryReads++;
+        oversizedPortEntryIndices.add(Number(property));
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  },
+);
+let weightedPortCountReads = 0;
+let weightedPortRateReads = 0;
+let weightedPortForbiddenCalls = 0;
+const weightedPortBehavior = Object.create(sandbox.StructureBehavior.prototype);
+weightedPortBehavior.game = {
+  cachedUnitCount: (type) => {
+    weightedPortCountReads++;
+    assert.equal(type, UNIT.TradeShip);
+    return 0;
+  },
+  units: () => {
+    weightedPortForbiddenCalls++;
+    throw new Error("Port weighting must not materialize global unit arrays");
+  },
+  manhattanDist: () => {
+    weightedPortForbiddenCalls++;
+    throw new Error("Port summary weighting must not perform new geometry scans");
+  },
+  players: () => {
+    weightedPortForbiddenCalls++;
+    throw new Error("direct Port summary weighting must not enumerate players");
+  },
+};
+const weightedPortConfig = {
+  tradeShipSpawnRate: (_ownerId, shipCount) => {
+    weightedPortRateReads++;
+    assert.equal(shipCount, 0);
+    return 20;
+  },
+};
+const weightedPortForecast = weightedPortBehavior.economicPortIncomeSummary(
+  oversizedPortEntries,
+  weightedPortConfig,
+  emptyPortForecast,
+);
+const expectedPortLevelTotal = expectedWeightedPortEntries.reduce(
+  (sum, entry) => sum + entry.level,
+  0,
+);
+const expectedWeightedAverage = (field) =>
+  expectedWeightedPortEntries.reduce((sum, entry) => sum + entry[field] * entry.level, 0) /
+  expectedPortLevelTotal;
+const expectedPortIncomeScale = 0.5 / (10 * 20);
+assert.equal(weightedPortForecast.partnerLevels, expectedPortLevelTotal);
+assert.equal(weightedPortForecast.partnerWeight, expectedPortLevelTotal);
+assert.equal(weightedPortForecast.partnerPortCount, 64);
+assert.equal(weightedPortForecast.truncatedPortScan, true);
+assert.equal(
+  weightedPortForecast.arrivalTicks,
+  90,
+  "weighted partner distance controls the Port arrival delay",
+);
+assert.equal(
+  weightedPortForecast.incomePerTick,
+  expectedWeightedAverage("gold") * expectedPortIncomeScale,
+);
+assert.equal(
+  weightedPortForecast.teamIncomePerTick,
+  expectedWeightedAverage("teamGold") * expectedPortIncomeScale,
+  "team spillover uses level-weighted team receipts",
+);
+assert.equal(
+  weightedPortForecast.rivalSpilloverPerTick,
+  expectedWeightedAverage("rivalGold") * expectedPortIncomeScale,
+  "rival spillover uses level-weighted rival receipts",
+);
+assert.equal(
+  oversizedPortEntryIndices.size,
+  64,
+  "only 64 entries are inspected from oversized input",
+);
+assert.ok(
+  oversizedPortEntryReads <= 64 * 3,
+  `capped entry aggregation remains linear in at most 64 records (read ${oversizedPortEntryReads})`,
+);
+assert.equal(weightedPortCountReads, 1, "weighting reuses one cached ship count");
+assert.equal(weightedPortRateReads, 1, "weighting reads one scalar spawn-rate estimate");
+assert.equal(weightedPortForbiddenCalls, 0, "weighting adds no unit, owner, or distance scans");
+
+weightedPortBehavior.economicInvestmentTypeAllowed = () => true;
+weightedPortBehavior.getConstructionCost = () => 100n;
+weightedPortBehavior.availableGoldAfterReserve = () => 1_000_000n;
+weightedPortBehavior.economicInvestmentDuration = () => 50;
+const weightedPortCandidate = weightedPortBehavior.economicInvestmentCandidates(
+  {},
+  {
+    types: [UNIT.Port],
+    summary: {
+      tick: 1,
+      routeConfidence: 1,
+      averageOwnDestinationGold: 0,
+      averageTeamDestinationGold: 0,
+      averageRivalDestinationGold: 0,
+      marginalFactoryOutputPerTick: 0,
+      portTradeIncomePerTick: weightedPortForecast.incomePerTick,
+      portTeamIncomePerTick: weightedPortForecast.teamIncomePerTick,
+      portRivalSpilloverPerTick: weightedPortForecast.rivalSpilloverPerTick,
+      portArrivalTicks: weightedPortForecast.arrivalTicks,
+    },
+  },
+)[0];
+assert.equal(
+  weightedPortCandidate.completionTicks,
+  140,
+  "Port completion includes the distance-weighted expected arrival delay",
+);
+assert.equal(
+  weightedPortCandidate.shortIncomePerTick,
+  weightedPortForecast.incomePerTick +
+    weightedPortForecast.teamIncomePerTick -
+    weightedPortForecast.rivalSpilloverPerTick * 0.5,
+  "the candidate credits team receipts and discounts rival spillover without changing scan work",
+);
+
 const legacyEconomicOrder = [UNIT.Factory, UNIT.Port, UNIT.City];
 assert.deepEqual(
   [...unknownPortBehavior.economicAdvisoryTypeOrder(legacyEconomicOrder, [{ action: "wait" }])],
@@ -335,6 +492,7 @@ let distanceCachedUnitCountCalls = 0;
 const distanceCachedUnitTypes = [];
 let distancePortClassifierCalls = 0;
 let distanceConstructionChecks = 0;
+let distanceFriendlyChecks = 0;
 const distanceFactoryUnits = countedArray(64, (index) =>
   makeEconomicUnit(`factory-${index}`, 200_000 + index),
 );
@@ -385,8 +543,12 @@ const distancePlayer = {
     distanceRailOrMapCalls++;
     return [];
   },
-  isAlliedWith: () => false,
-  isOnSameTeam: () => false,
+  isOnSameTeam: (owner) => owner.smallID() === 10,
+  isAlliedWith: (owner) => owner.smallID() === 11,
+  isFriendly: (owner) => {
+    distanceFriendlyChecks++;
+    return owner.smallID() === 10 || owner.smallID() === 11;
+  },
 };
 const distanceGameTarget = {
   ticks: () => distanceTick,
@@ -423,7 +585,13 @@ const distanceGameTarget = {
   },
   manhattanDist: (left, right) => {
     distanceManhattanCalls++;
-    return Math.abs(left - right) + 1;
+    const sourceIndex = left - 4_000;
+    const portOffset = right - 50_000;
+    const ownerIndex = Math.floor(portOffset / 10);
+    const portIndex = portOffset % 10;
+    const partnerOrdinal = ownerIndex * 2 + portIndex;
+    const isNear = (sourceIndex === 0) === partnerOrdinal < 32;
+    return isNear ? 300 : 3_000;
   },
   railroadState: () => {
     distanceRailOrMapCalls++;
@@ -461,6 +629,13 @@ const distanceGame = new Proxy(distanceGameTarget, {
 });
 const distanceBehavior = new sandbox.StructureBehavior(() => 0, distanceGame, distancePlayer);
 distanceBehavior._hasOceanPortTiles = true;
+let observedDistancePortSummary = null;
+const originalCollectEconomicPortPartnerSummary =
+  distanceBehavior.collectEconomicPortPartnerSummary.bind(distanceBehavior);
+distanceBehavior.collectEconomicPortPartnerSummary = (destinations) => {
+  observedDistancePortSummary = originalCollectEconomicPortPartnerSummary(destinations);
+  return observedDistancePortSummary;
+};
 distanceBehavior.isTradeableStationNeighbor = () => true;
 distanceBehavior.economicInvestmentTypeAllowed = () => true;
 distanceBehavior.unitUnderConstruction = (unit) => {
@@ -505,6 +680,7 @@ const firstDistanceWork = {
   scalarConfig: distanceConfigScalarReads,
   cachedUnitCountCalls: distanceCachedUnitCountCalls,
   cachedUnitTypes: [...distanceCachedUnitTypes],
+  friendlyChecks: distanceFriendlyChecks,
   constructionChecks: distanceConstructionChecks,
   playerUnitCalls: distancePlayerUnitCalls,
   gameUnitCalls: distanceGameUnitCalls,
@@ -516,7 +692,31 @@ const firstDistanceWork = {
 };
 assert.equal(distanceSummary.sampledDestinationCount, 64);
 assert.equal(distanceSummary.localDestinationCount, 1);
-assert.equal(distanceSummary.portTradePartnerLevels, 64);
+assert.equal(
+  distanceSummary.portTradePartnerLevels,
+  64,
+  "raw partner levels stay separate from proximity and friendly weights",
+);
+assert.equal(
+  observedDistancePortSummary.partnerWeight,
+  64 + Math.ceil(64 / 3) + 4,
+  "the closest Ports and four friendly Ports get bounded weights without changing raw levels",
+);
+assert.equal(observedDistancePortSummary.inspectedPortCount, 64);
+assert.equal(observedDistancePortSummary.sampledSourceCount, 8);
+assert.equal(
+  distanceSummary.portArrivalTicks,
+  1_365,
+  "Port arrival averages each sampled source before combining them instead of choosing a hybrid nearest source",
+);
+assert.ok(
+  distanceSummary.portTeamIncomePerTick > 0,
+  "team Port weighting remains visible in income",
+);
+assert.ok(
+  distanceSummary.portRivalSpilloverPerTick > 0,
+  "rival Port weighting remains visible in income",
+);
 assert.ok(
   distanceSummary.portTradeIncomePerTick > 0,
   "a cached zero-ship count still produces a bounded Port trade forecast",
@@ -551,6 +751,11 @@ assert.equal(distanceGameUnitCalls, 0, "Port ranking never materializes global s
 assert.equal(distanceCachedUnitCountCalls, 1, "Port forecast reads one cached ship count");
 assert.deepEqual(distanceCachedUnitTypes, [UNIT.TradeShip]);
 assert.equal(
+  distanceFriendlyChecks,
+  64,
+  "friendly weighting checks only the already-bounded Port candidates",
+);
+assert.equal(
   distanceConstructionChecks,
   64 + 64 + 64,
   "the summary checks only its 64 factories, 64 destinations, and 64 partner Ports",
@@ -573,6 +778,7 @@ assert.deepEqual(
     scalarConfig: distanceConfigScalarReads,
     cachedUnitCountCalls: distanceCachedUnitCountCalls,
     cachedUnitTypes: [...distanceCachedUnitTypes],
+    friendlyChecks: distanceFriendlyChecks,
     constructionChecks: distanceConstructionChecks,
     playerUnitCalls: distancePlayerUnitCalls,
     gameUnitCalls: distanceGameUnitCalls,
@@ -591,6 +797,7 @@ assert.equal(distanceEuclideanCalls, firstDistanceWork.euclidean * 2);
 assert.equal(distanceManhattanCalls, firstDistanceWork.manhattan * 2);
 assert.equal(distanceConfigReads, firstDistanceWork.config * 2);
 assert.equal(distanceCachedUnitCountCalls, firstDistanceWork.cachedUnitCountCalls * 2);
+assert.equal(distanceFriendlyChecks, firstDistanceWork.friendlyChecks * 2);
 assert.equal(distanceConstructionChecks, firstDistanceWork.constructionChecks * 2);
 assert.equal(distancePlayerUnitCalls, firstDistanceWork.playerUnitCalls * 2);
 assert.equal(distanceGameUnitCalls, 0);
