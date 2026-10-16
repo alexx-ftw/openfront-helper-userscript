@@ -1,0 +1,43 @@
+{
+  "agent": "build-split",
+  "task": "split-tooling-oversized-20261015 / Lot 2 (cycle 2)",
+  "status": "done",
+  "handoff_status": "ready_for_review",
+  "writes_frozen": true,
+  "scope": "build.mjs, scripts/build/ (new), scripts/check-build-parity.mjs, test/build-parity.mjs; no git actions, no package.json",
+  "files_modified": [
+    "build.mjs (462 -> 103 physical lines, orchestration only)",
+    "scripts/build/sources.mjs (new, 146 lines: PROJECT_ROOT/read/logBuild, LOBBY_FILES, INGAME_FILES, AUTO_BOT_FILES, readEngineFile/readLobbyFile, wrapIife)",
+    "scripts/build/minify.mjs (new, 29 lines: RAW flag + minifyLayer with minifySyntax:false)",
+    "scripts/build/assets.mjs (new, 98 lines: discoverLocales, toAssetsLiteral, publishBuildArtifacts, metadataHeader)",
+    "scripts/build/assemble.mjs (new, 164 lines: HOT_RELOAD_BRIDGE, LOBBY_PRELUDE, bundleShell, concatLobby/concatAutoBot/concatIngame)",
+    "scripts/check-build-parity.mjs (BUILD_INPUTS gained scripts/build)",
+    "test/build-parity.mjs (scratch directory copy gained scripts/build)",
+    ".codex/apex/docs/elicit-build-split-20261016.json (self-review note)",
+    ".codex/apex/prd/agents/build-split-prd.json (this report)"
+  ],
+  "files_unchanged": [
+    "package.json",
+    "src/**",
+    "engine/**",
+    "locales/**",
+    "openfront-helper.user.js",
+    "openfront-helper.autobot.js",
+    "openfront-helper.build-id.js"
+  ],
+  "diff_summary": "Pure cut of the monolith into four modules with the entry reduced to main()+copyToClipboard+CLI guard; all strings (metadata header, lobby prelude, i18n override, hot-reload bridge) and both file-load arrays moved verbatim in original order; module boundaries chosen so no file exceeds 200 lines.",
+  "verification": {
+    "parity": "node scripts/check-build-parity.mjs: exit 0 (fresh rebuild in temp dir byte-identical for all three artifacts)",
+    "test": "node test/build-parity.mjs: exit 0 (scratch rebuild includes scripts/build; stale-detection regression passes)",
+    "eslint": "npx eslint build.mjs scripts/build scripts/check-build-parity.mjs test/build-parity.mjs --max-warnings=0: exit 0",
+    "prettier": "npx prettier --check on all seven files: exit 0 after one --write pass on scripts/build/sources.mjs (PROJECT_ROOT expression collapsed to one line)",
+    "line_counts": "wc -l: 103/164/98/29/146/137/53, all <=200"
+  },
+  "skip_with_reason": "None; sniper validation launched per hook instruction (agent 01a141d6-eb9b-7570-9e86-074d13de7dfd).",
+  "exit": "Stop: goal verified with evidence (parity 0, test 0, eslint 0, prettier 0, sniper PASS 6/6)",
+  "sniper": {
+    "id": "01a141d6-eb9b-7570-9e86-074d13de7dfd",
+    "verdict": "PASS 6/6, zero introduced errors",
+    "attribution_note": "INGAME_FILES 84->96 entry growth is the concurrent estate/heatmaps module split already in the working tree, carried forward correctly by this change"
+  }
+}

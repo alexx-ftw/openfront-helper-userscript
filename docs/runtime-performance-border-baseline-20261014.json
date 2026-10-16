@@ -1,0 +1,117 @@
+{
+  "temp": "/tmp/ofh-border-baseline-20261014-C8mM9b",
+  "node": "v26.11.1",
+  "selfChecks": "6 passed",
+  "arms": {
+    "baseline": {
+      "code": 2,
+      "signal": null,
+      "buildCode": 0,
+      "bundleHash": "eb3f9f4d2b759b17e1292a450fbcde472df5c004b822e3868ed011ea7722caf3",
+      "artifacts": {
+        "openfront-helper.autobot.js": "7f20b61c9547a25aab1102dc9e362330b0cec7feb8d3176a056cd55e4815e72c",
+        "openfront-helper.build-id.js": "254f4484b62d9f188f472e19d91cffea73b96898d73aef321f1bce2a0438aca4",
+        "openfront-helper.user.js": "eb3f9f4d2b759b17e1292a450fbcde472df5c004b822e3868ed011ea7722caf3"
+      },
+      "start": {
+        "phase": "start",
+        "seed": "legendary-audit-159-europe",
+        "map": "Europe",
+        "mapSize": "Normal",
+        "mode": "Free For All",
+        "teams": 4,
+        "difficulty": "Impossible",
+        "botDifficulty": "Legendary",
+        "autoBuild": true,
+        "startingGold": 0,
+        "publicGameModifiers": {},
+        "spawnImmunityDuration": 50,
+        "profile": "none",
+        "nations": 50,
+        "tribes": 180,
+        "myTeam": null
+      },
+      "predicate": false,
+      "result": {
+        "seed": "legendary-audit-159-europe",
+        "won": false,
+        "ticks": 2379,
+        "stopReason": "bot_dead",
+        "intentBudgetViolated": false,
+        "constructionEvents": []
+      }
+    },
+    "candidate": {
+      "code": 2,
+      "signal": null,
+      "buildCode": 0,
+      "bundleHash": "00b094c1408913bc4faa13f4c4cb4c29b8097e205294029fca7b1ec6bbdfdb91",
+      "artifacts": {
+        "openfront-helper.autobot.js": "7f20b61c9547a25aab1102dc9e362330b0cec7feb8d3176a056cd55e4815e72c",
+        "openfront-helper.build-id.js": "254f4484b62d9f188f472e19d91cffea73b96898d73aef321f1bce2a0438aca4",
+        "openfront-helper.user.js": "00b094c1408913bc4faa13f4c4cb4c29b8097e205294029fca7b1ec6bbdfdb91"
+      },
+      "start": {
+        "phase": "start",
+        "seed": "legendary-audit-159-europe",
+        "map": "Europe",
+        "mapSize": "Normal",
+        "mode": "Free For All",
+        "teams": 4,
+        "difficulty": "Impossible",
+        "botDifficulty": "Legendary",
+        "autoBuild": true,
+        "startingGold": 0,
+        "publicGameModifiers": {},
+        "spawnImmunityDuration": 50,
+        "profile": "none",
+        "nations": 50,
+        "tribes": 180,
+        "myTeam": null
+      },
+      "predicate": false,
+      "result": {
+        "seed": "legendary-audit-159-europe",
+        "won": false,
+        "ticks": 2379,
+        "stopReason": "bot_dead",
+        "intentBudgetViolated": false,
+        "constructionEvents": []
+      }
+    }
+  },
+  "proof": {
+    "differences": ["engine/ingame/estate-panel.js", "engine/ingame/heatmaps.js"],
+    "candidateInputs": "0d9802df1339f1c7b72671e5a858d4242da7d78ab81df20a5ffbf034754a2c63",
+    "baselineInputs": "54b5f4cd9541efd9b17b4cf61754da94ba3d8de021d0e9302d744183062e3ee8",
+    "guardedFiles": 919,
+    "rootBefore": "8a351722a506671ca528d9e1d4fe7caa0404dcbe5dc1a68900c656452561a973",
+    "overlays": {
+      "engine/ingame/estate-panel.js": {
+        "candidate": "1b4c20582ee11218159402b5b574164db3a6827cbe681e5d1d9ca1912a45ca81",
+        "baseline": "3cf1aa5eae6f6b7f454ccf1e24a02b183d55ebc4ade35bca56b345dbfdb46934"
+      },
+      "engine/ingame/heatmaps.js": {
+        "candidate": "13e767bbeb2b591f129fe9a9b24e7629b939dbcef534cb7cbf860befa598a852",
+        "baseline": "92d194010c38237752ececd4f5d00eb9de90f9899be7524bb192ca93274568f0"
+      }
+    },
+    "rootAfter": "8a351722a506671ca528d9e1d4fe7caa0404dcbe5dc1a68900c656452561a973",
+    "noObservedDrift": true
+  },
+  "head": "7703aa95f3c58a0903cf7ef6aa9c471f4b5defbf",
+  "nativeHead": "f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb",
+  "dependencyBoundary": "Shared installed dependencies; selected tool files hashed, transitive dependencies not exhaustively hashed. Pre/post checks cannot exclude transient mutation.",
+  "environment": {
+    "GAME_ENV": "dev",
+    "NODE_OPTIONS": "--max-old-space-size=768",
+    "OFH_BOTS": "180",
+    "OFH_GAME_MAP": "Europe",
+    "OFH_GAME_MODE": "ffa",
+    "OFH_MATCH_SEED": "legendary-audit-159-europe",
+    "OFH_MAX_TICKS": "4000",
+    "OFH_NATIONS": "50",
+    "OFH_NO_MODIFIERS": "1"
+  },
+  "predicateEqual": true
+}

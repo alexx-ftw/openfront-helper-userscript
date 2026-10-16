@@ -14,7 +14,15 @@ const ARTIFACTS = [
   "openfront-helper.autobot.js",
   "openfront-helper.build-id.js",
 ];
-const BUILD_INPUTS = ["build.mjs", "tsconfig.json", "package.json", "src", "engine", "locales"];
+const BUILD_INPUTS = [
+  "build.mjs",
+  "scripts/build",
+  "tsconfig.json",
+  "package.json",
+  "src",
+  "engine",
+  "locales",
+];
 
 async function readJson(rootDir, relativePath) {
   return JSON.parse(await readFile(path.join(rootDir, relativePath), "utf8"));

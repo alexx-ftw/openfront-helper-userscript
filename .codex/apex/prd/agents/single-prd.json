@@ -1,0 +1,14 @@
+{
+  "agent": "single",
+  "status": "done",
+  "writes_frozen": true,
+  "files_modified": ["scripts/headless/train-hybrid-returns.mjs", "test/hybrid-return-training.mjs"],
+  "files_unchanged": ["scripts/headless/hybrid-trajectory-contract.mjs", "test/hybrid-trajectory-contract.mjs", "scripts/headless/train-hybrid-return-batch.mjs", "test/hybrid-return-batch.mjs"],
+  "red": "node test/hybrid-return-training.mjs exited 1 with Missing expected exception for drift before direct fit",
+  "current_test": "NODE_OPTIONS=--max-old-space-size=768 node test/hybrid-return-training.mjs: exit 0 after N3 fixture correction; real native SGD, direct pre/during fit and each publication content/path/missing failures, six foreign output/tmp sentinels preserved.",
+  "sha256": {"scripts/headless/train-hybrid-returns.mjs": "ecd463218743284686578b2eede3172e53f53a599bcaf9a73ca49f2cb06249b7", "test/hybrid-return-training.mjs": "aec1dd8d89cef6a785af125e0667f14829794acc3497dae6cd9c667b7f2983dd"},
+  "checks": {"scoped_eslint": 0, "scoped_prettier": 0, "node_check_trainer": 0, "node_check_test": 0},
+  "elicitation": {"technique": "FailureModeAnalysis", "findings_fixed": ["post-provenance supporting verification missing", "cleanup deleted foreign output and temporary sentinels", "write/fsync failure could leak owned temporary file"], "limitations": "Point-in-time verification cannot prove absence of transient swap-and-restore or concurrent in-place mutation; publications are individual links, not a multi-file transaction."},
+  "gates": "Lead owns independent challenger/sniper; not self-cleared.",
+  "scope": "Synthetic fits only; no N8 data fit, engine edits, builds, staging or commits."
+}

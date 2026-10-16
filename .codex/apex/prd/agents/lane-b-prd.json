@@ -1,0 +1,169 @@
+{
+  "agent": "lane-b",
+  "status": "done",
+  "review_status": "ready_for_review",
+  "writes_frozen": true,
+  "task": "Make six Legendary team-economy scenarios falsify production decisions",
+  "plan": [
+    {
+      "step": "Read mandate, existing scenarios, helpers and production seams",
+      "status": "completed"
+    },
+    {
+      "step": "Connect native Config fixtures to production candidates, ranking and dispatch",
+      "status": "completed"
+    },
+    {
+      "step": "Named eLicit, assertion-failure mutation controls, scoped checks and handoff",
+      "status": "completed"
+    }
+  ],
+  "owner_scope_correction": "Compare touched files to HEAD before any further split; no unrelated hybrid/performance/legacy splitting. All thirteen lane JS paths are absent from HEAD. Only assigned scenarios/helpers were extracted or edited.",
+  "files_modified": [
+    "test/legendary-economy-team-scenario-01-fleet-saturation.mjs",
+    "test/legendary-economy-team-scenario-02-landlocked-teammate.mjs",
+    "test/legendary-economy-team-scenario-03-port-seed-pair.mjs",
+    "test/legendary-economy-team-scenario-04-ally-affordability.mjs",
+    "test/legendary-economy-team-scenario-05-horizon.mjs",
+    "test/legendary-economy-team-scenario-06-upgrade-new-route.mjs",
+    "test/legendary-economy-team-scenario-helpers.mjs"
+  ],
+  "files_created": [
+    "test/helpers/legendary-economy-team/live-config.mjs",
+    "test/helpers/legendary-economy-team/mutation-checks.mjs",
+    "test/helpers/legendary-economy-team/mutations.mjs",
+    "test/helpers/legendary-economy-team/production.mjs",
+    "test/helpers/legendary-economy-team/seed-policy-checks.mjs",
+    "test/helpers/legendary-economy-team/water.mjs",
+    ".codex/apex/prd/agents/lane-b-prd.json"
+  ],
+  "files_unchanged": [
+    "engine/**",
+    "package.json",
+    "test/legendary-alliance-expiry-policy.mjs",
+    "nuke tests",
+    "test/hybrid-runtime-integration.mjs",
+    "hybrid/performance tests",
+    "build and SemVer artifacts"
+  ],
+  "line_counts": {
+    "test/legendary-economy-team-scenario-01-fleet-saturation.mjs": 79,
+    "test/legendary-economy-team-scenario-02-landlocked-teammate.mjs": 172,
+    "test/legendary-economy-team-scenario-03-port-seed-pair.mjs": 101,
+    "test/legendary-economy-team-scenario-04-ally-affordability.mjs": 105,
+    "test/legendary-economy-team-scenario-05-horizon.mjs": 123,
+    "test/legendary-economy-team-scenario-06-upgrade-new-route.mjs": 86,
+    "test/legendary-economy-team-scenario-helpers.mjs": 129,
+    "test/helpers/legendary-economy-team/live-config.mjs": 90,
+    "test/helpers/legendary-economy-team/mutation-checks.mjs": 41,
+    "test/helpers/legendary-economy-team/mutations.mjs": 15,
+    "test/helpers/legendary-economy-team/production.mjs": 148,
+    "test/helpers/legendary-economy-team/seed-policy-checks.mjs": 172,
+    "test/helpers/legendary-economy-team/water.mjs": 76
+  },
+  "coverage": {
+    "common_path": "legendaryConstructionCandidates (part-076/077) -> addLegendaryConstructionCandidate (081/082) -> legendaryConstructionActionGroups (021) -> runLegendaryConstructionGroups (020) -> legendaryConstructionActionGroupResult (020/021) -> maybeSpawnStructure (087) -> real revalidation (085/086) -> emitStructureBuildable/emitStructureBuild (088). No production policy source edited.",
+    "01": "Live train/trade denominator doubling counts; binary search remaining match time through real timer-horizon/candidate selection at native 125000 current price. Factory: 463 ticks left, 412 trains, net -58390.5579399149; Port: 711 ticks left, 272 ships, net -37109.43424183075. Low fleets select and emit; same price/horizon saturated fleets skip and emit nothing.",
+    "02": "Real buildReachableStations and assignRailClusters BFS over valid rail rasters; teammate City and Port paid stops produce Factory candidate and emission; empty network skips. Real computeTroopCapPressure using native maxTroops at 95 percent selects and emits cap-relief City; nonbinding City loses.",
+    "03": "Real deterministic seed owner/window selection, real water-route BFS/profile generation, real candidate selection and actual Port dispatch. Owners 40/41 only; 42/43 emit nothing; reversed enumeration preserves selection. Empty eligible-water set produces no Port candidate/emission. Existing delayed partner-quote eligibility checks retained. Native completion/payout not simulated; projection checks explicitly labelled.",
+    "04": "Teammate versus permanent/expiring ally arithmetic assertions retained. Real Factory/Port candidates selected with own cash; placement quote boundary reduces own cash to price minus one while ally holds 10 billion; real post-quote availableGoldAfterReserve prevents emission. Restoring only own cash permits exact-cost/tile emission.",
+    "05": "Retains Config-derived payback boundary assertions; real legendaryStructureHorizonTicks driven by game ticksSinceStart and maxTimerValue changes Factory selection/emission to skip at one tick remaining. Real legendaryAtomWarChest derives reserve from completed silo, hostile structure target and current Atom price; availableGoldAfterReserve preserves reserve exactly at native Factory affordability boundary.",
+    "06": "Real network-derived Factory/Port upgrade target discovery via probeLegendaryThroughputUpgradeCandidates and real maybeUpgradeLegendaryThroughput emission. Served cluster/water admits no duplicate route; adding unserved productive topology discovers a real build candidate. Native current owner snapshot quotes both operations at 250000. Factory upgrade net 15546002 vs novel 18120879; Port upgrade 6716377 vs novel 287735355. Real ranking/dispatch flips to construction."
+  },
+  "native_config": {
+    "commit": "f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb",
+    "vendored_date": "2026-09-29",
+    "official_rate_change": "v0.34.12, September 20 2026; no stale-rate claim",
+    "methods": [
+      "unitInfo(type).cost(game, owner)",
+      "constructionDuration",
+      "trainSpawnRate",
+      "tradeShipSpawnRate",
+      "trainGold",
+      "tradeShipGold",
+      "trainStationMaxRange",
+      "maxTroops",
+      "msPerTick",
+      "gameConfig().maxTimerValue"
+    ],
+    "pricing": "No manufactured over-cap cost. Build and upgrade quotes share the same owner snapshot and native marginal cost."
+  },
+  "explicit_boundaries": [
+    "Synthetic rail and water map snapshots; real cluster/route BFS and production topology metadata.",
+    "Synthetic worker buildables/placement/upgrades quote descriptors with native costs; final emission captured instead of sending game intents.",
+    "Military strategy predicates/safety/coverage isolated. legendaryConstructionState is a narrow strategic-state seam retaining real legendaryEconomyInputs and legendaryStructureHorizonTicks.",
+    "Scenario 05 restores real Atom reserve calculation; own SAM capacity is supplied as military context and permanent-teammate comparison is a sandbox binding.",
+    "Original createPortSeedQuoteFixture remains an isolated async partner-quote regression seam; new seed production fixture supplies independent selection/build evidence.",
+    "Mutations are opt-in OFH_SCENARIO_DISABLE_METHOD overrides in isolated child VMs; ordinary baseline candidate/rank/upgrade methods are not stubbed."
+  ],
+  "elicitation": {
+    "techniques": [
+      "Failure Mode Analysis",
+      "Boundary Testing",
+      "Regression Analysis"
+    ],
+    "status": "local findings resolved; lead acceptance pending",
+    "findings_resolved": [
+      "Removed over-cap probe costs and unequal upgrade/build costs.",
+      "Replaced arithmetic-only evidence with real production choices and exact emission assertions.",
+      "Native PlayerType enum used for live maxTroops; production caches initialized.",
+      "Port payout wording limited to projection; full-match pity-timer floor avoided via real remaining-time crossover.",
+      "All original valid policy assertions retained; arithmetic requiring invented costs was replaced.",
+      "Transient lint and extraction-reference errors corrected and frozen checks rerun."
+    ]
+  },
+  "verification": {
+    "node test/legendary-economy-team-scenario-01-fleet-saturation.mjs": 0,
+    "node test/legendary-economy-team-scenario-02-landlocked-teammate.mjs": 0,
+    "node test/legendary-economy-team-scenario-03-port-seed-pair.mjs": 0,
+    "node test/legendary-economy-team-scenario-04-ally-affordability.mjs": 0,
+    "node test/legendary-economy-team-scenario-05-horizon.mjs": 0,
+    "node test/legendary-economy-team-scenario-06-upgrade-new-route.mjs": 0,
+    "node test/helpers/legendary-economy-team/mutation-checks.mjs": 0,
+    "mutation_result": "31 children: six baseline exit 0, twenty-five disabled-path assertion failures exit 1; mutation runner exit 0",
+    "mutation_seams": [
+      "legendaryConstructionCandidates (all six)",
+      "legendaryConstructionActionGroups (all six)",
+      "maybeSpawnStructure (all six)",
+      "addLegendaryFactoryRouteCandidates (01/02)",
+      "addLegendaryPortRouteCandidates (03)",
+      "availableGoldAfterReserve (04/05)",
+      "probeLegendaryThroughputUpgradeCandidates (06)",
+      "maybeUpgradeLegendaryThroughput (06)"
+    ],
+    "scoped ESLint --format stylish": 0,
+    "scoped prettier --check": 0,
+    "npm run check": 0,
+    "node --check all thirteen lane JS files": 0,
+    "all lane JS files <=200 lines": 0,
+    "git diff --check": 0
+  },
+  "sources_verified": [
+    "openfront-engine/src/core/configuration/Config.ts and native game PlayerType enumeration, current disk checkout.",
+    "Production structure-behavior parts 019-022, 026-027, 030, 065-088, 108, 115, 117-118, 121.",
+    "https://github.com/openfrontio/OpenFrontIO/releases/tag/v0.34.12",
+    "https://nodejs.org/api/assert.html; Context7 /websites/nodejs_latest-v24_x_api strict assert and VM-prototype documentation.",
+    "Exa official Node child_process search: https://nodejs.org/api/child_process.html, spawnSync status/signal/error/env behavior."
+  ],
+  "tool_limitations": [
+    "update_plan unavailable; plan tracked in this PRD.",
+    "fuse-browser raw fetch provider unavailable; official web fetch plus Context7 and Exa used.",
+    "No nested delegation, challenger or sniper launched by executor; fresh independent gates remain lead-owned."
+  ],
+  "remaining_issues": [
+    "Native construction completion, train/ship spawning and real treasury payouts not simulated.",
+    "Full match simulation, full npm suite and real browser/worker execution not run; map and quote boundaries remain artificial.",
+    "Independent lead challenger and sniper acceptance pending."
+  ],
+  "not_run": [
+    "build",
+    "SemVer",
+    "commit",
+    "push",
+    "Agent Mail"
+  ],
+  "exit_contract": {
+    "outcome": "Stop: local lane deliverable ready for lead review",
+    "next_step": "Lead independently challenges coverage and runs sniper on the frozen lane files."
+  }
+}

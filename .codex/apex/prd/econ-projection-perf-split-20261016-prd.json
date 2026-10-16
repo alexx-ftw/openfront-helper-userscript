@@ -1,0 +1,84 @@
+{
+  "task": "econ-projection-perf-split-20261016",
+  "subject": "Legendary economy projection performance and approved classic-script split",
+  "authorized_by": "Owner's direct approval: 'Sí, procede con el refactor (Recomendado)' for splitting legendaryPlanner into 22 classic scripts and updating build, tests, and SemVer; original ongoing economy/performance goal remains active.",
+  "owner_corrections": [
+    "No uses Agent Mail.",
+    "The v0.34.12 train and trade-ship spawn-rate change is dated September 20, 2026; the vendored OpenFront checkout is September 29, 2026, so do not describe its rate curves as stale for that change.",
+    "Use live Config rates; do not hardcode ROI constants.",
+    "SemVer target for the behavior-preserving maintenance build is patch 1.14.14."
+  ],
+  "evidence": {
+    "pre_change_planner_sha256": "564859ae26f619ce84c07cb09da69f5a1c7af1cff0b8015b1977c7dda32b92f1",
+    "before_benchmark": {
+      "first_candidate_ms": 870,
+      "candidates_2_to_25_average_ms": 470,
+      "cold_25_candidate_cycle_ms": 12160,
+      "identical_warm_repeat_ms": 2.1,
+      "budget_harness_unchanged_planner_ms": 15480
+    },
+    "hot_path_review": "Darwin's warm profile attributes most remaining cost to per-tick project() and train/trade rate refresh in legendaryProjectEconomyFleets; Leibniz's caller map shows the pure train/trade rate maps keyed by the complete integer inputs while projection and prefix caches depend on supply/array identity. Validate the cache-hoist intervention against distinct supplies sharing one Config before considering any second intervention.",
+    "served_build": "On 2026-10-16, local endpoint 127.0.0.1:17373 served HTTP 200, version 1.14.13, with bytes identical to openfront-helper.user.js."
+  },
+  "agents": {
+    "engine_split_and_perf": {
+      "agent": "01a14291-d869-70a2-bf38-929b51d5a708",
+      "files_owned": [
+        "engine/ingame/auto-bot/legendaryPlanner.js",
+        "engine/ingame/auto-bot/legendary-planner/*.js",
+        "scripts/build/sources.mjs",
+        "scripts/build/assemble.mjs",
+        "test/legendary-economy-projection-budget.mjs"
+      ],
+      "status": "assigned"
+    },
+    "test_loader_migration": {
+      "agent": "01a142b3-3b70-7e53-8f52-4e870d11f703",
+      "files_owned": [
+        "test/helpers/legendary-planner-source.mjs",
+        "test/helpers/legendary-structure-fixture.mjs",
+        "test/helpers/perf-regressions/game-api-setup.mjs",
+        "test consumers that read legendaryPlanner.js, excluding the perf budget test and new scenario files"
+      ],
+      "status": "assigned"
+    },
+    "game_constant_grouping": {
+      "agent": "01a142bf-9e84-7270-a161-cd8f5783a064",
+      "files_owned": ["scripts/game-constants.mjs", "test/game-constants.mjs (conditional)"],
+      "status": "assigned",
+      "result": "Group planner chunks under the legacy logical filename to preserve fixture IDs; avoid fixture churn."
+    },
+    "scenario_tests": {
+      "agent": "01a14291-ce9f-79d2-87f0-e598767ed807",
+      "files_owned": ["test/legendary-economy-team-scenario-*.mjs"],
+      "status": "in_progress"
+    },
+    "exploration": {
+      "agent": "01a14294-e5ea-7701-8733-b03f6e3c2457",
+      "result": "Completed read-only caller, cache-key, fixture, payout-loop, and test-loader map."
+    },
+    "split_compatibility_audit": {
+      "agent": "01a142bf-9e84-7270-a161-cd8f5783a064",
+      "files_owned": [],
+      "status": "complete",
+      "result": "Parse the raw ordered planner group once under the legacy logical filename to preserve constant IDs; suppress per-chunk build banners and keep one legacy planner banner."
+    }
+  },
+  "acceptance": [
+    "Exactly 22 classic-script planner chunks, each no more than 200 lines, loaded in the former planner slot in original order; joined pre-optimization chunk bytes have the same SHA256 as the original planner.",
+    "Preserve sloppy-mode shared lexical semantics, dynamic test monkey-patching, and the sibling context-miss-cache insertion in scripts/build/sources.mjs.",
+    "Parse grouped planner chunks using the legacy logical filename so constant fixture IDs, initializer hashes, lengths, and previews remain stable; any fixture changes must be justified by a real initializer change only.",
+    "Only pure train/trade rate maps are hoisted to Config scope; baseline, candidates, and prefix caches stay per-supply. A same-Config/distinct-supply test proves safe sharing and all memoization paths remain bit-identical to the pre-change golden.",
+    "The warm 25-candidate decision stays below the test's 10-second hard guard, and cold/warm before/after measurements are reported without wall-clock tight assertions.",
+    "All test consumers use one shared source loader and the existing economy scenario suite covers saturation, paid-stop dependence, troop-cap pressure, Port seed eligibility, ally discount and builder-only affordability, horizon cutoff, and upgrade versus new construction; unsupported cases are explicitly marked not tested.",
+    "Focused relevant tests, npm run check, npm run build, npm run check:build-parity, and node test/smoke.mjs pass; built metadata is 1.14.14 and the local served bundle hash matches disk.",
+    "After each successful implementation milestone, send the owner the requested Telegram update via the configured local relay and verify the send result."
+  ],
+  "non_scope": [
+    "No Agent Mail.",
+    "No broad priority-order changes beyond documented Legendary behavior; Easy through Impossible remain faithful to PORT-CONTRACT.md.",
+    "No unrelated dirty-tree cleanup, stash, reset, commit, push, deploy, or publication.",
+    "No second performance intervention until the single approved cache-hoist measurement and identity tests are complete."
+  ],
+  "coordination": "The shared checkout is heavily dirty and on main. Never reset or overwrite concurrent work. A sibling lane owns its separate line in scripts/build/sources.mjs after trade-policy/apply.js; the economy writer re-reads and preserves it. Freeze and close all writers before lead integration tests, challenge, and sniper gates."
+}

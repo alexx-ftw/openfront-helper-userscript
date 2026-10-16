@@ -686,3 +686,176 @@ assert.throws(() => C.validate(restamped), /origin contract/);
 process.stdout.write(
   "conditional tribe terminal contract: metadata, native SGD and provenance rejection passed\n",
 );
+
+const batchEpisode = (runID, terminalWin = true) => {
+  const ctx = { ...tribeContext, runID, terminalWin };
+  return { context: ctx, records: [{ ...tribeRecord, ...ctx }] };
+};
+const batchSingle = C.fitEpisodeBatchReturns(tribeOnly, [batchEpisode(tribeContext.runID)]);
+assert.deepEqual(json(batchSingle.model.models), json(tribeReturn.model.models));
+assert.equal(batchSingle.model.offline.version, "offline-terminal-return-batch-v1");
+assert.equal(JSON.stringify(batchSingle.model.offline.originModel), tribeOrigin);
+assert.equal(batchSingle.model.offline.episodes[0].modelIdentity, undefined);
+const mixedBatch = C.fitEpisodeBatchReturns(tribeOnly, [
+  batchEpisode("batch-win"),
+  batchEpisode("batch-loss", false),
+]);
+assert.deepEqual(json(mixedBatch.model.offline.headUpdates), { wait: 0, act: 2, target: 2 });
+C.validate(json(mixedBatch.model));
+for (const name of ["act", "target"]) {
+  const input = name === "act" ? tribeRecord.gate : tribeRecord.features;
+  let head = tribeOnly.models[name];
+  for (const label of [1, -1])
+    head = C.update(
+      head,
+      C.normalize(input, name, tribeOnly),
+      label,
+      tribeOnly.normalizer[name === "target" ? "target" : "gate"],
+    );
+  assert.deepEqual(json(mixedBatch.model.models[name]), json(head));
+}
+const losses = C.fitEpisodeBatchReturns(tribeOnly, [
+  batchEpisode("loss-a", false),
+  batchEpisode("loss-b", false),
+]);
+assert.ok(losses.model.models.target.outputBias < 0);
+for (const patch of [
+  (episodes) => episodes.push(json(episodes[0])),
+  (episodes) => (episodes[1].context.modelIdentity = "{}"),
+  (episodes) => (episodes[1].context.gammaTick = 0.9),
+  (episodes) => (episodes[1].context.configHash = "d".repeat(64)),
+  (episodes) => (episodes[1].records[0].behaviorPolicy = "legendary-unknown"),
+  (episodes) => episodes[1].records.push(json(episodes[1].records[0])),
+  (episodes) => (episodes[1].context.coverage = { version: "unknown" }),
+]) {
+  const episodes = [batchEpisode("valid-a"), batchEpisode("invalid-b")];
+  patch(episodes);
+  assert.throws(() => C.fitEpisodeBatchReturns(tribeOnly, episodes));
+  assert.equal(JSON.stringify(tribeOnly), tribeOrigin);
+}
+assert.throws(() => C.fitEpisodeBatchReturns(v3, [batchEpisode("wrong-profile")]));
+for (const patch of [
+  (model) => model.offline.headUpdates.wait++,
+  (model) => (model.offline.episodes[0].terminalWin = null),
+  (model) => (model.offline.episodes[0].resultHash = "bad"),
+  (model) => (model.offline.episodes[0].originalDecisionSteps = [2, 0]),
+  (model) => (model.offline.episodes[0].modelIdentity = tribeOrigin),
+  (model) => model.offline.episodes.push(json(model.offline.episodes[0])),
+  (model) => (model.offline.originModel = v3),
+]) {
+  const tampered = json(mixedBatch.model);
+  patch(tampered);
+  assert.throws(() => C.validate(tampered));
+}
+const sizes = [1, 2, 4].map(
+  (count) =>
+    JSON.stringify(
+      C.fitEpisodeBatchReturns(
+        tribeOnly,
+        Array.from({ length: count }, (_, i) => batchEpisode(`storage-${i}`)),
+      ).model,
+    ).length,
+);
+assert.ok(sizes[2] - sizes[1] <= 2.1 * (sizes[1] - sizes[0]));
+assert.equal(JSON.stringify(tribeOnly), tribeOrigin);
+process.stdout.write(
+  "same-origin batch return contract: native SGD parity, atomic rejection and linear provenance passed\n",
+);
+
+// Receipt IDs may repeat across runs, never within one original run.
+const sameRun = [batchEpisode("receipt-scope"), batchEpisode("receipt-scope")];
+sameRun[1].context.episodeId = 2;
+sameRun[1].records[0].episodeId = 2;
+assert.throws(() => C.fitEpisodeBatchReturns(tribeOnly, sameRun), /receipt/);
+const gapEpisode = batchEpisode("known-gap");
+gapEpisode.records[0].decisionStep = 2;
+gapEpisode.context.coverage = {
+  version: "explicit-exclusions-complete-ledger-v1",
+  ledgerHash: "d".repeat(64),
+  decisionCount: 3,
+  excluded: [
+    { decisionStep: 0, reason: "fallback" },
+    { decisionStep: 1, reason: "censored-busy-attack" },
+  ],
+};
+const gapBatch = C.fitEpisodeBatchReturns(tribeOnly, [gapEpisode]);
+assert.deepEqual(json(gapBatch.model.offline.episodes[0].originalDecisionSteps), [2]);
+C.validate(json(gapBatch.model));
+const badGapImport = json(gapBatch.model);
+badGapImport.offline.episodes[0].coverage.excluded.pop();
+assert.throws(() => C.validate(badGapImport));
+const foreignActor = batchEpisode("foreign-actor");
+foreignActor.context.actorSmallID = 9;
+assert.throws(() => C.fitEpisodeBatchReturns(tribeOnly, [foreignActor]));
+const changedOrder = C.fitEpisodeBatchReturns(tribeOnly, [
+  batchEpisode("order-loss", false),
+  batchEpisode("order-win"),
+]);
+assert.notDeepEqual(json(changedOrder.model.models.target), json(mixedBatch.model.models.target));
+assert.deepEqual(
+  json(
+    C.fitEpisodeBatchReturns(tribeOnly, [
+      batchEpisode("batch-win"),
+      batchEpisode("batch-loss", false),
+    ]),
+  ),
+  json(mixedBatch),
+);
+
+const funded = C.create({
+  featureProfile: "frontier-v1",
+  controlProfile: "funded-tribe-terminal-v1",
+});
+assert.deepEqual(json(funded.actions), {
+  ...json(tribeOnly.actions),
+  tribeRanking: "native-funded-land-subset-v1",
+});
+assert.deepEqual(json(funded.models), json(tribeOnly.models));
+assert.deepEqual(json(funded.normalizer), json(tribeOnly.normalizer));
+assert.throws(() => C.create({ controlProfile: "funded-tribe-terminal-v1" }), /frontier/);
+const fundedIdentity = JSON.stringify(funded);
+const fundedEpisode = (runID, terminalWin) => {
+  const context = { ...tribeContext, modelIdentity: fundedIdentity, runID, terminalWin };
+  return { context, records: [{ ...tribeRecord, ...context }] };
+};
+const fundedWin = fundedEpisode("funded-win", true);
+const fundedSingle = C.fitEpisodeReturns(funded, fundedWin.records, fundedWin.context);
+const fundedBatch = C.fitEpisodeBatchReturns(funded, [
+  fundedWin,
+  fundedEpisode("funded-loss", false),
+]);
+assert.deepEqual(json(fundedSingle.model.models), json(tribeReturn.model.models));
+assert.deepEqual(json(fundedBatch.model.offline.headUpdates), { wait: 0, act: 2, target: 2 });
+assert.deepEqual(json(fundedBatch.model.models.wait), json(funded.models.wait));
+assert.equal(JSON.stringify(fundedBatch.model.offline.originModel), fundedIdentity);
+assert.equal(JSON.stringify(funded), fundedIdentity);
+C.validate(json(fundedSingle.model));
+C.validate(json(fundedBatch.model));
+for (const patch of [{ gammaTick: 0.9 }, { modelIdentity: tribeOrigin }])
+  assert.throws(() =>
+    C.fitEpisodeReturns(funded, fundedWin.records, { ...fundedWin.context, ...patch }),
+  );
+for (const patch of [
+  { action: "wait", controlledAction: "wait" },
+  { behaviorPolicy: null },
+  { behaviorPolicy: "foreign" },
+])
+  assert.throws(() =>
+    C.fitEpisodeBatchReturns(funded, [
+      { ...fundedWin, records: [{ ...fundedWin.records[0], ...patch }] },
+    ]),
+  );
+for (const patch of [
+  { tribeRanking: "native-land-subset-v1" },
+  { suppressWait: true },
+  { activeHeads: ["act", "target"] },
+])
+  assert.throws(() => C.validate({ ...funded, actions: { ...funded.actions, ...patch } }));
+const fundedTamper = json(fundedBatch.model);
+fundedTamper.offline.originModel.controlProfile = "tribe-only-terminal-v1";
+assert.throws(() => C.validate(fundedTamper));
+assert.equal(C.learningAllowed(funded), true);
+assert.equal(C.learningAllowed(fundedBatch.model), false);
+process.stdout.write(
+  "funded tribe terminal contract: metadata, native single/batch SGD and origin guards passed\n",
+);

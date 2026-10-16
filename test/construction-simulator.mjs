@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 import {
   createConstructionSimulator,
   expectedRailIncomePerTick,
@@ -10,10 +11,7 @@ import {
 } from "./helpers/construction-simulator.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const structureSource = fs.readFileSync(
-  path.join(ROOT, "engine/ingame/auto-bot/structureBehavior.js"),
-  "utf8",
-);
+const structureSource = readStructureBehaviorSource();
 const sandbox = {
   Difficulty: { Impossible: "Impossible" },
   GameMode: { Team: "Team" },
@@ -585,7 +583,7 @@ const planningSandbox = {
 };
 planningSandbox.globalThis = planningSandbox;
 executeClassicScript(
-  `${fs.readFileSync(path.join(ROOT, "engine/ingame/auto-bot/legendaryPlanner.js"), "utf8")}\n` +
+  `${readLegendaryPlannerSource()}\n` +
     `${structureSource}\nglobalThis.__StructureBehavior = StructureBehavior;`,
   planningSandbox,
   { filename: "construction-simulator-planner.js" },

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
@@ -71,9 +73,7 @@ function makeStructureSandbox() {
   };
   sandbox.globalThis = sandbox;
   executeClassicScript(
-    `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${read(
-      "engine/ingame/auto-bot/structureBehavior.js",
-    )}\nglobalThis.__StructureBehavior = StructureBehavior;`,
+    `${readLegendaryPlannerSource()}\n${readStructureBehaviorSource()}\nglobalThis.__StructureBehavior = StructureBehavior;`,
     sandbox,
     { filename: "maritime-invasion-economy-structure.vm.js" },
   );

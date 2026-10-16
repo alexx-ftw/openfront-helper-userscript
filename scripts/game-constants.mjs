@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { SPLIT_GROUPS, splitGroupFiles } from "./build/sources.mjs";
 
 // Both the classic helper engine and the upstream game use uppercase identifiers for semantic
 // constants; lower-case consts are ordinary per-call locals and are intentionally outside this
@@ -75,14 +76,41 @@ function isStaticReadonlyProperty(node) {
   );
 }
 
+// Mechanically split classic scripts (see scripts/build/sources.mjs
+// SPLIT_GROUPS) are not standalone files. Scan each group once, as its
+// concatenated source under the legacy single-file path, so fixture ids stay
+// stable across a split.
+function groupedScanFiles(repositoryRoot) {
+  return SPLIT_GROUPS.map((group) => {
+    const files = splitGroupFiles(group);
+    if (files.length === 0) return null;
+    const source = files
+      .map((file) => fs.readFileSync(path.join(repositoryRoot, file), "utf8"))
+      .join("");
+    return { file: group.bannerFile, source, prefix: group.prefix };
+  }).filter(Boolean);
+}
+
 export function collectGameConstants(repositoryRoot) {
   const records = [];
+  const grouped = groupedScanFiles(repositoryRoot);
 
   for (const sourceRoot of SOURCE_ROOTS) {
     const rootPath = path.join(repositoryRoot, sourceRoot);
-    for (const filePath of listSourceFiles(rootPath)) {
-      const file = path.relative(repositoryRoot, filePath).split(path.sep).join("/");
-      const source = fs.readFileSync(filePath, "utf8");
+    const scanFiles = [
+      ...grouped.filter(({ file }) => file.startsWith(`${sourceRoot}/`)),
+      ...listSourceFiles(rootPath)
+        .filter((filePath) => {
+          const relative = path.relative(repositoryRoot, filePath).split(path.sep).join("/");
+          return !grouped.some((group) => relative.startsWith(group.prefix));
+        })
+        .map((filePath) => ({
+          file: path.relative(repositoryRoot, filePath).split(path.sep).join("/"),
+          source: fs.readFileSync(filePath, "utf8"),
+        })),
+    ];
+    for (const scanFile of scanFiles) {
+      const { file, source } = scanFile;
       const sourceFile = ts.createSourceFile(
         file,
         source,

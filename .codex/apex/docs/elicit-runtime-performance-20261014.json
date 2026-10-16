@@ -1,0 +1,67 @@
+{
+  "task_slug": "runtime-performance-20261014",
+  "generated_at": "2026-10-14T02:51:36Z",
+  "mode": "auto",
+  "expert_agent": "performance-final-evidence",
+  "scope": "Evidence persistence only; technique passes concern accurate bounded reporting, not global runtime acceptance",
+  "status": "partial_acceptance",
+  "overall_goal_complete": false,
+  "inputs": [
+    "docs/runtime-performance-20261014.json",
+    "docs/runtime-performance-20261014.md",
+    "docs/runtime-performance-validation-20261014.md",
+    "docs/runtime-performance-border-baseline-20261014.md",
+    ".codex/apex/prd/runtime-performance-20261014-prd.json",
+    "Trusted current lead-provided final challenger and sniper verdicts"
+  ],
+  "techniques": [
+    {
+      "technique_id": "RegressionAnalysis",
+      "verdict": "pass",
+      "correction_applied": true,
+      "evidence": "Integration validation and final sniper: exact outputs/reentrancy, two targeted exits 0; final report preserves pretest/headless/global lint failures instead of declaring global success. Relocation normalized hash differs only in import; old path absent."
+    },
+    {
+      "technique_id": "MemoryAnalysis",
+      "verdict": "pass",
+      "correction_applied": true,
+      "evidence": "Current receipt counters and final challenger: estate scratch buffer per connected component, heatmap input per invocation; point allocations remain independent. No total-byte, heap-retention or GC guarantee."
+    },
+    {
+      "technique_id": "Profiling",
+      "verdict": "pass",
+      "correction_applied": true,
+      "evidence": "Current JSON summaries: estate reductions 38.0865%, 43.1374%, 38.7371%, 35.7008%; heatmap directions inconsistent. Batch-mean P95/max, high desktop load, no FPS or live-match claim."
+    },
+    {
+      "technique_id": "FailureModeAnalysis",
+      "verdict": "pass",
+      "correction_applied": true,
+      "evidence": "50.1 ms structure failure retained; one 4.8 ms rerun reported bounded with unavailable raw log. Baseline construction comparison is not clean HEAD; headless origin unverified; frozen hashes do not exclude transient edit-and-restore."
+    }
+  ],
+  "corrections": [
+    "Component/invocation allocation scope; partial acceptance; reported 4.8 ms; current scoped gates distinguished from historical pending text"
+  ],
+  "unresolved_items": [
+    "npm test pretest Factory failure: exit 1; isolated original-package reproduction only",
+    "Headless border-pressure assertion line 600: exit 1; origin not verified",
+    "Global lint: exit 2, 156 errors elsewhere",
+    "Raw structure rerun log unavailable; 4.8 ms and noise causation not independently verified",
+    "Browser FPS/live rendering/end-to-end performance not verified",
+    "Pending asynchronous human scope question: permission to repair existing bot failures"
+  ],
+  "reviewers": {
+    "challenger": {
+      "id": "01a1384e-6f5b-7a33-ac9b-3bde86159179",
+      "verdict": "CONFIRMED limited claim"
+    },
+    "sniper": {
+      "id": "01a1384e-6dd7-7ff1-aaa4-3b4197b262aa",
+      "verdict": "PASS scoped zero introduced errors"
+    },
+    "provenance": "Trusted lead-provided current final records; no nested review launched"
+  },
+  "escalation": "Lead owns broader acceptance and the pending human scope question; no publication or existing-bot repair in this lane",
+  "parent_state": "waiting_scope; goal active; human decision: repair foreign bot failures or preserve"
+}

@@ -15,7 +15,14 @@ const autoBotSources = [
 ]
   .map(read)
   .join("\n");
-const ingameAvailabilitySource = read("engine/ingame/selective-trade-policy.js");
+const ingameAvailabilitySource = [
+  "engine/ingame/trade-policy/context.js",
+  "engine/ingame/trade-policy/players.js",
+  "engine/ingame/trade-policy/partners.js",
+  "engine/ingame/trade-policy/apply.js",
+]
+  .map(read)
+  .join("\n");
 const standaloneDonationSource = read("engine/ingame/auto-donate.js");
 const autoBotGameApiSource = read("engine/ingame/auto-bot/gameApi.js");
 const companionSource = ["engine/ingame/companion/core.js", "engine/ingame/companion/engine.js"]

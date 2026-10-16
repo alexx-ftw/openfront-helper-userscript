@@ -1,0 +1,46 @@
+{
+  "agent": "performance-border-baseline",
+  "status": "done",
+  "scope": "Bounded overlay attribution only; own receipt and PRD; temporary build inputs only",
+  "plan": [
+    {
+      "step": "Read scenario, adapter, build isolation and frozen receipts",
+      "status": "completed"
+    },
+    {
+      "step": "Freeze inputs, restore only two overlays in temporary control, build and run exact seed",
+      "status": "done"
+    },
+    {
+      "step": "Compare hostilePlayers condition and hashes, record evidence",
+      "status": "done"
+    }
+  ],
+  "constraints": "No source edits, Git mutation, publication, offload, fullsuite rerun, bot fixes or nested agents",
+  "tracking": "update_plan unavailable; existing task.json read and preserved",
+  "files_modified": [
+    "/tmp/ofh-border-baseline-20261014.mjs",
+    "docs/runtime-performance-border-baseline-20261014.md",
+    "docs/runtime-performance-border-baseline-20261014.json",
+    ".codex/apex/prd/agents/performance-border-baseline-prd.json",
+    "docs/runtime-performance-review-20261014.md",
+    ".codex/apex/docs/verify-runtime-performance-20261014.md",
+    "/tmp/ofh-border-baseline-20261014-C8mM9b/executed-diagnostic.mjs"
+  ],
+  "files_unchanged": ["all source, test, package, generated artifact and Git files"],
+  "verification": "node --check exit 0; diagnostic session 98411 exit 0; six parser self-checks; build exits 0/0; native exits 2/2 with complete bot_dead results at tick 2379; border predicates false/false; exact two-path input difference and 919-entry pre/post digest equality",
+  "elicitation": ["FailureModeAnalysis", "RegressionAnalysis"],
+  "blocker": null,
+  "allowed_alternative": "Executed parent-authorized native apply_patch diagnostic plus standard node execution; no inline command retry or hook bypass",
+  "owner_amendment": "Fullbundle baseline necessary; isolate only two overlays; scratch buffer is per connected component, not traversal; no source edits",
+  "remaining_issues": "Lead sniper revalidation mandatory; original positive border assertion false in both arms; underlying cause unproven; goal not complete pending human bot-gate scope decision",
+  "receipt": "docs/runtime-performance-border-baseline-20261014.json",
+  "raw_evidence": "/tmp/ofh-border-baseline-20261014-C8mM9b",
+  "executed_script_sha256": "f83bd1f7ba8ef86caf1ae65189a1e2e70f806c264a6b475496813bb5c38f74bf",
+  "writer_state": "frozen",
+  "exit": "Stop: bounded paired evidence recorded; ready_for_review, final acceptance lead-owned",
+  "challenger": "01a13862-fef0-7dc0-a2f1-7b063d4e2fc3 CONFIRMED bounded false/false comparison",
+  "prior_sniper": "01a13863-0048-7360-bae7-51ad6f55811e FAIL: catch lint and owned formatting",
+  "review_script_sha256": "316e6c352551721ade039660c1f7b4c31c61d8d87df88f49e9976b3a7b4256f2",
+  "quality_followup": "Original executed bytes preserved; one scoped lint comment only; exact normalization equality; node --check and scoped ESLint exit 0 with zero errors/warnings; all five owned evidence files pass Prettier check; JSON receipt semantic equality and PRD parsing pass; no new games; writers frozen"
+}

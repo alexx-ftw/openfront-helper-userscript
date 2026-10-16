@@ -1,0 +1,359 @@
+{
+  "at": "2026-10-15T21:49:06.507Z",
+  "baselineCommit": "7703aa95f3c58a0903cf7ef6aa9c471f4b5defbf",
+  "environment": {
+    "node": "v26.12.0",
+    "v8": "14.6.202.34-node.39",
+    "platform": "linux",
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+    "load": [
+      138.6,
+      186.5,
+      107.9
+    ],
+    "freeMemory": 7939416064
+  },
+  "protocol": {
+    "warmups": 10,
+    "iterations": 10,
+    "pairs": 12,
+    "timing": "performance.now, balanced AB/BA, instrumentation disabled",
+    "scope": "synthetic source-level only; browser FPS not verified"
+  },
+  "sources": [
+    {
+      "path": "engine/ingame/runtime.js",
+      "baselineSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+      "candidateSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+      "changed": false
+    },
+    {
+      "path": "engine/ingame/map-overlay-scheduler.js",
+      "baselineSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+      "candidateSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+      "changed": false
+    },
+    {
+      "path": "engine/ingame/estate-panel.js",
+      "baselineSha256": "3cf1aa5eae6f6b7f454ccf1e24a02b183d55ebc4ade35bca56b345dbfdb46934",
+      "candidateSha256": "1b4c20582ee11218159402b5b574164db3a6827cbe681e5d1d9ca1912a45ca81",
+      "changed": true
+    },
+    {
+      "path": "engine/ingame/heatmaps.js",
+      "baselineSha256": "92d194010c38237752ececd4f5d00eb9de90f9899be7524bb192ca93274568f0",
+      "candidateSha256": "13e767bbeb2b591f129fe9a9b24e7629b939dbcef534cb7cbf860befa598a852",
+      "changed": true
+    }
+  ],
+  "results": [
+    {
+      "name": "estate-64",
+      "exactOutput": true,
+      "counts": {
+        "baseline": {
+          "neighborArrays": 4096,
+          "neighbors4Calls": 0,
+          "distinctScratchBuffers": 0
+        },
+        "candidate": {
+          "neighborArrays": 0,
+          "neighbors4Calls": 4096,
+          "distinctScratchBuffers": 1
+        }
+      },
+      "samplesMsPerCall": [
+        {
+          "order": "baseline/candidate",
+          "baseline": 7.152987300000007,
+          "candidate": 2.6915670999999977
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 3.6257191000000035,
+          "baseline": 4.153251799999998
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 5.084814900000003,
+          "candidate": 2.797331600000007
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 3.9459969,
+          "baseline": 5.165465099999994
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 5.234180400000002,
+          "candidate": 2.562323199999992
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 3.695967900000005,
+          "baseline": 6.562074699999994
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 25.63045199999999,
+          "candidate": 30.925889500000018
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 5.431157000000008,
+          "baseline": 5.59783789999999
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 7.826711799999998,
+          "candidate": 3.859670499999993
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 2.899608000000012,
+          "baseline": 6.303714500000024
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 4.992396599999983,
+          "candidate": 4.730180599999994
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 3.691368199999988,
+          "baseline": 11.488490899999988
+        }
+      ]
+    },
+    {
+      "name": "estate-128",
+      "exactOutput": true,
+      "counts": {
+        "baseline": {
+          "neighborArrays": 16384,
+          "neighbors4Calls": 0,
+          "distinctScratchBuffers": 0
+        },
+        "candidate": {
+          "neighborArrays": 0,
+          "neighbors4Calls": 16384,
+          "distinctScratchBuffers": 1
+        }
+      },
+      "samplesMsPerCall": [
+        {
+          "order": "baseline/candidate",
+          "baseline": 72.28168930000001,
+          "candidate": 32.51793739999994
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 105.04324769999994,
+          "baseline": 82.05946209999993
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 77.30724929999997,
+          "candidate": 50.12243280000011
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 23.61889080000001,
+          "baseline": 46.73377180000007
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 40.36022549999998,
+          "candidate": 29.034213099999942
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 45.43526099999999,
+          "baseline": 46.34507259999991
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 25.715740299999926,
+          "candidate": 50.083527499999946
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 15.340681199999926,
+          "baseline": 18.154112499999975
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 18.21624890000003,
+          "candidate": 10.6143505
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 13.3911607,
+          "baseline": 18.842720999999983
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 64.28559929999992,
+          "candidate": 14.289804300000105
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 43.8366684999999,
+          "baseline": 46.570093199999974
+        }
+      ]
+    },
+    {
+      "name": "heatmap-1000",
+      "exactOutput": true,
+      "counts": {
+        "baseline": {
+          "projections": 941,
+          "distinctWorldInputs": 941
+        },
+        "candidate": {
+          "projections": 941,
+          "distinctWorldInputs": 1
+        }
+      },
+      "samplesMsPerCall": [
+        {
+          "order": "baseline/candidate",
+          "baseline": 1.2980881999999838,
+          "candidate": 1.1122423999999227
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 1.0797365999998874,
+          "baseline": 1.0935648999999104
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 1.710994699999901,
+          "candidate": 2.057923799999844
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 1.130817399999978,
+          "baseline": 0.9283663000000161
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 1.016910800000005,
+          "candidate": 1.7133363000000827
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 1.1801675000000613,
+          "baseline": 1.178427499999998
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 0.7974726999998893,
+          "candidate": 1.5588770000000296
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 1.7588480999998866,
+          "baseline": 1.7515731000001324
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 2.0790336999998544,
+          "candidate": 1.4888247999999293
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 1.3054545999999392,
+          "baseline": 2.132830599999943
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 1.0627925000000686,
+          "candidate": 1.518501699999979
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 0.971234799999911,
+          "baseline": 1.0115544999998747
+        }
+      ]
+    },
+    {
+      "name": "heatmap-10000",
+      "exactOutput": true,
+      "counts": {
+        "baseline": {
+          "projections": 9411,
+          "distinctWorldInputs": 9411
+        },
+        "candidate": {
+          "projections": 9411,
+          "distinctWorldInputs": 1
+        }
+      },
+      "samplesMsPerCall": [
+        {
+          "order": "baseline/candidate",
+          "baseline": 10.368406499999946,
+          "candidate": 16.638302099999965
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 13.04094929999992,
+          "baseline": 10.610743000000003
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 9.531562800000028,
+          "candidate": 10.749753099999907
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 11.126399300000049,
+          "baseline": 9.382840899999973
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 7.320381900000029,
+          "candidate": 7.887282399999822
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 6.955636600000071,
+          "baseline": 13.255324900000051
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 13.069670000000041,
+          "candidate": 10.927661200000149
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 9.66304909999999,
+          "baseline": 8.811274299999786
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 15.36759099999981,
+          "candidate": 12.247014900000067
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 6.9884319000000685,
+          "baseline": 14.12349069999982
+        },
+        {
+          "order": "baseline/candidate",
+          "baseline": 19.3681615999998,
+          "candidate": 15.912381399999868
+        },
+        {
+          "order": "candidate/baseline",
+          "candidate": 9.666568800000096,
+          "baseline": 8.52483919999977
+        }
+      ]
+    }
+  ]
+}

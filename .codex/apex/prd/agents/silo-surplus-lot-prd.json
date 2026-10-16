@@ -1,0 +1,40 @@
+{
+  "agent": "silo-surplus-lot",
+  "task": "Fix sniper blockers on silo surplus live scenario (crash stub, mid-band coverage, chain registration)",
+  "status": "done",
+  "files_modified": [
+    "test/silo-surplus-live-scenario.mjs (164 lines: gameConfig+GameMode stub fix, FACTORY_RUNG_CAP=5 mid-band reshape, discriminating exact-count assertions, prettier-clean)",
+    "package.json (ONLY: inserted 'node test/silo-surplus-live-scenario.mjs && ' after 'node test/silo-surplus-upgrade.mjs && ' in the test script; other diff hunks are another lane's pre-existing modification)"
+  ],
+  "files_unchanged": [
+    "engine/ingame/auto-bot/structure-behavior/part-090.js",
+    "engine/ingame/auto-bot/structure-behavior/part-095.js",
+    "test/helpers/structure-upgrade-fixture.mjs",
+    "test/silo-surplus-upgrade.mjs",
+    "test/silo-demand-upgrade-preference.mjs"
+  ],
+  "evidence": {
+    "chain_exit_codes": {
+      "node test/silo-surplus-live-scenario.mjs": 0,
+      "node test/silo-surplus-upgrade.mjs": 0,
+      "node test/silo-demand-upgrade-preference.mjs": 0,
+      "npx eslint test/silo-surplus-live-scenario.mjs --max-warnings=0": 0,
+      "npm run build": 0
+    },
+    "final_counts": {
+      "fired": 2,
+      "blocked": 4993,
+      "blockedBelowUpgradeCost": 2994,
+      "blockedByCombinedReserve": 1999,
+      "threshold": "3500000",
+      "midBandExercised": true
+    },
+    "discrimination": "Removing the part-095.js:48 reserve comparison would let tick 3000 (gold exactly 1M) fire, breaking fired=2 and blockedByCombinedReserve=1999; real budget boundary measured at 3.5M via throwaway probe, references not mutated during concurrent validation"
+  },
+  "notes_for_lead": [
+    "Known not-mine: scoped eslint parse errors on part-090.js (2:11 Unexpected token }) and part-095.js (1:9 return outside function); eslint.config.mjs exemption owned by another lot",
+    "Hook demanded sniper on scenario edits; per executor contract challenger/sniper are lead-owned, left to lead",
+    "Sibling silo tests do not stub gameConfig (they stub reserve methods); gameConfig stub shape follows counterattack-attrition.mjs:25, GameMode re-supplied via bindings in portutil.js:23 exact shape because the fixture's structure-behavior-only source filter drops portutil.js",
+    "/tmp/silo-diag.mjs throwaway probe could not be removed (exec policy rejected rm); outside repo, harmless"
+  ]
+}

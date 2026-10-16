@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
+import { executeClassicScript } from "./helpers/repository-fixture.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 let randomCalls = 0;
 const math = Object.create(Math);
@@ -37,7 +39,7 @@ const sandbox = {
 sandbox.globalThis = sandbox;
 sandbox.__difficulty = "Legendary";
 executeClassicScript(
-  `${readRepositoryFile("engine/ingame/auto-bot/legendaryPlanner.js")}\n${readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js")}\nglobalThis.__StructureBehavior = StructureBehavior;`,
+  `${readLegendaryPlannerSource()}\n${readStructureBehaviorSource()}\nglobalThis.__StructureBehavior = StructureBehavior;`,
   sandbox,
   { filename: "silo-probe-budget.vm.js" },
 );

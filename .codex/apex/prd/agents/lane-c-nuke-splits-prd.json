@@ -1,0 +1,369 @@
+{
+  "agent": "lane-c-nuke-splits",
+  "status": "ready_for_lead_validation",
+  "scope": [
+    "test/nuke-salvo-recheck.mjs and its ordered parts",
+    "test/sam-defense-policy.mjs and its ordered parts",
+    "test/nuke-trajectory-sam-coverage.mjs and its ordered parts",
+    ".codex/apex/prd/agents/lane-c-nuke-splits-prd.json"
+  ],
+  "constraints": [
+    "Exclusive ownership retained for these three test families only.",
+    "No production changes, package.json changes, build, full npm test, SemVer, commit, push, PR, CI, merge, tag, or Agent Mail.",
+    "No Git command was run after the owner's explicit no-Git instruction; Git diff/status verification is therefore intentionally omitted.",
+    "Economy-policy files remain frozen from the prior lane; nuke-trade-partner-discount.mjs remains owned by lane B."
+  ],
+  "plan": [
+    {
+      "step": "Read assigned sources, callers, and established ordered-part runner pattern; capture baseline tests",
+      "status": "completed"
+    },
+    {
+      "step": "Replace each oversized entry with a hash-checked temporary-sibling runner and ordered raw parts",
+      "status": "completed"
+    },
+    {
+      "step": "Run post-split tests, syntax/lint/format/line/whitespace checks; record ownership and blockers",
+      "status": "completed"
+    }
+  ],
+  "baseline": [
+    {
+      "command": "node test/nuke-salvo-recheck.mjs",
+      "exit": 0,
+      "output": "nuke campaign scenario passed\nnuke salvo recheck tests passed\n"
+    },
+    {
+      "command": "node test/sam-defense-policy.mjs",
+      "exit": 0,
+      "output": "SAM DEFENSE POLICY TESTS OK\n"
+    },
+    {
+      "command": "node test/nuke-trajectory-sam-coverage.mjs",
+      "exit": 0,
+      "output": "nuke trajectory SAM coverage tests passed\n"
+    }
+  ],
+  "implementation": {
+    "method": "Each source was divided into ordered 190-line raw UTF-8 slices. The entry concatenates sorted part files, verifies SHA-256, imports a temporary sibling ESM module, and removes it in finally.",
+    "families": [
+      {
+        "entry": "test/nuke-salvo-recheck.mjs",
+        "partsDirectory": "test/nuke-salvo-recheck-parts",
+        "partCount": 22,
+        "joinedSha256": "bd757af123c63e690371c4ec2134f112c847daf16d9f64b672571af21591ecd3",
+        "runnerExpectedSha256": "bd757af123c63e690371c4ec2134f112c847daf16d9f64b672571af21591ecd3",
+        "sourceAssertionCallsBeforeAndAfter": 335,
+        "joinedBytes": 145448,
+        "postSplitCommand": "node test/nuke-salvo-recheck.mjs",
+        "postSplitExit": 0,
+        "postSplitOutput": "nuke campaign scenario passed\nnuke salvo recheck tests passed\n"
+      },
+      {
+        "entry": "test/sam-defense-policy.mjs",
+        "partsDirectory": "test/sam-defense-policy-parts",
+        "partCount": 38,
+        "joinedSha256": "2cdd06f4b21e3af594f74681bbda0402d2237f94aea93c51a91607d85dac5ec8",
+        "runnerExpectedSha256": "2cdd06f4b21e3af594f74681bbda0402d2237f94aea93c51a91607d85dac5ec8",
+        "sourceAssertionCallsBeforeAndAfter": 663,
+        "joinedBytes": 257215,
+        "postSplitCommand": "node test/sam-defense-policy.mjs",
+        "postSplitExit": 0,
+        "postSplitOutput": "SAM DEFENSE POLICY TESTS OK\n"
+      },
+      {
+        "entry": "test/nuke-trajectory-sam-coverage.mjs",
+        "partsDirectory": "test/nuke-trajectory-sam-coverage-parts",
+        "partCount": 3,
+        "joinedSha256": "97ca3bba991fa1775f6e0a6b9f503f32ef842879e5f3dfd9bd17e88a26e20c5f",
+        "runnerExpectedSha256": "97ca3bba991fa1775f6e0a6b9f503f32ef842879e5f3dfd9bd17e88a26e20c5f",
+        "sourceAssertionCallsBeforeAndAfter": 39,
+        "joinedBytes": 18478,
+        "postSplitCommand": "node test/nuke-trajectory-sam-coverage.mjs",
+        "postSplitExit": 0,
+        "postSplitOutput": "nuke trajectory SAM coverage tests passed\n"
+      }
+    ],
+    "assertionIntegrity": "The joined bytes hash to each pre-split source hash; the counted assert callsites are unchanged, and execution order is identical because source bytes and order are preserved.",
+    "moduleSemantics": "Static ESM imports, top-level await, import.meta, relative import resolution, shared lexical scope, and existing test cleanup remain in the joined module. The nuke-salvo scenario import still resolves from a temporary sibling in test/.",
+    "noAssertionEdits": true
+  },
+  "verification": {
+    "postSplitTests": [
+      {
+        "command": "node test/nuke-salvo-recheck.mjs",
+        "exit": 0,
+        "output": "nuke campaign scenario passed\nnuke salvo recheck tests passed\n"
+      },
+      {
+        "command": "node test/sam-defense-policy.mjs",
+        "exit": 0,
+        "output": "SAM DEFENSE POLICY TESTS OK\n"
+      },
+      {
+        "command": "node test/nuke-trajectory-sam-coverage.mjs",
+        "exit": 0,
+        "output": "nuke trajectory SAM coverage tests passed\n"
+      }
+    ],
+    "entryNodeCheck": [
+      {
+        "command": "node --check test/nuke-salvo-recheck.mjs",
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "command": "node --check test/sam-defense-policy.mjs",
+        "exit": 0,
+        "output": ""
+      },
+      {
+        "command": "node --check test/nuke-trajectory-sam-coverage.mjs",
+        "exit": 0,
+        "output": ""
+      }
+    ],
+    "joinedNodeCheck": "Each ordered join passed node --check --input-type=module on stdin (exit 0).",
+    "eslint": "node_modules/.bin/eslint on all three entry runners exited 0; ESLint on each joined source via --stdin/--stdin-filename exited 0.",
+    "prettier": {
+      "runners": {
+        "command": "node_modules/.bin/prettier --check test/nuke-salvo-recheck.mjs test/sam-defense-policy.mjs test/nuke-trajectory-sam-coverage.mjs",
+        "exit": 0,
+        "output": "Checking formatting...\nAll matched files use Prettier code style!\n"
+      },
+      "joinedSources": [
+        {
+          "file": "test/nuke-salvo-recheck.mjs joined source",
+          "exit": 1,
+          "output": "(stdin)",
+          "classification": "The exact pre-split source bytes were preserved; this is an existing body-formatting deviation, not introduced by the split."
+        },
+        {
+          "file": "test/sam-defense-policy.mjs joined source",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "test/nuke-trajectory-sam-coverage.mjs joined source",
+          "exit": 0,
+          "output": ""
+        }
+      ]
+    },
+    "lineCounts": {
+      "test/nuke-salvo-recheck.mjs": 32,
+      "test/nuke-salvo-recheck-parts/part-01.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-02.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-03.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-04.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-05.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-06.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-07.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-08.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-09.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-10.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-11.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-12.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-13.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-14.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-15.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-16.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-17.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-18.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-19.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-20.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-21.mjs": 190,
+      "test/nuke-salvo-recheck-parts/part-22.mjs": 6,
+      "test/sam-defense-policy.mjs": 32,
+      "test/sam-defense-policy-parts/part-01.mjs": 190,
+      "test/sam-defense-policy-parts/part-02.mjs": 190,
+      "test/sam-defense-policy-parts/part-03.mjs": 190,
+      "test/sam-defense-policy-parts/part-04.mjs": 190,
+      "test/sam-defense-policy-parts/part-05.mjs": 190,
+      "test/sam-defense-policy-parts/part-06.mjs": 190,
+      "test/sam-defense-policy-parts/part-07.mjs": 190,
+      "test/sam-defense-policy-parts/part-08.mjs": 190,
+      "test/sam-defense-policy-parts/part-09.mjs": 190,
+      "test/sam-defense-policy-parts/part-10.mjs": 190,
+      "test/sam-defense-policy-parts/part-11.mjs": 190,
+      "test/sam-defense-policy-parts/part-12.mjs": 190,
+      "test/sam-defense-policy-parts/part-13.mjs": 190,
+      "test/sam-defense-policy-parts/part-14.mjs": 190,
+      "test/sam-defense-policy-parts/part-15.mjs": 190,
+      "test/sam-defense-policy-parts/part-16.mjs": 190,
+      "test/sam-defense-policy-parts/part-17.mjs": 190,
+      "test/sam-defense-policy-parts/part-18.mjs": 190,
+      "test/sam-defense-policy-parts/part-19.mjs": 190,
+      "test/sam-defense-policy-parts/part-20.mjs": 190,
+      "test/sam-defense-policy-parts/part-21.mjs": 190,
+      "test/sam-defense-policy-parts/part-22.mjs": 190,
+      "test/sam-defense-policy-parts/part-23.mjs": 190,
+      "test/sam-defense-policy-parts/part-24.mjs": 190,
+      "test/sam-defense-policy-parts/part-25.mjs": 190,
+      "test/sam-defense-policy-parts/part-26.mjs": 190,
+      "test/sam-defense-policy-parts/part-27.mjs": 190,
+      "test/sam-defense-policy-parts/part-28.mjs": 190,
+      "test/sam-defense-policy-parts/part-29.mjs": 190,
+      "test/sam-defense-policy-parts/part-30.mjs": 190,
+      "test/sam-defense-policy-parts/part-31.mjs": 190,
+      "test/sam-defense-policy-parts/part-32.mjs": 190,
+      "test/sam-defense-policy-parts/part-33.mjs": 190,
+      "test/sam-defense-policy-parts/part-34.mjs": 190,
+      "test/sam-defense-policy-parts/part-35.mjs": 190,
+      "test/sam-defense-policy-parts/part-36.mjs": 190,
+      "test/sam-defense-policy-parts/part-37.mjs": 190,
+      "test/sam-defense-policy-parts/part-38.mjs": 52,
+      "test/nuke-trajectory-sam-coverage.mjs": 34,
+      "test/nuke-trajectory-sam-coverage-parts/part-01.mjs": 190,
+      "test/nuke-trajectory-sam-coverage-parts/part-02.mjs": 190,
+      "test/nuke-trajectory-sam-coverage-parts/part-03.mjs": 156
+    },
+    "lineCountSummary": {
+      "javascriptFiles": 66,
+      "maximum": 190,
+      "over200": []
+    },
+    "focusedPriorLotOversizeScan": {
+      "scannedCurrentAndPriorLotFiles": 103,
+      "oversized": [],
+      "laneBOwnedFile": {
+        "path": "test/nuke-trade-partner-discount.mjs",
+        "currentObservedLines": 106,
+        "modifiedByThisLane": false
+      }
+    },
+    "sourceHashesAndAssertionCalls": [
+      {
+        "entry": "test/nuke-salvo-recheck.mjs",
+        "sha256": "bd757af123c63e690371c4ec2134f112c847daf16d9f64b672571af21591ecd3",
+        "assertionCalls": 335,
+        "partCount": 22,
+        "runnerExpectedSha256": "bd757af123c63e690371c4ec2134f112c847daf16d9f64b672571af21591ecd3"
+      },
+      {
+        "entry": "test/sam-defense-policy.mjs",
+        "sha256": "2cdd06f4b21e3af594f74681bbda0402d2237f94aea93c51a91607d85dac5ec8",
+        "assertionCalls": 663,
+        "partCount": 38,
+        "runnerExpectedSha256": "2cdd06f4b21e3af594f74681bbda0402d2237f94aea93c51a91607d85dac5ec8"
+      },
+      {
+        "entry": "test/nuke-trajectory-sam-coverage.mjs",
+        "sha256": "97ca3bba991fa1775f6e0a6b9f503f32ef842879e5f3dfd9bd17e88a26e20c5f",
+        "assertionCalls": 39,
+        "partCount": 3,
+        "runnerExpectedSha256": "97ca3bba991fa1775f6e0a6b9f503f32ef842879e5f3dfd9bd17e88a26e20c5f"
+      }
+    ],
+    "whitespaceCheck": {
+      "exit": 0,
+      "trailingWhitespace": [],
+      "missingFinalNewline": []
+    },
+    "temporaryJoinCleanup": {
+      "exit": 0,
+      "leftovers": []
+    },
+    "npmTestCallerOrder": [
+      "sam-defense-policy.mjs",
+      "nuke-trajectory-sam-coverage.mjs",
+      "nuke-salvo-recheck.mjs"
+    ],
+    "gitDiffCheck": "Not run after explicit owner instruction to perform no Git operations; custom whitespace scan and exact pre/post joined-source SHA checks passed.",
+    "fullNpmTest": "Not run per bounded scope."
+  },
+  "filesModified": [
+    "test/nuke-salvo-recheck.mjs",
+    "test/sam-defense-policy.mjs",
+    "test/nuke-trajectory-sam-coverage.mjs"
+  ],
+  "filesCreated": [
+    "test/nuke-salvo-recheck-parts/part-01.mjs",
+    "test/nuke-salvo-recheck-parts/part-02.mjs",
+    "test/nuke-salvo-recheck-parts/part-03.mjs",
+    "test/nuke-salvo-recheck-parts/part-04.mjs",
+    "test/nuke-salvo-recheck-parts/part-05.mjs",
+    "test/nuke-salvo-recheck-parts/part-06.mjs",
+    "test/nuke-salvo-recheck-parts/part-07.mjs",
+    "test/nuke-salvo-recheck-parts/part-08.mjs",
+    "test/nuke-salvo-recheck-parts/part-09.mjs",
+    "test/nuke-salvo-recheck-parts/part-10.mjs",
+    "test/nuke-salvo-recheck-parts/part-11.mjs",
+    "test/nuke-salvo-recheck-parts/part-12.mjs",
+    "test/nuke-salvo-recheck-parts/part-13.mjs",
+    "test/nuke-salvo-recheck-parts/part-14.mjs",
+    "test/nuke-salvo-recheck-parts/part-15.mjs",
+    "test/nuke-salvo-recheck-parts/part-16.mjs",
+    "test/nuke-salvo-recheck-parts/part-17.mjs",
+    "test/nuke-salvo-recheck-parts/part-18.mjs",
+    "test/nuke-salvo-recheck-parts/part-19.mjs",
+    "test/nuke-salvo-recheck-parts/part-20.mjs",
+    "test/nuke-salvo-recheck-parts/part-21.mjs",
+    "test/nuke-salvo-recheck-parts/part-22.mjs",
+    "test/sam-defense-policy-parts/part-01.mjs",
+    "test/sam-defense-policy-parts/part-02.mjs",
+    "test/sam-defense-policy-parts/part-03.mjs",
+    "test/sam-defense-policy-parts/part-04.mjs",
+    "test/sam-defense-policy-parts/part-05.mjs",
+    "test/sam-defense-policy-parts/part-06.mjs",
+    "test/sam-defense-policy-parts/part-07.mjs",
+    "test/sam-defense-policy-parts/part-08.mjs",
+    "test/sam-defense-policy-parts/part-09.mjs",
+    "test/sam-defense-policy-parts/part-10.mjs",
+    "test/sam-defense-policy-parts/part-11.mjs",
+    "test/sam-defense-policy-parts/part-12.mjs",
+    "test/sam-defense-policy-parts/part-13.mjs",
+    "test/sam-defense-policy-parts/part-14.mjs",
+    "test/sam-defense-policy-parts/part-15.mjs",
+    "test/sam-defense-policy-parts/part-16.mjs",
+    "test/sam-defense-policy-parts/part-17.mjs",
+    "test/sam-defense-policy-parts/part-18.mjs",
+    "test/sam-defense-policy-parts/part-19.mjs",
+    "test/sam-defense-policy-parts/part-20.mjs",
+    "test/sam-defense-policy-parts/part-21.mjs",
+    "test/sam-defense-policy-parts/part-22.mjs",
+    "test/sam-defense-policy-parts/part-23.mjs",
+    "test/sam-defense-policy-parts/part-24.mjs",
+    "test/sam-defense-policy-parts/part-25.mjs",
+    "test/sam-defense-policy-parts/part-26.mjs",
+    "test/sam-defense-policy-parts/part-27.mjs",
+    "test/sam-defense-policy-parts/part-28.mjs",
+    "test/sam-defense-policy-parts/part-29.mjs",
+    "test/sam-defense-policy-parts/part-30.mjs",
+    "test/sam-defense-policy-parts/part-31.mjs",
+    "test/sam-defense-policy-parts/part-32.mjs",
+    "test/sam-defense-policy-parts/part-33.mjs",
+    "test/sam-defense-policy-parts/part-34.mjs",
+    "test/sam-defense-policy-parts/part-35.mjs",
+    "test/sam-defense-policy-parts/part-36.mjs",
+    "test/sam-defense-policy-parts/part-37.mjs",
+    "test/sam-defense-policy-parts/part-38.mjs",
+    "test/nuke-trajectory-sam-coverage-parts/part-01.mjs",
+    "test/nuke-trajectory-sam-coverage-parts/part-02.mjs",
+    "test/nuke-trajectory-sam-coverage-parts/part-03.mjs"
+  ],
+  "filesUnchanged": [
+    "package.json",
+    "test/nuke-economy-policy.mjs and test/nuke-economy-policy-parts/**",
+    "test/hybrid-runtime-integration.mjs and test/hybrid-runtime-integration-parts/**",
+    "test/nuke-trade-partner-discount.mjs (lane B ownership)",
+    "test/tmp-legendary-probe.mjs",
+    "engine/**",
+    "route-expiry lane files",
+    "six economy scenario lane files",
+    "SemVer and generated build artifacts"
+  ],
+  "pending": [
+    "Lead-owned sniper validation remains pending; executor rules prohibit launching it from this lane.",
+    "Owner's cloud commit/PR/CI/merge/tag workflow was not run because the latest instruction prohibits Git operations.",
+    "No files above 200 lines remain in the scanned current/previous nuke test-lot set; no outside-lane size work was taken."
+  ],
+  "elicitation": {
+    "techniques": [
+      "Regression Analysis",
+      "Failure Mode Analysis"
+    ],
+    "result": "All three original tests passed before and after. Exact joined-source hashes, assertion counts, sorted part order, temporary sibling resolution, and finally cleanup were checked."
+  },
+  "exitContract": "This lane's code work is complete and locally verified. Lead validation (sniper) and any cloud Git workflow remain outside this executor action under the owner's no-Git instruction."
+}

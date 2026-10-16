@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 // Plain-node fixture: the sandbox supplies the UNIT/Difficulty enums, exactly
 // like nuke-salvo-recheck.mjs, so no engine TS import is needed.
@@ -19,7 +20,7 @@ const Difficulty = { HARD: "HARD", LEGENDARY: "LEGENDARY" };
 // request declines. Any ready shot, absent pressure, disabled units, or
 // winFixes off leaves the decision to the ordinary ladder.
 
-const script = readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js");
+const script = readStructureBehaviorSource();
 
 function makeWorld({
   pending,

@@ -1,0 +1,66 @@
+{
+  "agent": "lane-a",
+  "status": "blocked",
+  "scope": {
+    "owned": [
+      "engine/ingame/auto-bot/legendary-planner/part-09.js",
+      "engine/ingame/auto-bot/legendary-planner/part-10.js",
+      "engine/ingame/auto-bot/structure-behavior/part-074.js",
+      "test/legendary-alliance-expiry-policy.mjs"
+    ],
+    "modified": ["test/legendary-alliance-expiry-policy.mjs"],
+    "unchanged": [
+      "engine/ingame/auto-bot/legendary-planner/part-09.js",
+      "engine/ingame/auto-bot/legendary-planner/part-10.js",
+      "engine/ingame/auto-bot/structure-behavior/part-074.js"
+    ],
+    "not_touched": [
+      "test/legendary-economy-team-scenario-01-fleet-saturation.mjs",
+      "test/legendary-economy-team-scenario-02-landlocked-teammate.mjs",
+      "test/legendary-economy-team-scenario-03-port-seed-pair.mjs",
+      "test/legendary-economy-team-scenario-04-ally-affordability.mjs",
+      "test/legendary-economy-team-scenario-05-horizon.mjs",
+      "test/legendary-economy-team-scenario-06-upgrade-new-route.mjs",
+      "test/hybrid-runtime-integration.mjs",
+      "package.json"
+    ]
+  },
+  "red_green": {
+    "normalization_red": {
+      "command": "node test/legendary-alliance-expiry-policy.mjs",
+      "exit": 1,
+      "evidence": "Expected 2000, actual 1900 for equal-payout routes weighted 3->2 and 2->2 across expiry at tick 10."
+    },
+    "source_owner_expiry_red": {
+      "command": "node --input-type=module (inline profile probe)",
+      "exit": 1,
+      "evidence": "Expected source-owner expiry [20,20]; actual [Infinity,100] with observer alliance absent/present."
+    },
+    "green": "not run: required production edit blocked"
+  },
+  "verification": {
+    "node test/legendary-port-economy-selection.mjs": 0,
+    "node test/legendary-port-construction-delay.mjs": 0,
+    "npm run check": 0,
+    "git diff --check": 0,
+    "line_counts": {
+      "engine/ingame/auto-bot/legendary-planner/part-09.js": 159,
+      "engine/ingame/auto-bot/legendary-planner/part-10.js": 159,
+      "engine/ingame/auto-bot/structure-behavior/part-074.js": 160,
+      "test/legendary-alliance-expiry-policy.mjs": 152
+    }
+  },
+  "elicitation": {
+    "techniques": ["Boundary Testing", "Failure Mode Analysis"],
+    "finding": "Both regressions fail for their intended arithmetic or owner-clock mismatch; no production fix was applied."
+  },
+  "blocker": "[BLOCKED] Duplicate code (DRY) [legendaryPortExpectedGold] already declared in: /home/eros/Desktop/openfront-helper-userscript/openfront-helper.user.js, /home/eros/Desktop/openfront-helper-userscript/openfront-helper.autobot.js. Import and reuse instead of re-declaring. Next: Import the existing symbol instead of re-declaring it; extend the existing module.",
+  "constraints": ["No build, version, commit, push, or Agent Mail."],
+  "handoff_status": "blocked",
+  "remaining_issues": [
+    "Production projection normalization and source-owner routing expiry fixes remain unapplied.",
+    "The add-on normalization regression remains intentionally red.",
+    "The pre-edit DRY hook needs lead resolution before production editing can continue."
+  ],
+  "exit_contract": "Escalate: the exact production edit was blocked by the pre-edit DRY hook; owner instructed this lane to stop without retrying."
+}

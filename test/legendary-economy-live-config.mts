@@ -14,6 +14,7 @@ import {
   UnitType as LiveUnitType,
 } from "../openfront-engine/src/core/game/Game";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath: string) => fs.readFileSync(path.join(ROOT, relativePath), "utf8");
@@ -27,7 +28,7 @@ assert.ok(
 );
 
 const plannerSandbox: Record<string, unknown> = {};
-executeClassicScript(read("engine/ingame/auto-bot/legendaryPlanner.js"), plannerSandbox, {
+executeClassicScript(readLegendaryPlannerSource(), plannerSandbox, {
   filename: "legendaryPlanner.js",
 });
 const legendaryEconomySpawnMultipliers = plannerSandbox.legendaryEconomySpawnMultipliers as (

@@ -1,0 +1,1728 @@
+{
+  "task": "runtime-performance-20261014",
+  "status": "ready_for_review",
+  "provenance": "Two complete sequential relocated benchmark processes; historical original receipt retained verbatim as historicalReceipt. Only the helper import changed.",
+  "freeze": "Parent source/artifact freeze reused; candidate source/HEAD verified by each process; inspected source/package/artifact hashes unchanged before and after.",
+  "command": "node test/benchmark-runtime-performance.mjs",
+  "benchmarkSha256": "6fa5620c36c0b7052bba1658eecae55cc7325be13bedf20bea5c84417fc0eaf8",
+  "rawSamplesAvailable": true,
+  "sourceHashesMatchAcrossRuns": true,
+  "summaryDefinition": {
+    "units": "milliseconds per call, each sample is the mean of 10 timed calls",
+    "median": "arithmetic mean of the two middle sorted values",
+    "p95": "nearest rank, sorted[ceil(0.95 * n) - 1]; n=12 so p95 equals max",
+    "medianChangePercent": "100 * (candidate median / baseline median - 1)"
+  },
+  "conclusions": {
+    "estate": "Approximately 36–43% lower median execution time in the two relocated local synthetic processes.",
+    "heatmap": "Timing improvement inconsistent across sizes/runs; claim deterministic transform-input allocation reduction only."
+  },
+  "limitations": [
+    "Synthetic source-level VM execution, not browser FPS, rendering or end-to-end match performance.",
+    "Shared-host load was nonzero; tails include scheduling/JIT/GC effects. Samples are batch averages, not individual-call tail latencies.",
+    "Allocation counters cover neighbor arrays and transform-input object identities, not total bytes or all allocations.",
+    "Hash checks detect persistent source edits; they cannot prove absence of transient edit-and-restore.",
+    "No engine, allocation-test, package, build artifact, Git mutation or nested delegation during relocation. No concurrent test process observed; desktop host remained loaded, not idle.",
+    "Independent lead challenger/sniper acceptance remains pending."
+  ],
+  "summaries": [
+    {
+      "run": 1,
+      "results": [
+        {
+          "name": "estate-64",
+          "baseline": {
+            "median": 1.8900707999999993,
+            "p95": 2.106724300000002,
+            "max": 2.106724300000002
+          },
+          "candidate": {
+            "median": 1.1702080499999967,
+            "p95": 1.2460418000000004,
+            "max": 1.2460418000000004
+          },
+          "medianChangePercent": -38.08654945624275
+        },
+        {
+          "name": "estate-128",
+          "baseline": {
+            "median": 8.478490050000005,
+            "p95": 9.129612300000009,
+            "max": 9.129612300000009
+          },
+          "candidate": {
+            "median": 4.821087650000004,
+            "p95": 5.084461699999997,
+            "max": 5.084461699999997
+          },
+          "medianChangePercent": -43.13742633925717
+        },
+        {
+          "name": "heatmap-1000",
+          "baseline": {
+            "median": 0.4513878999999861,
+            "p95": 0.4940913999999793,
+            "max": 0.4940913999999793
+          },
+          "candidate": {
+            "median": 0.4208092000000079,
+            "p95": 0.45507560000000924,
+            "max": 0.45507560000000924
+          },
+          "medianChangePercent": -6.774372994929445
+        },
+        {
+          "name": "heatmap-10000",
+          "baseline": {
+            "median": 4.553393699999992,
+            "p95": 4.616681799999969,
+            "max": 4.616681799999969
+          },
+          "candidate": {
+            "median": 4.580293649999999,
+            "p95": 4.756539199999997,
+            "max": 4.756539199999997
+          },
+          "medianChangePercent": 0.5907670579859303
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "results": [
+        {
+          "name": "estate-64",
+          "baseline": {
+            "median": 1.8941646000000008,
+            "p95": 2.0370580000000005,
+            "max": 2.0370580000000005
+          },
+          "candidate": {
+            "median": 1.1604193999999992,
+            "p95": 1.2018247000000002,
+            "max": 1.2018247000000002
+          },
+          "medianChangePercent": -38.73714037312287
+        },
+        {
+          "name": "estate-128",
+          "baseline": {
+            "median": 7.464288549999992,
+            "p95": 8.263941999999997,
+            "max": 8.263941999999997
+          },
+          "candidate": {
+            "median": 4.799478850000003,
+            "p95": 4.8646975999999995,
+            "max": 4.8646975999999995
+          },
+          "medianChangePercent": -35.7007862457299
+        },
+        {
+          "name": "heatmap-1000",
+          "baseline": {
+            "median": 0.4051261499999782,
+            "p95": 0.4667120999999952,
+            "max": 0.4667120999999952
+          },
+          "candidate": {
+            "median": 0.4243710500000134,
+            "p95": 0.452719100000013,
+            "max": 0.452719100000013
+          },
+          "medianChangePercent": 4.750347515221187
+        },
+        {
+          "name": "heatmap-10000",
+          "baseline": {
+            "median": 4.54547349999998,
+            "p95": 4.8097582999999755,
+            "max": 4.8097582999999755
+          },
+          "candidate": {
+            "median": 4.515178850000007,
+            "p95": 5.318803399999979,
+            "max": 5.318803399999979
+          },
+          "medianChangePercent": -0.6664795207798169
+        }
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "at": "2026-10-14T02:42:36.457Z",
+      "baselineCommit": "7703aa95f3c58a0903cf7ef6aa9c471f4b5defbf",
+      "environment": {
+        "node": "v26.11.1",
+        "v8": "14.6.202.34-node.37",
+        "platform": "linux",
+        "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+        "load": [16.38, 14.34, 12.1],
+        "freeMemory": 13815537664
+      },
+      "protocol": {
+        "warmups": 10,
+        "iterations": 10,
+        "pairs": 12,
+        "timing": "performance.now, balanced AB/BA, instrumentation disabled",
+        "scope": "synthetic source-level only; browser FPS not verified"
+      },
+      "sources": [
+        {
+          "path": "engine/ingame/runtime.js",
+          "baselineSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+          "candidateSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+          "changed": false
+        },
+        {
+          "path": "engine/ingame/map-overlay-scheduler.js",
+          "baselineSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+          "candidateSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+          "changed": false
+        },
+        {
+          "path": "engine/ingame/estate-panel.js",
+          "baselineSha256": "3cf1aa5eae6f6b7f454ccf1e24a02b183d55ebc4ade35bca56b345dbfdb46934",
+          "candidateSha256": "1b4c20582ee11218159402b5b574164db3a6827cbe681e5d1d9ca1912a45ca81",
+          "changed": true
+        },
+        {
+          "path": "engine/ingame/heatmaps.js",
+          "baselineSha256": "92d194010c38237752ececd4f5d00eb9de90f9899be7524bb192ca93274568f0",
+          "candidateSha256": "13e767bbeb2b591f129fe9a9b24e7629b939dbcef534cb7cbf860befa598a852",
+          "changed": true
+        }
+      ],
+      "results": [
+        {
+          "name": "estate-64",
+          "exactOutput": true,
+          "counts": {
+            "baseline": {
+              "neighborArrays": 4096,
+              "neighbors4Calls": 0,
+              "distinctScratchBuffers": 0
+            },
+            "candidate": {
+              "neighborArrays": 0,
+              "neighbors4Calls": 4096,
+              "distinctScratchBuffers": 1
+            }
+          },
+          "samplesMsPerCall": [
+            {
+              "order": "baseline/candidate",
+              "baseline": 2.030549599999999,
+              "candidate": 1.1876457000000002
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.2460418000000004,
+              "baseline": 1.9049932000000012
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.8986765999999988,
+              "candidate": 1.1596150999999992
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1728849999999995,
+              "baseline": 1.9273555000000016
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.8899054000000006,
+              "candidate": 1.1584564
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1717228000000006,
+              "baseline": 1.8751839999999986
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.8714001999999994,
+              "candidate": 1.1793293000000005
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1693325999999957,
+              "baseline": 1.8902361999999981
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.8834196999999961,
+              "candidate": 1.1680448999999953
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1685479999999984,
+              "baseline": 2.106724300000002
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.8475507999999992,
+              "candidate": 1.1618788999999992
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1710834999999975,
+              "baseline": 1.8468818999999996
+            }
+          ]
+        },
+        {
+          "name": "estate-128",
+          "exactOutput": true,
+          "counts": {
+            "baseline": {
+              "neighborArrays": 16384,
+              "neighbors4Calls": 0,
+              "distinctScratchBuffers": 0
+            },
+            "candidate": {
+              "neighborArrays": 0,
+              "neighbors4Calls": 16384,
+              "distinctScratchBuffers": 1
+            }
+          },
+          "samplesMsPerCall": [
+            {
+              "order": "baseline/candidate",
+              "baseline": 7.74696110000001,
+              "candidate": 4.833740199999999
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.800583600000005,
+              "baseline": 7.983546999999999
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 7.689767300000005,
+              "candidate": 4.854656799999998
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 5.084461699999997,
+              "baseline": 7.576753900000005
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 7.638865599999986,
+              "candidate": 4.832060799999999
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.820130999999992,
+              "baseline": 7.813318499999991
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 9.053457099999992,
+              "candidate": 4.785379599999987
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.832454399999984,
+              "baseline": 8.973433100000012
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 8.982111299999996,
+              "candidate": 4.709941200000003
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.822044300000016,
+              "baseline": 9.075603299999988
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 9.004251799999997,
+              "candidate": 4.784541799999988
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.795729600000004,
+              "baseline": 9.129612300000009
+            }
+          ]
+        },
+        {
+          "name": "heatmap-1000",
+          "exactOutput": true,
+          "counts": {
+            "baseline": {
+              "projections": 941,
+              "distinctWorldInputs": 941
+            },
+            "candidate": {
+              "projections": 941,
+              "distinctWorldInputs": 1
+            }
+          },
+          "samplesMsPerCall": [
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.44850040000001173,
+              "candidate": 0.4190168999999969
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.4211801000000378,
+              "baseline": 0.4252126999999746
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.42645129999996245,
+              "candidate": 0.4291896000000179
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.41666890000001333,
+              "baseline": 0.41201289999999063
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.40750930000003793,
+              "candidate": 0.41081129999997756
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.42043829999997795,
+              "baseline": 0.45569540000001324
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.4542753999999604,
+              "candidate": 0.4525333000000046
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.45155970000000706,
+              "baseline": 0.4629421000000093
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.4606301999999687,
+              "candidate": 0.45475369999999204
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.45507560000000924,
+              "baseline": 0.4574736999999914
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.4940913999999793,
+              "candidate": 0.4123228000000381
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.41463490000001,
+              "baseline": 0.40696050000001377
+            }
+          ]
+        },
+        {
+          "name": "heatmap-10000",
+          "exactOutput": true,
+          "counts": {
+            "baseline": {
+              "projections": 9411,
+              "distinctWorldInputs": 9411
+            },
+            "candidate": {
+              "projections": 9411,
+              "distinctWorldInputs": 1
+            }
+          },
+          "samplesMsPerCall": [
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.514936400000034,
+              "candidate": 4.52391419999999
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.657661600000028,
+              "baseline": 4.529128700000001
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.548107899999968,
+              "candidate": 4.614036999999962
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.58075359999998,
+              "baseline": 4.553680299999996
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.568004300000029,
+              "candidate": 4.579833700000018
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.577724199999966,
+              "baseline": 4.603119700000025
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.547177799999963,
+              "candidate": 4.568281400000023
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.594144099999994,
+              "baseline": 4.559829199999967
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.5531070999999885,
+              "candidate": 4.569107800000029
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.591864900000019,
+              "baseline": 4.509655400000019
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.575560700000006,
+              "candidate": 4.544869100000005
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.756539199999997,
+              "baseline": 4.616681799999969
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "at": "2026-10-14T02:42:48.849Z",
+      "baselineCommit": "7703aa95f3c58a0903cf7ef6aa9c471f4b5defbf",
+      "environment": {
+        "node": "v26.11.1",
+        "v8": "14.6.202.34-node.37",
+        "platform": "linux",
+        "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+        "load": [16.08, 14.34, 12.13],
+        "freeMemory": 13979930624
+      },
+      "protocol": {
+        "warmups": 10,
+        "iterations": 10,
+        "pairs": 12,
+        "timing": "performance.now, balanced AB/BA, instrumentation disabled",
+        "scope": "synthetic source-level only; browser FPS not verified"
+      },
+      "sources": [
+        {
+          "path": "engine/ingame/runtime.js",
+          "baselineSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+          "candidateSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+          "changed": false
+        },
+        {
+          "path": "engine/ingame/map-overlay-scheduler.js",
+          "baselineSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+          "candidateSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+          "changed": false
+        },
+        {
+          "path": "engine/ingame/estate-panel.js",
+          "baselineSha256": "3cf1aa5eae6f6b7f454ccf1e24a02b183d55ebc4ade35bca56b345dbfdb46934",
+          "candidateSha256": "1b4c20582ee11218159402b5b574164db3a6827cbe681e5d1d9ca1912a45ca81",
+          "changed": true
+        },
+        {
+          "path": "engine/ingame/heatmaps.js",
+          "baselineSha256": "92d194010c38237752ececd4f5d00eb9de90f9899be7524bb192ca93274568f0",
+          "candidateSha256": "13e767bbeb2b591f129fe9a9b24e7629b939dbcef534cb7cbf860befa598a852",
+          "changed": true
+        }
+      ],
+      "results": [
+        {
+          "name": "estate-64",
+          "exactOutput": true,
+          "counts": {
+            "baseline": {
+              "neighborArrays": 4096,
+              "neighbors4Calls": 0,
+              "distinctScratchBuffers": 0
+            },
+            "candidate": {
+              "neighborArrays": 0,
+              "neighbors4Calls": 4096,
+              "distinctScratchBuffers": 1
+            }
+          },
+          "samplesMsPerCall": [
+            {
+              "order": "baseline/candidate",
+              "baseline": 2.0370580000000005,
+              "candidate": 1.1996505999999996
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.2018247000000002,
+              "baseline": 1.9305846000000002
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.8656847999999997,
+              "candidate": 1.1555284999999997
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1740499999999998,
+              "baseline": 2.0288088000000015
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.9203476999999993,
+              "candidate": 1.1864000000000003
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1691838000000019,
+              "baseline": 1.867981500000002
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.8509654999999952,
+              "candidate": 1.1372841000000051
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1449591999999995,
+              "baseline": 1.8570970999999985
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.8522153000000003,
+              "candidate": 1.146615399999996
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1653102999999987,
+              "baseline": 1.9675526999999988
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 1.9520946000000037,
+              "candidate": 1.1527953999999965
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 1.1320086000000003,
+              "baseline": 1.8503044999999987
+            }
+          ]
+        },
+        {
+          "name": "estate-128",
+          "exactOutput": true,
+          "counts": {
+            "baseline": {
+              "neighborArrays": 16384,
+              "neighbors4Calls": 0,
+              "distinctScratchBuffers": 0
+            },
+            "candidate": {
+              "neighborArrays": 0,
+              "neighbors4Calls": 16384,
+              "distinctScratchBuffers": 1
+            }
+          },
+          "samplesMsPerCall": [
+            {
+              "order": "baseline/candidate",
+              "baseline": 7.585963600000002,
+              "candidate": 4.849809999999991
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.833911900000009,
+              "baseline": 8.263941999999997
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 7.476779099999999,
+              "candidate": 4.817100300000004
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.8646975999999995,
+              "baseline": 7.4915797
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 7.439753900000005,
+              "candidate": 4.6964183999999936
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.724705099999983,
+              "baseline": 7.4549916000000165
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 7.4403368,
+              "candidate": 4.7951655000000075
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.848823599999991,
+              "baseline": 7.469129499999985
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 7.459447599999999,
+              "candidate": 4.803792199999998
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.773134099999993,
+              "baseline": 7.513213199999996
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 7.4562242999999855,
+              "candidate": 4.713773399999991
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.738584399999991,
+              "baseline": 7.38945789999998
+            }
+          ]
+        },
+        {
+          "name": "heatmap-1000",
+          "exactOutput": true,
+          "counts": {
+            "baseline": {
+              "projections": 941,
+              "distinctWorldInputs": 941
+            },
+            "candidate": {
+              "projections": 941,
+              "distinctWorldInputs": 1
+            }
+          },
+          "samplesMsPerCall": [
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.39714420000000245,
+              "candidate": 0.4067818999999872
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.4084447000000182,
+              "baseline": 0.4023149000000103
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.4560633000000053,
+              "candidate": 0.4525036999999884
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.452719100000013,
+              "baseline": 0.46241939999999887
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.4538416000000325,
+              "candidate": 0.4466218000000026
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.44601179999999657,
+              "baseline": 0.45105700000003707
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.4667120999999952,
+              "candidate": 0.4387363000000278
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.4520473000000038,
+              "baseline": 0.4058897999999772
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.39667750000003255,
+              "candidate": 0.40046630000001643
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.40149420000002467,
+              "baseline": 0.40065370000002076
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 0.40436249999997925,
+              "candidate": 0.410005799999999
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 0.4053662000000259,
+              "baseline": 0.3976900999999998
+            }
+          ]
+        },
+        {
+          "name": "heatmap-10000",
+          "exactOutput": true,
+          "counts": {
+            "baseline": {
+              "projections": 9411,
+              "distinctWorldInputs": 9411
+            },
+            "candidate": {
+              "projections": 9411,
+              "distinctWorldInputs": 1
+            }
+          },
+          "samplesMsPerCall": [
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.58289420000001,
+              "candidate": 4.616630600000008
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.637737500000003,
+              "baseline": 4.678532100000029
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.8097582999999755,
+              "candidate": 4.469883899999968
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.5705670999999715,
+              "baseline": 4.55839289999999
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.452235100000007,
+              "candidate": 4.483720399999993
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.473828700000013,
+              "baseline": 4.6666748999999985
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.43051260000002,
+              "candidate": 4.515568500000017
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.438590999999997,
+              "baseline": 4.4807630000000245
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.491797700000006,
+              "candidate": 4.976908900000035
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 5.318803399999979,
+              "baseline": 4.5609699999999975
+            },
+            {
+              "order": "baseline/candidate",
+              "baseline": 4.53255409999997,
+              "candidate": 4.4869187000000235
+            },
+            {
+              "order": "candidate/baseline",
+              "candidate": 4.514789199999996,
+              "baseline": 4.4522829
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "historicalReceipt": {
+    "task": "runtime-performance-20261014",
+    "status": "ready_for_review",
+    "provenance": "Two completed independent sequential local Node processes captured in this session; no rerun during documentation follow-up.",
+    "freeze": "Explicit parent source/test/package freeze received before both runs. Benchmark code unchanged during documentation follow-up.",
+    "command": "node scripts/benchmark-runtime-performance.mjs",
+    "benchmarkSha256": "29cdf0f9433016f5a07895ae1be43727d83c1014f954eaf7dc262300bd268c2a",
+    "rawSamplesAvailable": true,
+    "sourceHashesMatchAcrossRuns": true,
+    "summaryDefinition": {
+      "units": "milliseconds per call, each sample is the mean of 10 timed calls",
+      "median": "arithmetic mean of the two middle sorted values",
+      "p95": "nearest rank, sorted[ceil(0.95 * n) - 1]; n=12 so p95 equals max",
+      "medianChangePercent": "100 * (candidate median / baseline median - 1)"
+    },
+    "conclusions": {
+      "estate": "Approximately 35–39% lower median execution time in these local synthetic grid fixtures.",
+      "heatmap": "Timing improvement inconsistent across sizes/runs; claim deterministic transform-input allocation reduction only."
+    },
+    "limitations": [
+      "Synthetic source-level VM execution, not browser FPS, rendering or end-to-end match performance.",
+      "Shared-host load was nonzero; tails include scheduling/JIT/GC effects. Samples are batch averages, not individual-call tail latencies.",
+      "Allocation counters cover neighbor arrays and transform-input object identities, not total bytes or all allocations.",
+      "Hash checks detect persistent source edits; they cannot prove absence of transient edit-and-restore.",
+      "No new timings, integration tests, build, Git mutations or nested delegation during documentation follow-up.",
+      "Independent lead challenger/sniper acceptance remains pending."
+    ],
+    "summaries": [
+      {
+        "run": 1,
+        "results": [
+          {
+            "name": "estate-64",
+            "baseline": {
+              "median": 1.9135610000000014,
+              "p95": 2.203492799999998,
+              "max": 2.203492799999998
+            },
+            "candidate": {
+              "median": 1.2054293999999999,
+              "p95": 1.2951598999999987,
+              "max": 1.2951598999999987
+            },
+            "medianChangePercent": -37.00595904703331
+          },
+          {
+            "name": "estate-128",
+            "baseline": {
+              "median": 7.866639300000003,
+              "p95": 16.909303799999996,
+              "max": 16.909303799999996
+            },
+            "candidate": {
+              "median": 5.100672850000012,
+              "p95": 5.583566500000006,
+              "max": 5.583566500000006
+            },
+            "medianChangePercent": -35.16071278366595
+          },
+          {
+            "name": "heatmap-1000",
+            "baseline": {
+              "median": 0.43203109999999467,
+              "p95": 0.49884100000003856,
+              "max": 0.49884100000003856
+            },
+            "candidate": {
+              "median": 0.40813735000001544,
+              "p95": 0.45380169999998543,
+              "max": 0.45380169999998543
+            },
+            "medianChangePercent": -5.530562498852398
+          },
+          {
+            "name": "heatmap-10000",
+            "baseline": {
+              "median": 4.447800050000001,
+              "p95": 4.524817900000016,
+              "max": 4.524817900000016
+            },
+            "candidate": {
+              "median": 4.484824700000013,
+              "p95": 4.608378399999992,
+              "max": 4.608378399999992
+            },
+            "medianChangePercent": 0.8324261339043959
+          }
+        ]
+      },
+      {
+        "run": 2,
+        "results": [
+          {
+            "name": "estate-64",
+            "baseline": {
+              "median": 1.9127732000000008,
+              "p95": 2.129735400000004,
+              "max": 2.129735400000004
+            },
+            "candidate": {
+              "median": 1.1706554499999995,
+              "p95": 1.2521389999999983,
+              "max": 1.2521389999999983
+            },
+            "medianChangePercent": -38.79800020201041
+          },
+          {
+            "name": "estate-128",
+            "baseline": {
+              "median": 7.9711563499999905,
+              "p95": 18.868511600000012,
+              "max": 18.868511600000012
+            },
+            "candidate": {
+              "median": 5.0939597000000045,
+              "p95": 12.505815099999996,
+              "max": 12.505815099999996
+            },
+            "medianChangePercent": -36.09509741958568
+          },
+          {
+            "name": "heatmap-1000",
+            "baseline": {
+              "median": 0.4043879500000003,
+              "p95": 0.4391998000000058,
+              "max": 0.4391998000000058
+            },
+            "candidate": {
+              "median": 0.4027851499999997,
+              "p95": 0.499680699999999,
+              "max": 0.499680699999999
+            },
+            "medianChangePercent": -0.3963520673651577
+          },
+          {
+            "name": "heatmap-10000",
+            "baseline": {
+              "median": 4.703064450000011,
+              "p95": 5.4114210000000185,
+              "max": 5.4114210000000185
+            },
+            "candidate": {
+              "median": 4.511336700000015,
+              "p95": 4.807833200000005,
+              "max": 4.807833200000005
+            },
+            "medianChangePercent": -4.076655806832397
+          }
+        ]
+      }
+    ],
+    "runs": [
+      {
+        "at": "2026-10-14T02:23:12.243Z",
+        "baselineCommit": "7703aa95f3c58a0903cf7ef6aa9c471f4b5defbf",
+        "environment": {
+          "node": "v26.11.1",
+          "v8": "14.6.202.34-node.37",
+          "platform": "linux",
+          "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+          "load": [14.51, 13.53, 11.67],
+          "freeMemory": 19047763968
+        },
+        "protocol": {
+          "warmups": 10,
+          "iterations": 10,
+          "pairs": 12,
+          "timing": "performance.now, balanced AB/BA, instrumentation disabled",
+          "scope": "synthetic source-level only; browser FPS not verified"
+        },
+        "sources": [
+          {
+            "path": "engine/ingame/runtime.js",
+            "baselineSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+            "candidateSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+            "changed": false
+          },
+          {
+            "path": "engine/ingame/map-overlay-scheduler.js",
+            "baselineSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+            "candidateSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+            "changed": false
+          },
+          {
+            "path": "engine/ingame/estate-panel.js",
+            "baselineSha256": "3cf1aa5eae6f6b7f454ccf1e24a02b183d55ebc4ade35bca56b345dbfdb46934",
+            "candidateSha256": "1b4c20582ee11218159402b5b574164db3a6827cbe681e5d1d9ca1912a45ca81",
+            "changed": true
+          },
+          {
+            "path": "engine/ingame/heatmaps.js",
+            "baselineSha256": "92d194010c38237752ececd4f5d00eb9de90f9899be7524bb192ca93274568f0",
+            "candidateSha256": "13e767bbeb2b591f129fe9a9b24e7629b939dbcef534cb7cbf860befa598a852",
+            "changed": true
+          }
+        ],
+        "results": [
+          {
+            "name": "estate-64",
+            "exactOutput": true,
+            "counts": {
+              "baseline": {
+                "neighborArrays": 4096,
+                "neighbors4Calls": 0,
+                "distinctScratchBuffers": 0
+              },
+              "candidate": {
+                "neighborArrays": 0,
+                "neighbors4Calls": 4096,
+                "distinctScratchBuffers": 1
+              }
+            },
+            "samplesMsPerCall": [
+              {
+                "order": "baseline/candidate",
+                "baseline": 2.203492799999998,
+                "candidate": 1.2951598999999987
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.2529082000000016,
+                "baseline": 1.9155727000000013
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.9026066999999955,
+                "candidate": 1.2066674999999976
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.1866746999999975,
+                "baseline": 1.8722734000000003
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.9489978000000008,
+                "candidate": 1.1934173999999984
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.2041913000000022,
+                "baseline": 1.9115493000000015
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.978014300000001,
+                "candidate": 1.179523499999999
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.1726139999999987,
+                "baseline": 1.906586500000003
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.8755779000000075,
+                "candidate": 1.1791867999999908
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.2245464000000084,
+                "baseline": 2.134786299999996
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.9459469000000014,
+                "candidate": 1.2342694999999935
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.2396624999999972,
+                "baseline": 1.8810345999999982
+              }
+            ]
+          },
+          {
+            "name": "estate-128",
+            "exactOutput": true,
+            "counts": {
+              "baseline": {
+                "neighborArrays": 16384,
+                "neighbors4Calls": 0,
+                "distinctScratchBuffers": 0
+              },
+              "candidate": {
+                "neighborArrays": 0,
+                "neighbors4Calls": 16384,
+                "distinctScratchBuffers": 1
+              }
+            },
+            "samplesMsPerCall": [
+              {
+                "order": "baseline/candidate",
+                "baseline": 7.9247864999999935,
+                "candidate": 4.987444100000005
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 5.113887599999998,
+                "baseline": 7.980268099999989
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 8.476641199999994,
+                "candidate": 5.188280600000008
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 5.095954499999993,
+                "baseline": 7.957089899999983
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 7.624431300000015,
+                "candidate": 4.908809499999984
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.844796700000006,
+                "baseline": 7.686798299999987
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 7.808492100000012,
+                "candidate": 5.276408100000003
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.881552000000011,
+                "baseline": 7.539915999999994
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 7.532336299999997,
+                "candidate": 5.161596099999997
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 5.583566500000006,
+                "baseline": 10.436096399999997
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 16.909303799999996,
+                "candidate": 4.9918439999999915
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 5.105391200000031,
+                "baseline": 7.5544566000000035
+              }
+            ]
+          },
+          {
+            "name": "heatmap-1000",
+            "exactOutput": true,
+            "counts": {
+              "baseline": {
+                "projections": 941,
+                "distinctWorldInputs": 941
+              },
+              "candidate": {
+                "projections": 941,
+                "distinctWorldInputs": 1
+              }
+            },
+            "samplesMsPerCall": [
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.4044094999999743,
+                "candidate": 0.40651339999999436
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.4097613000000365,
+                "baseline": 0.41562910000002373
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.4013679000000138,
+                "candidate": 0.40379120000002333
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.4272594000000026,
+                "baseline": 0.4580637000000024
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.4553751999999804,
+                "candidate": 0.4399003999999877
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.45380169999998543,
+                "baseline": 0.45909320000000664
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.45085549999998875,
+                "candidate": 0.44364949999999226
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.4377695000000131,
+                "baseline": 0.4484330999999656
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.49884100000003856,
+                "candidate": 0.39988149999999223
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.39730420000000777,
+                "baseline": 0.40040850000000316
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.40535210000002736,
+                "candidate": 0.39298209999997197
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.3955487000000176,
+                "baseline": 0.41020340000000033
+              }
+            ]
+          },
+          {
+            "name": "heatmap-10000",
+            "exactOutput": true,
+            "counts": {
+              "baseline": {
+                "projections": 9411,
+                "distinctWorldInputs": 9411
+              },
+              "candidate": {
+                "projections": 9411,
+                "distinctWorldInputs": 1
+              }
+            },
+            "samplesMsPerCall": [
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.436356400000022,
+                "candidate": 4.608378399999992
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.481441700000005,
+                "baseline": 4.3969116000000215
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.426615099999981,
+                "candidate": 4.593393799999967
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.488207700000021,
+                "baseline": 4.515174799999977
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.493307000000004,
+                "candidate": 4.461358400000018
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.494802100000015,
+                "baseline": 4.440748200000007
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.524817900000016,
+                "candidate": 4.471138400000018
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.532541300000003,
+                "baseline": 4.456695000000036
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.472725600000013,
+                "candidate": 4.437540799999988
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.410998700000027,
+                "baseline": 4.454851899999994
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.410257300000012,
+                "candidate": 4.5424441000000115
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.473871100000042,
+                "baseline": 4.40562789999999
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "at": "2026-10-14T02:23:27.674Z",
+        "baselineCommit": "7703aa95f3c58a0903cf7ef6aa9c471f4b5defbf",
+        "environment": {
+          "node": "v26.11.1",
+          "v8": "14.6.202.34-node.37",
+          "platform": "linux",
+          "cpu": "11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz",
+          "load": [11.89, 13, 11.53],
+          "freeMemory": 19201257472
+        },
+        "protocol": {
+          "warmups": 10,
+          "iterations": 10,
+          "pairs": 12,
+          "timing": "performance.now, balanced AB/BA, instrumentation disabled",
+          "scope": "synthetic source-level only; browser FPS not verified"
+        },
+        "sources": [
+          {
+            "path": "engine/ingame/runtime.js",
+            "baselineSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+            "candidateSha256": "b8724762d332b832e92635684c20f119a4d682005d6de23ddcefcc6f483453b3",
+            "changed": false
+          },
+          {
+            "path": "engine/ingame/map-overlay-scheduler.js",
+            "baselineSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+            "candidateSha256": "1e4be71b69b027326d21c2a4facbc6c9604dfd4504a390a08e265687c295c9b7",
+            "changed": false
+          },
+          {
+            "path": "engine/ingame/estate-panel.js",
+            "baselineSha256": "3cf1aa5eae6f6b7f454ccf1e24a02b183d55ebc4ade35bca56b345dbfdb46934",
+            "candidateSha256": "1b4c20582ee11218159402b5b574164db3a6827cbe681e5d1d9ca1912a45ca81",
+            "changed": true
+          },
+          {
+            "path": "engine/ingame/heatmaps.js",
+            "baselineSha256": "92d194010c38237752ececd4f5d00eb9de90f9899be7524bb192ca93274568f0",
+            "candidateSha256": "13e767bbeb2b591f129fe9a9b24e7629b939dbcef534cb7cbf860befa598a852",
+            "changed": true
+          }
+        ],
+        "results": [
+          {
+            "name": "estate-64",
+            "exactOutput": true,
+            "counts": {
+              "baseline": {
+                "neighborArrays": 4096,
+                "neighbors4Calls": 0,
+                "distinctScratchBuffers": 0
+              },
+              "candidate": {
+                "neighborArrays": 0,
+                "neighbors4Calls": 4096,
+                "distinctScratchBuffers": 1
+              }
+            },
+            "samplesMsPerCall": [
+              {
+                "order": "baseline/candidate",
+                "baseline": 2.025087400000001,
+                "candidate": 1.2200738000000002
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.2521389999999983,
+                "baseline": 1.9053349000000026
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.8929125999999996,
+                "candidate": 1.159303
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.1732292999999998,
+                "baseline": 1.9176694999999995
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.9075864999999994,
+                "candidate": 1.1611457
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.1845625000000013,
+                "baseline": 1.8933189999999995
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.9215964000000043,
+                "candidate": 1.1635508000000017
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.1951760999999976,
+                "baseline": 1.9189230000000008
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.897810099999998,
+                "candidate": 1.1653470999999969
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.1639017000000025,
+                "baseline": 2.129735400000004
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 1.9520393000000014,
+                "candidate": 1.1775468000000047
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 1.1680815999999994,
+                "baseline": 1.9078769000000022
+              }
+            ]
+          },
+          {
+            "name": "estate-128",
+            "exactOutput": true,
+            "counts": {
+              "baseline": {
+                "neighborArrays": 16384,
+                "neighbors4Calls": 0,
+                "distinctScratchBuffers": 0
+              },
+              "candidate": {
+                "neighborArrays": 0,
+                "neighbors4Calls": 16384,
+                "distinctScratchBuffers": 1
+              }
+            },
+            "samplesMsPerCall": [
+              {
+                "order": "baseline/candidate",
+                "baseline": 7.645535999999993,
+                "candidate": 4.898579200000006
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.914928400000008,
+                "baseline": 9.087974499999996
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 13.256663500000002,
+                "candidate": 5.641825800000004
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 12.505815099999996,
+                "baseline": 18.868511600000012
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 8.2390533,
+                "candidate": 4.960459900000001
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 5.083886400000006,
+                "baseline": 7.9539536
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 7.604071999999997,
+                "candidate": 4.894899399999986
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.942382299999986,
+                "baseline": 7.722839599999998
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 7.9038461999999985,
+                "candidate": 5.104033000000004
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 5.105246700000021,
+                "baseline": 7.98835909999998
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 7.830064999999967,
+                "candidate": 5.533990800000038
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 5.243267800000012,
+                "baseline": 8.089558600000009
+              }
+            ]
+          },
+          {
+            "name": "heatmap-1000",
+            "exactOutput": true,
+            "counts": {
+              "baseline": {
+                "projections": 941,
+                "distinctWorldInputs": 941
+              },
+              "candidate": {
+                "projections": 941,
+                "distinctWorldInputs": 1
+              }
+            },
+            "samplesMsPerCall": [
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.40287469999998393,
+                "candidate": 0.4131193000000167
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.4004689999999755,
+                "baseline": 0.4032228000000032
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.4288242000000082,
+                "candidate": 0.4811181000000033
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.44402359999999136,
+                "baseline": 0.4127842999999757
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.4059469000000263,
+                "candidate": 0.499680699999999
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.39478290000001837,
+                "baseline": 0.40454649999996944
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.4042294000000311,
+                "candidate": 0.3966867999999977
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.398571899999979,
+                "baseline": 0.4024834999999712
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.4391998000000058,
+                "candidate": 0.4049246999999923
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.39879210000003695,
+                "baseline": 0.40159419999999957
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 0.40347170000000004,
+                "candidate": 0.403559899999982
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 0.4020104000000174,
+                "baseline": 0.41215219999999136
+              }
+            ]
+          },
+          {
+            "name": "heatmap-10000",
+            "exactOutput": true,
+            "counts": {
+              "baseline": {
+                "projections": 9411,
+                "distinctWorldInputs": 9411
+              },
+              "candidate": {
+                "projections": 9411,
+                "distinctWorldInputs": 1
+              }
+            },
+            "samplesMsPerCall": [
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.842953499999976,
+                "candidate": 4.807833200000005
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.478235100000029,
+                "baseline": 4.571569199999976
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.591686399999981,
+                "candidate": 4.57245710000002
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.540195300000005,
+                "baseline": 4.59686999999999
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.5274767999999765,
+                "candidate": 4.459387500000003
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.443444900000031,
+                "baseline": 4.706170800000018
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.767283599999973,
+                "candidate": 4.4218615000000225
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.528833500000019,
+                "baseline": 4.959889900000007
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 5.4114210000000185,
+                "candidate": 4.445034200000009
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.493839900000012,
+                "baseline": 4.6999581000000035
+              },
+              {
+                "order": "baseline/candidate",
+                "baseline": 4.738720300000023,
+                "candidate": 4.647294000000011
+              },
+              {
+                "order": "candidate/baseline",
+                "candidate": 4.65048569999999,
+                "baseline": 4.6557103999999985
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

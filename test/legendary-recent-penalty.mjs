@@ -6,10 +6,13 @@
 // tier) and keep the faithful 1M on Hard.
 
 import assert from "node:assert/strict";
+import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
@@ -59,7 +62,7 @@ executeClassicScript(read("engine/ingame/shared-utils.js"), sandbox, {
   filename: "shared-utils.vm.js",
 });
 executeClassicScript(
-  `${read("engine/ingame/auto-bot/legendaryPlanner.js")}\n${read("engine/ingame/auto-bot/structureBehavior.js")}\n${read("engine/ingame/auto-bot/nukeBehavior.js")}\nglobalThis.__NukeBehavior = NukeBehavior;`,
+  `${readLegendaryPlannerSource()}\n${readStructureBehaviorSource()}\n${readNukeBehaviorSource()}\nglobalThis.__NukeBehavior = NukeBehavior;`,
   sandbox,
   { filename: "legendary-recent-penalty.vm.js" },
 );

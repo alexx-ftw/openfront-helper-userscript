@@ -1,0 +1,22 @@
+{
+  "agent": "benchmark-compact",
+  "task": "split-tooling-oversized-20261015 / Lot 1 (cycle 2)",
+  "status": "done",
+  "handoff_status": "ready_for_review",
+  "writes_frozen": true,
+  "scope": "test/benchmark-runtime-performance.mjs only; no git actions",
+  "files_modified": [
+    "test/benchmark-runtime-performance.mjs (226 -> 198 physical lines)",
+    ".codex/apex/prd/agents/benchmark-compact-prd.json (this report)"
+  ],
+  "files_unchanged": ["sourceGroups mapping, order, counters, assertions and output fields identical; all other repo files"],
+  "diff_summary": "Whitespace/layout only: removed 2-line sourceGroups comment; flattened estate (10->1) and heatmaps (14->1) group entries to one line each with same 5/9 files in order; collapsed assert.deepEqual call (5->1); zero semantic change.",
+  "verification": {
+    "line_count": "wc -l: 198 (limit <=200)",
+    "eslint": "npx eslint test/benchmark-runtime-performance.mjs --max-warnings=0: exit 0, no diagnostics",
+    "benchmark": "node test/benchmark-runtime-performance.mjs: exit 0; exactOutput=true for estate-64, estate-128, heatmap-1000, heatmap-10000; changed=false only for engine/ingame/runtime.js and engine/ingame/map-overlay-scheduler.js; estate/heatmaps changed=true as intended; candidate counters unchanged (neighbors4Calls 4096/16384, distinctScratchBuffers 1; distinctWorldInputs 1 with projections 941/9411)",
+    "in_file_guards": "concurrent-edit and HEAD-freeze assertions passed inside the exit-0 run"
+  },
+  "skip_with_reason": "Post-edit sniper hook requested sniper validation; sniper is lead-owned per executor mandate and no sniper agent is exposed to this sub-agent (ALL_TOOLS has no sniper entry), so it was not launched. A prior cycle logged the same skip-with-reason in estate-split-prd.json.",
+  "exit": "Stop: all mandated checks pass with evidence; lead-owned challenger/sniper pending"
+}

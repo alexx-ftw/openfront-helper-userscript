@@ -1,6 +1,7 @@
 // Offline only: complete native decisions and terminal results, never tactical terminal inference.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import { createHash } from "node:crypto";
 
 export const canonical = (value) =>
@@ -19,6 +20,71 @@ const integer = (value) => Number.isSafeInteger(value) && value >= 0;
 const hex = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const text = (value) => typeof value === "string" && value.trim().length > 0;
 const kind = (event) => event.kind.replace(/^hybrid-combat-/, "");
+
+/** Verify captured supporting-file paths and byte hashes without establishing a new baseline. */
+export function verifySupportingFiles(files = []) {
+  assert.ok(Array.isArray(files), "Malformed supporting files list");
+  const declarations = new Map();
+  const paths = new Map();
+  for (const file of files) {
+    assert.ok(
+      file &&
+        text(file.declaredPath) &&
+        text(file.path) &&
+        hex(file.hash) &&
+        path.isAbsolute(file.declaredPath) &&
+        path.resolve(file.declaredPath) === file.declaredPath &&
+        path.isAbsolute(file.path) &&
+        path.resolve(file.path) === file.path,
+      "Malformed supporting file binding",
+    );
+    const prior = declarations.get(file.declaredPath);
+    assert.ok(
+      !prior || (prior.path === file.path && prior.hash === file.hash),
+      "Conflicting supporting file declaration",
+    );
+    assert.ok(
+      !paths.has(file.path) || paths.get(file.path) === file.hash,
+      "Conflicting supporting file hash",
+    );
+    declarations.set(file.declaredPath, file);
+    paths.set(file.path, file.hash);
+  }
+  for (const file of declarations.values()) {
+    assert.equal(fs.realpathSync(file.declaredPath), file.path, "Supporting file path drift");
+    assert.equal(hash(fs.readFileSync(file.path)), file.hash, "Supporting file byte drift");
+    assert.equal(fs.realpathSync(file.declaredPath), file.path, "Supporting file path drift");
+    assert.equal(fs.realpathSync(file.path), file.path, "Supporting file path drift");
+  }
+  return [...declarations.values()];
+}
+
+/** Require every admission dependency even when a caller drops the optional captured list. */
+export function supportingFilesFor(trajectory) {
+  assert.ok(trajectory && typeof trajectory === "object", "Missing supporting trajectory");
+  const files = verifySupportingFiles(trajectory.supportingFiles);
+  const excluded = [trajectory.excluded, trajectory.context?.coverage?.excluded];
+  for (const entries of excluded) {
+    if (entries === undefined) continue;
+    assert.ok(Array.isArray(entries), "Malformed supporting admission exclusions");
+    for (const entry of entries) {
+      if (entry?.ownerAdmission === undefined) continue;
+      const admission = entry.ownerAdmission;
+      assert.ok(
+        admission &&
+          integer(admission.sequence) &&
+          files.some(
+            (file) =>
+              file.declaredPath === admission.declaredPath &&
+              file.path === admission.path &&
+              file.hash === admission.hash,
+          ),
+        "Missing/conflicting supporting admission proof",
+      );
+    }
+  }
+  return files;
+}
 
 export const PRODUCER_CONTRACT = Object.freeze({
   version: "euler-mcclintock-policy-ledger-v1",
@@ -367,16 +433,20 @@ function validateSequence(selected, selection) {
 function validateBehavior(proposal, decision, requireStochastic, modelIdentity) {
   const tribeChoice = proposal.behaviorPolicy === "deterministic-native-tribe-choice-v1";
   const snapshot = JSON.parse(modelIdentity);
-  if (snapshot.controlProfile === "tribe-only-terminal-v1")
+  if (["tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(snapshot.controlProfile))
     assert.ok(tribeChoice, "Conditional tribe profile cannot control strategic macro actions");
   if (tribeChoice) {
     assert.ok(
-      ["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(snapshot.controlProfile),
+      ["tribe-ranking-v1", "tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(
+        snapshot.controlProfile,
+      ),
       "Tribe choice requires its original model profile",
     );
     assert.equal(
       snapshot.actions.tribeRanking,
-      "native-land-subset-v1",
+      snapshot.controlProfile === "funded-tribe-terminal-v1"
+        ? "native-funded-land-subset-v1"
+        : "native-land-subset-v1",
       "Unknown tribe action contract",
     );
     assert.equal(
@@ -586,6 +656,12 @@ function validateAcceptance(outcome, decision, proposal, accepted) {
 }
 
 function validateReceipt(outcome, decision, accepted, receipt, seenReceipts) {
+  validateReceiptLink(outcome, decision, accepted, receipt);
+  assert.ok(!seenReceipts.has(outcome.receiptID), "Duplicate native receipt across decisions");
+  seenReceipts.add(outcome.receiptID);
+}
+
+function validateReceiptLink(outcome, decision, accepted, receipt) {
   assert.equal(
     receipt.acceptedSequence,
     accepted.sequence,
@@ -602,8 +678,6 @@ function validateReceipt(outcome, decision, accepted, receipt, seenReceipts) {
       receipt.tick <= outcome.outcomeTick,
     "Invalid ordered native receipt reference",
   );
-  assert.ok(!seenReceipts.has(outcome.receiptID), "Duplicate native receipt across decisions");
-  seenReceipts.add(outcome.receiptID);
 }
 
 function excludeAmbiguousDispatch(decision, proposal, linked, state) {
@@ -644,6 +718,8 @@ function excludeAmbiguousDispatch(decision, proposal, linked, state) {
   );
   assert.equal(omissions.length, 1, "Missing/duplicate interval omission proof");
   const omission = omissions[0];
+  if (omission.reason === "observation-pending")
+    return excludeBusyAttack(decision, attempt, omission, state);
   assert.ok(
     omission.reason === "ambiguous-commitment" &&
       omission.targetSmallID === decision.targetSmallID &&
@@ -658,6 +734,170 @@ function excludeAmbiguousDispatch(decision, proposal, linked, state) {
     omissionSequence: omission.sequence,
   });
   return null;
+}
+
+function excludeBusyAttack(decision, attempt, omission, state) {
+  assert.ok(
+    omission.phase === "acceptance" &&
+      omission.tick === decision.tick &&
+      omission.targetSmallID === decision.targetSmallID,
+    "Busy ACT omission scope mismatch",
+  );
+  const owners = state.selected.filter(
+    (event) =>
+      kind(event) === "outcome" &&
+      event.action === "attack" &&
+      event.actionTick <= decision.tick &&
+      event.outcomeTick >= decision.tick &&
+      event.sequence > omission.sequence &&
+      state.selected.some(
+        (accepted) =>
+          kind(accepted) === "accepted" &&
+          accepted.sequence === event.acceptedSequence &&
+          accepted.sequence < attempt.sequence,
+      ),
+  );
+  assert.equal(owners.length, 1, "Missing/ambiguous busy ACT pending owner");
+  const owner = owners[0];
+  const ownerAdmission =
+    owner.learned === false
+      ? validateUncontrolledBusyOwner(owner, decision, attempt, state)
+      : (validateControlledBusyOwner(owner, decision, state), null);
+  validateDispatchSafety(attempt, decision, state);
+  state.excluded.push({
+    decisionStep: decision.step,
+    reason: "censored-busy-act",
+    dispatchID: attempt.dispatchID,
+    omissionSequence: omission.sequence,
+    ownerAcceptedSequence: owner.acceptedSequence,
+    ownerDecisionStep: owner.decisionStep,
+    ...(ownerAdmission ? { ownerAdmission } : {}),
+  });
+  return null;
+}
+
+function validateControlledBusyOwner(owner, decision, state) {
+  assert.ok(
+    integer(owner.decisionStep) &&
+      owner.decisionStep < decision.step &&
+      owner.actorSmallID === decision.actorSmallID &&
+      owner.modelIdentity === decision.modelIdentity &&
+      owner.confirmed === true &&
+      owner.learned === true &&
+      owner.controlledAction === "attack" &&
+      state.seenReceipts.has(owner.receiptID),
+    "Unverified busy ACT owner",
+  );
+}
+
+function validateUncontrolledBusyOwner(owner, decision, attempt, state) {
+  const acceptance = state.selected.filter(
+    (event) => kind(event) === "accepted" && event.sequence === owner.acceptedSequence,
+  );
+  assert.equal(acceptance.length, 1, "Missing uncontrolled busy acceptance");
+  const accepted = acceptance[0];
+  const receipts = state.selected.filter(
+    (event) => kind(event) === "receipt" && event.acceptedSequence === accepted.sequence,
+  );
+  assert.equal(receipts.length, 1, "Missing uncontrolled busy receipt");
+  for (const event of [owner, accepted, receipts[0]]) {
+    validateUncontrolledScope(event, decision.actorSmallID);
+    assert.ok(
+      event.modelIdentity === decision.modelIdentity &&
+        event.runIdentity === state.selection.manifest.runID &&
+        event.episodeId === decision.episodeId &&
+        event.generation === decision.generation &&
+        !state.consumed.has(event),
+      "Uncontrolled busy owner scope mismatch",
+    );
+  }
+  validateUncontrolledOutcome(owner, state.result, false);
+  assert.ok(
+    owner.confirmed === true &&
+      owner.terminal === false &&
+      owner.reason == null &&
+      accepted.sequence < attempt.sequence &&
+      receipts[0].tick <= decision.tick &&
+      !state.seenReceipts.has(owner.receiptID),
+    "Unverified uncontrolled busy owner",
+  );
+  validateUncontrolledBusyAcceptance(owner, accepted, receipts[0]);
+  for (const field of ["gate", "features", "geometry"])
+    exact(owner[field], accepted[field], "Uncontrolled busy accepted features mismatch");
+  validateReceiptLink(
+    owner,
+    { actorSmallID: decision.actorSmallID, tick: owner.actionTick },
+    accepted,
+    receipts[0],
+  );
+  return validateUncontrolledBusyAdmission(owner, state);
+}
+
+function validateUncontrolledBusyAcceptance(owner, accepted, receipt) {
+  assert.ok(
+    accepted.acceptedSequence === accepted.sequence &&
+      accepted.tick === owner.actionTick &&
+      accepted.targetSmallID === owner.targetSmallID &&
+      accepted.reason === "action-accepted" &&
+      receipt.reason === "native-receipt" &&
+      Array.isArray(accepted.attackIds) &&
+      accepted.attackIds.every((id) => typeof id === "string") &&
+      !accepted.attackIds.includes(owner.receiptID),
+    "Unverified uncontrolled busy acceptance/new receipt",
+  );
+}
+
+function validateUncontrolledBusyAdmission(owner, state) {
+  const evaluation = state.result.hybridEvaluation;
+  assert.ok(text(evaluation.attackAdmissionFile), "Missing full native admission file");
+  const declaredPath = path.resolve(evaluation.attackAdmissionFile);
+  const resolvedPath = fs.realpathSync(declaredPath);
+  const bytes = fs.readFileSync(resolvedPath);
+  const rows = bytes
+    .toString("utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(
+    rows.length,
+    evaluation.attackAdmissions?.attempts,
+    "Incomplete native admission file",
+  );
+  assert.ok(
+    rows.every(
+      (row, index) =>
+        row.runIdentity === state.selection.manifest.runID &&
+        integer(row.sequence) &&
+        (index === 0 || row.sequence > rows[index - 1].sequence),
+    ),
+    "Invalid native admission scope/order",
+  );
+  const matched = rows.filter(
+    (row) =>
+      row.emitted === true &&
+      row.phase === "dispatch" &&
+      row.path === "land" &&
+      row.tick === owner.actionTick &&
+      row.actorSmallID === owner.actorSmallID &&
+      row.targetSmallID === owner.targetSmallID,
+  );
+  assert.equal(matched.length, 1, "Missing/ambiguous uncontrolled native admission");
+  const admission = matched[0];
+  assert.ok(
+    admission.forced === false &&
+      admission.reason == null &&
+      Number.isFinite(admission.payloadTroops) &&
+      Number.isFinite(admission.spendableTroops) &&
+      admission.payloadTroops > 0 &&
+      admission.payloadTroops <= admission.spendableTroops,
+    "Unsafe uncontrolled native admission",
+  );
+  const proof = { declaredPath, path: resolvedPath, hash: hash(bytes) };
+  state.supportingFiles = verifySupportingFiles([...state.supportingFiles, proof]);
+  return {
+    ...proof,
+    sequence: admission.sequence,
+  };
 }
 
 function validateDispatchSafety(attempt, decision, state) {
@@ -1109,14 +1349,17 @@ export function validateTrajectory(
   { gammaTick, requireStochastic = false } = {},
 ) {
   const { manifest, snapshot } = validateDataset(dataset, selection);
-  if (snapshot.controlProfile === "tribe-only-terminal-v1") {
+  if (["tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(snapshot.controlProfile)) {
     assert.equal(gammaTick, 1, "Conditional tribe terminal objective requires gammaTick 1");
     exact(
       snapshot.actions,
       {
         macro: [],
         micro: "exact-player-id-land-target",
-        tribeRanking: "native-land-subset-v1",
+        tribeRanking:
+          snapshot.controlProfile === "funded-tribe-terminal-v1"
+            ? "native-funded-land-subset-v1"
+            : "native-land-subset-v1",
         activeHeads: ["target"],
         inactiveHeads: ["wait", "act"],
         strategicMacro: "native-legendary-v1",
@@ -1142,6 +1385,7 @@ export function validateTrajectory(
     requireStochastic,
     consumed: new Set(),
     seenReceipts: new Set(),
+    supportingFiles: [],
   };
   const records = [];
   for (const [step, decision] of decisions.entries()) {
@@ -1189,6 +1433,7 @@ export function validateTrajectory(
       manifest,
       snapshot,
       selection,
+      ...(state.supportingFiles.length ? { supportingFiles: state.supportingFiles } : {}),
     };
   const actors = new Set(records.map((record) => record.actorSmallID));
   assert.equal(actors.size, 1, "Mixed actor trajectory");
@@ -1226,5 +1471,6 @@ export function validateTrajectory(
     probabilityContract: "deterministic-regression-null-v1",
     objective: "monte-carlo-ranking-evaluation-not-ppo",
     performanceClaim: false,
+    ...(state.supportingFiles.length ? { supportingFiles: state.supportingFiles } : {}),
   };
 }

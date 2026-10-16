@@ -1780,6 +1780,26 @@
     "initializerPreview": "{\n    City: { gold: 3, troops: 5, defense: 1 },\n    Factory: { gold: 3, troops: 1, defense: 1 },\n    Port: { gold: 4, troops: 2, defense: 4 },\n    \"Missile Silo\": { gold: 1, troops: 1, defense: 1 },\n    \"SAM Launcher\": { gold: 1, troops:..."
   },
   {
+    "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_ECONOMY_RATE_CACHES#1",
+    "file": "engine/ingame/auto-bot/legendaryPlanner.js",
+    "name": "LEGENDARY_ECONOMY_RATE_CACHES",
+    "declarationKind": "const",
+    "initializerKind": "NewExpression",
+    "initializerHash": "55b98b5f96686f116755c421a6b1e61df60375c426fc98eb3cdcb22b653d5feb",
+    "initializerLength": 13,
+    "initializerPreview": "new WeakMap()"
+  },
+  {
+    "id": "engine/ingame/auto-bot/legendaryPlanner.js:LEGENDARY_TRAIN_UNITS_PER_CONSIST#1",
+    "file": "engine/ingame/auto-bot/legendaryPlanner.js",
+    "name": "LEGENDARY_TRAIN_UNITS_PER_CONSIST",
+    "declarationKind": "const",
+    "initializerKind": "FirstLiteralToken",
+    "initializerHash": "7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451",
+    "initializerLength": 1,
+    "initializerPreview": "7"
+  },
+  {
     "id": "engine/ingame/auto-bot/lifecycle.js:ATOM_MACRO_DIALOG_ID#1",
     "file": "engine/ingame/auto-bot/lifecycle.js",
     "name": "ATOM_MACRO_DIALOG_ID",
@@ -3480,8 +3500,8 @@
     "initializerPreview": "3000"
   },
   {
-    "id": "engine/ingame/estate-panel.js:ESTATE_PANEL_ID#1",
-    "file": "engine/ingame/estate-panel.js",
+    "id": "engine/ingame/estate/constants.js:ESTATE_PANEL_ID#1",
+    "file": "engine/ingame/estate/constants.js",
     "name": "ESTATE_PANEL_ID",
     "declarationKind": "const",
     "initializerKind": "StringLiteral",
@@ -3490,8 +3510,8 @@
     "initializerPreview": "\"openfront-helper-estate-panel\""
   },
   {
-    "id": "engine/ingame/estate-panel.js:ESTATE_PANEL_STYLE_ID#1",
-    "file": "engine/ingame/estate-panel.js",
+    "id": "engine/ingame/estate/constants.js:ESTATE_PANEL_STYLE_ID#1",
+    "file": "engine/ingame/estate/constants.js",
     "name": "ESTATE_PANEL_STYLE_ID",
     "declarationKind": "const",
     "initializerKind": "StringLiteral",
@@ -3500,8 +3520,8 @@
     "initializerPreview": "\"openfront-helper-estate-panel-styles\""
   },
   {
-    "id": "engine/ingame/estate-panel.js:ESTATE_PANEL_POS_KEY#1",
-    "file": "engine/ingame/estate-panel.js",
+    "id": "engine/ingame/estate/constants.js:ESTATE_PANEL_POS_KEY#1",
+    "file": "engine/ingame/estate/constants.js",
     "name": "ESTATE_PANEL_POS_KEY",
     "declarationKind": "const",
     "initializerKind": "StringLiteral",
@@ -3510,8 +3530,8 @@
     "initializerPreview": "\"openfrontHelperEstatePanelPos\""
   },
   {
-    "id": "engine/ingame/estate-panel.js:ESTATE_COMPUTE_MS#1",
-    "file": "engine/ingame/estate-panel.js",
+    "id": "engine/ingame/estate/constants.js:ESTATE_COMPUTE_MS#1",
+    "file": "engine/ingame/estate/constants.js",
     "name": "ESTATE_COMPUTE_MS",
     "declarationKind": "const",
     "initializerKind": "FirstLiteralToken",

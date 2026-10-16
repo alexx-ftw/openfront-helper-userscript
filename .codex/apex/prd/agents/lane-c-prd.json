@@ -1,0 +1,148 @@
+{
+  "agent": "lane-c",
+  "status": "done",
+  "plan": [
+    {
+      "step": "Inspect readers, split pattern, native boundaries; capture baselines",
+      "status": "completed"
+    },
+    {
+      "step": "Byte-preserving hybrid split and exact-edge score correction",
+      "status": "completed"
+    },
+    {
+      "step": "Named eLicit, focused verification, reader scan and handoff",
+      "status": "completed"
+    }
+  ],
+  "baseline": {
+    "node test/hybrid-runtime-integration.mjs": 0,
+    "node test/nuke-economy-policy.mjs": {
+      "exit": 1,
+      "actual": 100000,
+      "expected": 0
+    }
+  },
+  "constraints": [
+    "Only owned files; no build, full suite, SemVer, commit, push or Agent Mail"
+  ],
+  "dependencies": [
+    "Nuke runner pinned hash must be refreshed by its owner",
+    "Nearby incorrect friendly penalty and Hydrogen assertions reside in unowned part-04.mjs"
+  ],
+  "tool_limitations": [
+    "update_plan unavailable; plan tracked here",
+    "fuse-browser unavailable; Context7 consulted; Exa fetch cache hook returned prior official docs"
+  ],
+  "elicitation": {
+    "techniques": [
+      "Regression Analysis",
+      "Boundary Testing"
+    ],
+    "status": "local checks complete; lead acceptance pending",
+    "assertion_integrity": "Seven raw slices concatenate byte-for-byte to the 1293-line pre-split input, SHA256 868db9848b84935d61f4e1f1d3adca1f32c8e17a177d56f7e3430baaf0209464, preserving all 177 assertion callsites and readStructureBehaviorSource before hybridStrategy/context/gameApi/nationExecution. Only owned nuke exact-edge expectation/wording changes.",
+    "findings": [
+      "Part-04 friendly penalty uses <= outerSquared and FRIENDLY_FIRE_PENALTY=3, hence 500*3=1500 at exact edge.",
+      "Part-04 postSalvoHydrogenHasValue also uses <= outerSquared, hence true at exact edge.",
+      "Part-04 and pinned-hash runner are outside this lane write set; left unchanged.",
+      "Read-only diagnostic correcting those two additional expectations reaches unrelated part-18:25 Hard FFA third-player failure, true !== false; not weakened."
+    ],
+    "unresolved": [
+      "Pinned nuke runner hash",
+      "Two incorrect part-04 edge assertions",
+      "Hard FFA third-player assertion in part-18",
+      "Scratch probe still reads deleted monolith; excluded from regular suite and out of scope"
+    ]
+  },
+  "files_modified": [
+    "test/hybrid-runtime-integration.mjs",
+    "test/nuke-economy-policy-parts/part-03.mjs"
+  ],
+  "files_created": [
+    "test/hybrid-runtime-integration-parts/part-01.mjs",
+    "test/hybrid-runtime-integration-parts/part-02.mjs",
+    "test/hybrid-runtime-integration-parts/part-03.mjs",
+    "test/hybrid-runtime-integration-parts/part-04.mjs",
+    "test/hybrid-runtime-integration-parts/part-05.mjs",
+    "test/hybrid-runtime-integration-parts/part-06.mjs",
+    "test/hybrid-runtime-integration-parts/part-07.mjs",
+    ".codex/apex/prd/agents/lane-c-prd.json"
+  ],
+  "files_unchanged": [
+    "test/nuke-economy-policy.mjs",
+    "test/nuke-economy-policy-parts/part-04.mjs",
+    "test/nuke-economy-policy-parts/part-18.mjs",
+    "test/tmp-legendary-probe.mjs",
+    "package.json",
+    "engine/**",
+    "route-expiry lane files",
+    "six economy scenario lane files",
+    "SemVer and build artifacts"
+  ],
+  "line_counts": {
+    "test/hybrid-runtime-integration.mjs": 38,
+    "test/hybrid-runtime-integration-parts/part-01.mjs": 190,
+    "test/hybrid-runtime-integration-parts/part-02.mjs": 190,
+    "test/hybrid-runtime-integration-parts/part-03.mjs": 190,
+    "test/hybrid-runtime-integration-parts/part-04.mjs": 190,
+    "test/hybrid-runtime-integration-parts/part-05.mjs": 190,
+    "test/hybrid-runtime-integration-parts/part-06.mjs": 190,
+    "test/hybrid-runtime-integration-parts/part-07.mjs": 153,
+    "test/nuke-economy-policy-parts/part-03.mjs": 84
+  },
+  "sources_verified": [
+    "Pinned openfront-engine commit f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb: src/core/execution/nation/NationNukeBehavior.ts:726 and src/core/game/GameMap.ts:715-723 prove inclusive score; src/core/execution/NukeExecution.ts:477 proves strict physical deletion.",
+    "Current helper nuke-behavior/part-13.js:85-95 inclusive friendly penalty; part-01.js:69 multiplier 3; part-24.js:28-48 inclusive Hydrogen value.",
+    "Context7 /nodejs/node fresh consultation of https://github.com/nodejs/node/blob/main/doc/api/esm.md: relative file URL resolution and top-level await.",
+    "fuse-browser provider unavailable; Exa fetch blocked by cache hook, which returned official Node ESM documentation cached one hour earlier. No bypass attempted."
+  ],
+  "scan": {
+    "command": "rg -n 'structureBehavior\\.js' test --glob '*.mjs' --glob '*.mts'",
+    "regular_test_current_tree_readers": 0,
+    "remaining_real_reader": "test/tmp-legendary-probe.mjs:2020: scratch probe, explicitly non-scope in current task; not in npm test",
+    "virtual_filenames": "Nine filename labels plus one explanatory comment; no I/O.",
+    "fixture_json": "Historical provenance metadata, not source reader.",
+    "benchmarks": "No structure monolith path. benchmark-runtime-performance.mjs:19-25 uses git show for historical estate/heatmap baseline paths; candidate reads split chunks."
+  },
+  "checks": {
+    "node test/hybrid-runtime-integration.mjs before split": 0,
+    "node test/hybrid-runtime-integration.mjs after split": 0,
+    "node --check --input-type=module (joined hybrid stdin)": 0,
+    "node_modules/.bin/eslint --stdin --stdin-filename test/hybrid-runtime-integration.mjs (joined hybrid stdin)": 0,
+    "node_modules/.bin/eslint test/hybrid-runtime-integration.mjs": 0,
+    "node_modules/.bin/prettier --check test/hybrid-runtime-integration.mjs": 0,
+    "npm run check": 0,
+    "git diff --check -- test/hybrid-runtime-integration.mjs test/hybrid-runtime-integration-parts test/nuke-economy-policy-parts/part-03.mjs": 0,
+    "node test/nuke-economy-policy.mjs after owned correction": {
+      "exit": 1,
+      "reason": "pinned hash mismatch",
+      "actual_sha256": "20dfad265456911ec344323a313b879ef169b3e982ba37a2dadfe8e47124ba35",
+      "expected_sha256": "4b27bcb100b8dd89daff99a8b8fbb415f87ba552c98e139b0a4cbf07304efa87"
+    },
+    "node --input-type=module focused part-01..03 diagnostic": {
+      "exit": 0,
+      "detail": "Prefix through corrected edge assertion plus closing brace; imports resolve to original file URLs; no assertion changes."
+    },
+    "read_only_full_joined_diagnostics": {
+      "exit": 1,
+      "detail": "Actual 1500 vs expected 0 at friendly edge; in-memory correction to 1500 reaches true vs false Hydrogen edge; both corrected only in memory reach true vs false at part-18:25. Not regular-entry acceptance evidence."
+    }
+  },
+  "limitations": [
+    "Raw source slices intentionally need joining; they are not separately parseable modules, following established nuke test pattern.",
+    "tsc covers src/**/*.ts only; tests also checked by actual execution and joined ESLint.",
+    "No production edits, build, full npm test, SemVer, commit, push or Agent Mail.",
+    "Challenger/sniper are lead-owned; not launched by this execution lane.",
+    "Diagnostic scratch snippets had syntax and assumed-multiplier errors; corrected from actual constant before final evidence; no repository modifications resulted."
+  ],
+  "handoff_status": "blocked",
+  "writes_frozen": true,
+  "remaining_issues": [
+    "Pinned nuke runner hash",
+    "Two incorrect part-04 edge assertions",
+    "Hard FFA third-player assertion in part-18",
+    "Scratch probe still reads deleted monolith; excluded from regular suite and out of scope",
+    "Lead challenger and sniper acceptance not run in this lane."
+  ],
+  "exit_contract": "Escalate: all safe authorized lane edits are complete and verified locally; full acceptance is blocked by unowned nuke runner hash, part-04 edge expectations, and unrelated part-18 Hard FFA assertion. Lead integration required."
+}

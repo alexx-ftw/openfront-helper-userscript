@@ -1,0 +1,28 @@
+{
+  "subject": "Enhance/Improve the script's performance",
+  "status": "blocked_scope",
+  "blocked_audit": {"condition": "Pending human decision on modifying existing bot work to resolve failed broad gates", "recurrence": "Unresolved across performance delivery, hook follow-up, and this goal continuation", "independent_work_completed": "Runtime optimizations, measurements, build, scoped reviews, and controlled baseline failure attribution", "remaining_action": "Bot-gate remediation requires the pending scope decision; no authorized source change remains"},
+  "border_comparison": {"status": "validated", "receipt": "docs/runtime-performance-border-baseline-20261014.json", "baseline_predicate": false, "candidate_predicate": false, "both_stop": "bot_dead at tick 2379; zero construction events", "challenger": "01a13862-fef0-7dc0-a2f1-7b063d4e2fc3 CONFIRMED", "sniper": "01a1386c-3467-7b91-9ef9-084f3bcf0085 PASS bounded"},
+  "acceptance": {"scoped_challenger": "CONFIRMED", "scoped_sniper": "PASS with zero introduced errors", "whole_goal": "not complete", "pending_input": "Whether to modify existing bot work to resolve broader failing gates", "publication": "none; uncommitted changes retained"},
+  "evidence": {"benchmark": "docs/runtime-performance-20261014.json", "integration": "docs/runtime-performance-validation-20261014.md", "broad_gates": "failed: pretest construction, headless border pressure, inherited global lint; not accepted as green"},
+  "reviewers": {"challenger": "01a1384e-6f5b-7a33-ac9b-3bde86159179", "sniper": "01a1384e-6dd7-7ff1-aaa4-3b4197b262aa", "border_baseline": "01a13843-b660-7b73-a671-d1c68883ebc0"},
+  "executors": {
+    "estate-performance": {"agent": "01a13835-2380-71b1-b96d-14c5c4099229", "status": "validated", "files": ["engine/ingame/estate-panel.js", "test/estate-neighbor-allocation.mjs"]},
+    "heatmap-performance": {"agent": "01a1382f-0e2b-7643-8514-83d918cf0301", "status": "validated", "files": ["engine/ingame/heatmaps.js", "test/heatmap-projection-allocation.mjs"]},
+    "measurement": {"agent": "01a13848-c8bd-7443-95d9-e73e86c07e67", "status": "validated", "files": ["test/benchmark-runtime-performance.mjs", "docs/runtime-performance-20261014.json", "docs/runtime-performance-20261014.md"]},
+    "integration": {"agent": "01a1383a-24ca-7540-92a2-dcc99bc55c7d", "status": "partial", "files": ["package.json", "openfront-helper.user.js", "openfront-helper.autobot.js", "openfront-helper.build-id.js", "docs/runtime-performance-validation-20261014.md"]}
+  },
+  "criteria": [
+    "Measure baseline and candidate on identical inputs",
+    "Preserve gameplay semantics and unrelated working-tree edits",
+    "Add targeted regression coverage",
+    "Regenerate and verify published userscript artifacts",
+    "Complete independent challenge, verification and sniper checks"
+  ],
+  "analysis": {
+    "explore-codebase": "01a13828-f8d9-7852-9504-71b4db2432e7",
+    "research-expert": "01a13828-f76c-7450-ab26-836fe3d9a7c0",
+    "typescript-expert": "01a13829-007b-7091-abdc-a36a161ec589"
+  },
+  "constraints": ["No bot policy changes", "No foreign edit resets", "No publication"]
+}

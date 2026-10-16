@@ -9640,8 +9640,12 @@ exists, treat the evidence as correctness-only and make no efficacy claim.
   the SAM at a level-3 City, one Silo upgrade intent is emitted, and the Silo
   reaches level 3. Wired into `npm run test:nuke-maps` (768 MiB heap cap) and
   now into the main `npm test` chain before `build-parity`.
-- Operational constraint: this desktop's `chatgpt.slice/chatgpt-backend.slice`
-  cgroup caps at 4 GiB RAM + 1 GiB swap and sits near steady-state ~3.96 GiB.
+- Operational constraint: on 2026-10-13 the live
+  `chatgpt.slice/chatgpt-backend.slice` cgroup reported a 6 GiB RAM cap and a
+  1 GiB swap cap. The gated validator reads `memory.max` and `memory.current`
+  before each step and requires 1.5 GiB free; it uses a 4 GiB fallback only
+  when the cgroup reports no finite maximum. During the parallel evaluation it
+  reached 5.93 GiB with swap full.
   Chained native simulations (tsx + engine + salvo reload windows) pushed it
   over: kernel OOM killed node/bun/git processes at 20:39 and 20:46 on
   2026-10-13. Rule of thumb: run light fixtures first, never chain heavy
@@ -9665,10 +9669,16 @@ function`, `this.player.buildables(...)` TypeError) no longer reproduce:
 - `node scripts/check-build-parity.mjs` passes and
   `openfront-helper-dev.service` is active + enabled, serving the 20:37
   build unchanged.
-- Public-history research: OpenFront exposes no public match-history API;
-  replays are client-side recordings (r/Openfront community answers + a save
-  replay tutorial video). Historical-scenario sourcing therefore stays
-  artificial (the map16x fixtures); there is no external corpus to mine.
+- Public-history status correction: official `docs/API.md` confirms
+  `GET /public/games` (metadata, max 2-day window, up to 1000 rows) and
+  `GET /public/game/:gameId` (full game data; `turns=false` omits replay
+  turns). Historical replay execution also requires its per-game `gitCommit`
+  engine revision, so a replay-derived fixture must preserve that provenance.
+  Thus public historical records do exist; the earlier claim that no
+  API/corpus exists is withdrawn. Direct API requests are not accessible
+  through the available fetch tools in this session, so no replay record has
+  yet been verified or used. Current runnable scenario evidence remains the
+  artificial production-map map16x fixtures.
 - Native Silo fixtures and `npm run check` stay gated on cgroup headroom:
   the process needs well under 3.5 GiB before launch, and the cgroup held
   3.7-4.0 GiB all evening. Evidence remains correctness-only; no efficacy
@@ -9692,3 +9702,133 @@ function`, `this.player.buildables(...)` TypeError) no longer reproduce:
   lines only; JSON re-parsed valid; no double prefixes.
 - If a capped harness turns out to legitimately need more than 768 MiB, raise
   that entry's cap deliberately during the memory-window validation run.
+
+## 2026-10-13 — gated validation runner
+
+- `npm run test:gated` (`scripts/run-gated-validation.mjs`) reads the
+  chatgpt-backend cgroup usage and runs the three native Silo fixtures followed
+  by `npm run check` sequentially with the 768 MiB cap only when at least
+  1.5 GiB of the 4 GiB limit is free; otherwise it prints the current usage
+  and exits 0 without launching anything. The gated path is verified live at
+  3.92-3.93 GiB used; the run path stays pending the memory window.
+- Same-day repo note: the previously dirty shared checkout was committed by a
+  concurrent thread as `e2ce2e40` (1.14.9), folding in the chain caps and
+  ledger updates above; parity and the dev service were re-verified against
+  the new HEAD.
+
+## 2026-10-13 — nuke trade-income target discount (1.14.10 → 1.14.11)
+
+- The first 1.14.10 implementation used mutual `canTrade()` eligibility as
+  a proxy for active income and discounted every Port/Factory. That was too
+  broad: eligibility does not prove a route, and Factories do not pay at
+  train stops. This follow-up tightens the evidence gate.
+- Engine source readback: `PortExecution.tradingPorts()` chooses connected,
+  tradeable destination ports; `TradeShipExecution` assigns the destination
+  as `targetUnit` and pays both endpoints on completion.
+  `TrainStation.TradeStationStopHandler` pays both train owner and station
+  owner at City/Port stops; `FactoryStopHandler` has no payout.
+  `NukeExecution` does not add an embargo (temporary embargo is in
+  `AttackExecution`), so a nuclear strike alone does not prove the route
+  was already severed.
+- The corrected scorer discounts only a City/Port that is the visible
+  `targetUnit` of one of our own active TradeShips or Trains, and only while
+  mutual trading remains allowed. Merely trade-eligible players, foreign
+  carriers, Factories and counterforce targets keep full value. The own
+  carrier list is snapshot-cached once per game tick via the existing
+  `PlayerView.units()` cache, avoiding a lobby-wide traffic scan per nuke
+  candidate.
+- Train execution stores its station route privately; the visible Train unit
+  exposes only its final `targetUnit`, while payouts also occur at
+  intermediate City/Port stops. The current discount is therefore
+  final-target-only and deliberately misses intermediate train income. Do not
+  claim full route accounting without a supported route signal.
+- The 50% reduction is a coarse relative-score heuristic motivated by equal
+  endpoint payouts, not a calibrated estimate of lost gold: actual payouts
+  vary by ship distance and train stop count, while structure scores are
+  fixed per level. Efficacy remains unproven until a paired replay/simulation
+  measures target choices and own trade-gold loss.
+- Regression coverage: no active route => face value; our active ship to a
+  Port and train to a City => half value; foreign ship, Factory, and SAM =>
+  full value; destination cache refreshes each tick. Inactive carriers and a
+  current mutual embargo also restore face value; the expanded focused test
+  passes.
+  the expanded test still needs a run when memory allows. The initial broad
+  version was RED against the no-route case; the corrected implementation
+  passed those core cases. SemVer patch is raised to 1.14.11; rebuilding,
+  parity, expanded-test execution, and full validation remain gated because
+  cgroup headroom is unavailable.
+- Commit gate discovery: this repo's husky pre-commit runs
+  `update-openfront-engine --check && lint-staged && quality:global &&
+quality:logic`, and `quality:logic` is the full `npm test` chain
+  including native simulations. Under the 4 GiB cgroup that makes any
+  commit attempt at high water a cgroup-OOM risk; aborted attempts restore
+  cleanly via lint-staged stash backups. Never bypass with --no-verify;
+  commit only inside the memory window (the same gate as `test:gated`).
+- MIRV boundary: `MirvBehavior` aims with coarse relative structure weights
+  (silo 3 / city 2 / port 2 / factory 1 / SAM 1), not gold prices, and its
+  25M+ shots are victory-denial decisions dominated by counterforce and city
+  prizes. The trade-partner discount applies to the gold-valued nuclear
+  scorer only; porting it into the MIRV weighting would need an observable
+  route/income signal to justify moving those weights.
+- Sweep at high water is unsafe too: a light 512 MiB-capped sequential sweep
+  launched at 3.93 GiB base produced kernel kills mid-run (`memory.events`
+  oom_kill rose during the window) and four transient exit=1/137 results that
+  all passed on individual reruns (`build-parity`, `hybrid-combat`) or
+  were known resource-bound harnesses. Rule: light sweeps only below ~3.85
+  GiB base, and always re-verify exit!=0 results individually before calling
+  them regressions.
+
+## 2026-10-13 — upstream engine drift inventory (openfront-engine submodule)
+
+- The vendored engine (submodule HEAD `f372cdf94`) is 91 commits behind
+  `origin/main` (`ce8cd8ba8`). Upstream moved the nation behaviors to
+  `packages/engine/src/execution/nation/` (split refactor `e82286146`),
+  so future engine updates change import/layout, not just content.
+- Content drift in exactly the files our Legendary bot ports 1:1:
+  `NationNukeBehavior.ts` +606/−154, `NationStructureBehavior.ts`
+  +462/−201, `NationMIRVBehavior.ts` +167/−24. Notable upstream commits:
+  `34a8fe723` smart nuke aiming (no double nukes, no wasted blasts on water
+  or fallout — our port already carries its per-tile value gate via an
+  earlier manual port, but the submodule never moved), `fac309acc`
+  winning-human nations (annexation, economy, defense posts, nukes),
+  `17f45db4d` boat-landing defense, `6437dfe40` small tweaks.
+- Implication: the "faithful 1:1 port" has silently drifted from the live
+  game AI. Realignment is a dedicated project — engine:update (needs a clean
+  submodule), then a hunk-by-hunk audit of the three behavior files against
+  our ports with fresh regression tests per behavior change, then the full
+  native validation chain. Gated on the memory window like everything heavy;
+  do not start it opportunistically.
+- Smart-aim audit closed: upstream `34a8fe723` (#5795) is fully present in
+  our port — `blastHitsFriendlyLand` (14 call sites including pending
+  re-checks), `MIN_BLAST_COVERAGE` + difficulty coverage floors,
+  `FULL_BLAST_COVERAGE_VALUE`, `isNukeAlreadyLandingNear`, and the
+  Impossible per-tile value gate. The pre-5795
+  `isTeammateAlreadyNukingThisSpot` is correctly absent. The remaining
+  behavior gap is `fac309acc` (#5899, 2026-10-13): Hard/Impossible nuke a
+  similarly strong bordering rival and attack the tick the bomb lands,
+  formal retaliation at the sender of flying bombs, teammate-fights-first
+  targeting in team games, most-structures enemy selection, MIRV only for
+  reachable bordering rivals, no hydro-only nations, no rank-2 vendetta, and
+  NationNukeBehavior snapshot v2 with a v1 migration. Its economy half
+  (save timing, multi-level buys, SAM-after-coverage upgrades) also touches
+  our structure/legendary planner. That commit is the real re-port backlog.
+- #5899 overlap matrix (nuke side): retaliation at the sender of flying
+  bombs is effectively covered — `observeHostileNukeThreats` maps each
+  hostile launch to owner + source-silo ids and the priority lanes pin
+  counterforce there; "enemies with the most structures" maps to our
+  `playerStructureValue` ranking. Genuinely missing for our bot: strength/
+  border-matched first-strike selection, teammate-fights-first ordering in
+  team games, and MIRV border/reachability gating. Hydro-only archetypes,
+  the rank-2 vendetta, and NationNukeBehavior snapshot v2 persistence are
+  src nation-pool features with no single-bot counterpart (N/A).
+
+## 2026-10-13 — post-probe SAM-demand fence (1.14.12)
+
+- `maybeUpgradeSiloFromSurplus()` now rechecks `state.nukeWantSlots` after its
+  asynchronous upgrade quotes return. A newly raised SAM-capacity request is
+  left for the route-aware demand lane instead of being consumed by a generic
+  surplus upgrade. The regression failed before the guard and passes after it.
+- The trade-discount fixture now uses a different, tradeable external carrier
+  owner than the destination Port owner. Its assertions pin a provisional
+  score heuristic; they do not estimate route revenue or demonstrate win-rate
+  improvement.

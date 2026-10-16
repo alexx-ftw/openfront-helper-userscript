@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
-const plannerSource = readRepositoryFile("engine/ingame/auto-bot/legendaryPlanner.js");
-const source = readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js");
+const plannerSource = readLegendaryPlannerSource();
+const source = readStructureBehaviorSource();
 const UNIT = {
   City: "City",
   Port: "Port",

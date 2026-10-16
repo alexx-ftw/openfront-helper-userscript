@@ -156,9 +156,12 @@ function validateOptions(options) {
   }
   if (options["control-profile"] !== undefined) {
     assert.ok(
-      ["target-value-v1", "tribe-ranking-v1", "tribe-only-terminal-v1"].includes(
-        options["control-profile"],
-      ),
+      [
+        "target-value-v1",
+        "tribe-ranking-v1",
+        "tribe-only-terminal-v1",
+        "funded-tribe-terminal-v1",
+      ].includes(options["control-profile"]),
       "Unsupported control profile",
     );
     assert.equal(options.policy, "compact-neural", "Control profile requires compact-neural");

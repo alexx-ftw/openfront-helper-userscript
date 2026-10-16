@@ -150,6 +150,28 @@ try {
     /Control profile requires compact-neural/,
   );
   assert.equal(fs.existsSync(path.join(directory, "ridge-profile")), false);
+  const fundedStart = calls.length;
+  await trainAndEvaluate(
+    {
+      ...options,
+      featureProfile: "frontier-v1",
+      controlProfile: "funded-tribe-terminal-v1",
+      out: path.join(directory, "funded-profile"),
+    },
+    {},
+    { evaluate: fake, inspect },
+  );
+  assert.ok(calls.length - fundedStart >= 2);
+  assert.ok(
+    calls
+      .slice(fundedStart)
+      .every(
+        (request) =>
+          request["control-profile"] === "funded-tribe-terminal-v1" &&
+          request["feature-profile"] === "frontier-v1",
+      ),
+    "Funded profile reaches collection and frozen holdout without changing its feature contract",
+  );
 
   await assert.rejects(
     trainAndEvaluate(

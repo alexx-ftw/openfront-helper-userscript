@@ -1,0 +1,66 @@
+{
+  "title": "Legendary Port and nuke test line-ceiling follow-up",
+  "date": "2026-10-16",
+  "scope": [
+    "test/legendary-port-seed-components.mjs",
+    "test/nuke-trade-partner-discount.mjs",
+    "test/helpers/legendary-port-seed-components-fixture.mjs",
+    "test/helpers/nuke-trade-partner-discount-fixture.mjs"
+  ],
+  "owner_correction": "Split every code file in this owned lot above 200 lines, including files already oversized in HEAD; retain exclusive ownership and do not touch other active lots.",
+  "result": {
+    "line_counts": {
+      "test/legendary-port-seed-components.mjs": 106,
+      "test/nuke-trade-partner-discount.mjs": 106,
+      "test/helpers/legendary-port-seed-components-fixture.mjs": 157,
+      "test/helpers/nuke-trade-partner-discount-fixture.mjs": 165
+    },
+    "assertion_tails_byte_exact": {
+      "port_seed": true,
+      "nuke_discount": true
+    },
+    "fixtures_extracted": [
+      "Port component-seed setup and synthetic topology",
+      "Nuke trade-discount scorer setup and isolated worlds"
+    ]
+  },
+  "verification": {
+    "before_edit": {
+      "node test/legendary-port-seed-components.mjs": { "exit": 0, "output": "PASS Legendary Port seeds are component-scoped and quote the selected partner tile" },
+      "node test/nuke-trade-partner-discount.mjs": { "exit": 0, "output": "nuke trade-partner discount tests passed" }
+    },
+    "after_edit": {
+      "node test/legendary-port-seed-components.mjs": { "exit": 0, "output": "PASS Legendary Port seeds are component-scoped and quote the selected partner tile" },
+      "node test/nuke-trade-partner-discount.mjs": { "exit": 0, "output": "nuke trade-partner discount tests passed" },
+      "node --check on all four JS files": 0,
+      "scoped eslint": 0,
+      "scoped prettier --check": 0,
+      "line ceiling and trailing-whitespace check": 0,
+      "assertion-tail byte comparison": 0
+    },
+    "check_note": "An initial custom whitespace check exited 1 because its rstrip expression treated the final letter t as whitespace. The source line had no trailing whitespace; the corrected check exited 0. No assertion or comment was changed.",
+    "git_diff_check": "Not run: the user explicitly prohibited Git operations."
+  },
+  "elicitation": {
+    "techniques": [
+      "CQ-01 Code Review",
+      "TEST-06 Regression Risk",
+      "ARCH-04 File Size Check"
+    ],
+    "findings": [
+      "Fixture setup is isolated in two helpers; test entry assertion tails and order match the pre-split snapshots byte-for-byte.",
+      "All four owned JavaScript files are below the 200-line ceiling and targeted regressions pass."
+    ],
+    "status": "self-review complete, 3 of 3 selected techniques applied"
+  },
+  "unchanged_by_this_follow_up": [
+    "The six economy scenario files and their shared helper from the prior lane",
+    "engine production code, package files, generated userscript artifacts, test/tmp-legendary-probe.mjs, and other active lots"
+  ],
+  "pending": {
+    "owned_oversized_files": [],
+    "other_owned_files_over_200_for_disjoint_assignment": [],
+    "independent_review": "Sniper static checks found no code findings, but its independent-review status was degraded because the agent thread limit prevented review startup; challenger evidence remains lead-owned and pending.",
+    "git_or_cloud_operations": "None performed after the user's instruction; no commit, PR, CI, merge, or tag action was attempted."
+  }
+}

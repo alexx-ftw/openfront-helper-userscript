@@ -6,6 +6,7 @@
 // between the PD32/PD33 enhancements surface as campaign failures.
 
 import assert from "node:assert/strict";
+import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
 import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
 
 const UNIT = {
@@ -63,7 +64,7 @@ executeClassicScript(readRepositoryFile("engine/ingame/shared-utils.js"), sandbo
   filename: "nuke-campaign-shared-utils.vm.js",
 });
 executeClassicScript(
-  readRepositoryFile("engine/ingame/auto-bot/nukeBehavior.js") +
+  readNukeBehaviorSource() +
     "\nglobalThis.__NukeBehavior = NukeBehavior;",
   sandbox,
   { filename: "nuke-campaign.vm.js" },

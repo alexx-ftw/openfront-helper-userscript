@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 
 import { NukeExecution } from "../openfront-engine/src/core/execution/NukeExecution";
 import { UniversalPathFinding } from "../openfront-engine/src/core/pathfinding/PathFinder";
@@ -10,7 +12,7 @@ import {
   unpackMotionPlans,
   type GridPathPlan,
 } from "../openfront-engine/src/core/game/MotionPlans";
-import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { createMaxDifficultyOpponent } from "../scripts/headless/opponent-adapter.js";
 
 const game = await setup(
@@ -54,7 +56,7 @@ for (const missile of missiles) {
   );
 }
 const defense = executeClassicScript(
-  `${readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js")}\nObject.create(StructureBehavior.prototype);`,
+  `${readStructureBehaviorSource()}\nObject.create(StructureBehavior.prototype);`,
   { Difficulty, UNIT: UnitType },
 );
 defense.game = {
@@ -80,7 +82,7 @@ assert.equal(
 const finisherState = { postSalvoHydrogen: { targetTile: target, dueTick: game.ticks() } };
 const view = Object.assign(Object.create(game), { motionPlans: () => plans });
 const nuke = executeClassicScript(
-  `${readRepositoryFile("engine/ingame/auto-bot/nukeBehavior.js")}\nObject.create(NukeBehavior.prototype);`,
+  `${readNukeBehaviorSource()}\nObject.create(NukeBehavior.prototype);`,
   { UNIT: UnitType, Difficulty, state: finisherState },
 );
 Object.assign(nuke, {
@@ -221,7 +223,7 @@ nearSilo.increaseLevel();
 nearSilo.reloadMissile();
 const farSilo = orderPlayer.buildUnit(UnitType.MissileSilo, farTile!, {});
 const orderBehavior = executeClassicScript(
-  `${readRepositoryFile("engine/ingame/auto-bot/nukeBehavior.js")}\nObject.create(NukeBehavior.prototype);`,
+  `${readNukeBehaviorSource()}\nObject.create(NukeBehavior.prototype);`,
   { UNIT: UnitType, Difficulty, within: (value, min, max) => Math.max(min, Math.min(max, value)) },
 );
 orderBehavior.game = Object.assign(Object.create(orderGame), {

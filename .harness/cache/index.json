@@ -1,0 +1,650 @@
+[
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "OpenFront.io GameMap.ts neighbors4(ref out) cardinal N S W E output count mutable map GameView",
+    "hash": "a434acc5",
+    "ts": "2026-10-14T02:11:12Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-14T02:11:31Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "official Node.js performance.now high resolution monotonic timing microbenchmark warmup",
+    "hash": "01f58823",
+    "ts": "2026-10-14T02:13:36Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "Node.js v26.11.1 official documentation new URL relative base fsPromises.cp dereference symlink execFile performance.now",
+    "hash": "7c6a6a1b",
+    "ts": "2026-10-14T02:41:29Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:nodejs.org/docs/latest-v26.x/api/perf_hooks.html performance.now current high resolution millisecond timestamp start current node process site:nodejs.org/docs/latest-v26.x/api/child_process.html execFile shell false cwd",
+    "hash": "7be5be95",
+    "ts": "2026-10-14T02:41:58Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:nodejs.org/api/fs.html fsPromises.mkdtemp fsPromises.cp recursive dereference fsPromises.symlink relative target path parent directory",
+    "hash": "4e7b12aa",
+    "ts": "2026-10-14T02:42:06Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:nodejs.org/docs/latest-v26.x/api fsPromises cp copyFile mkdtemp symlink child_process execFile shell false env NODE_OPTIONS max-old-space-size",
+    "hash": "57b9c0e9",
+    "ts": "2026-10-14T02:57:48Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "Official Node.js v26.11.1 child_process execFile promisified non-zero exit error stdout stderr",
+    "hash": "ae2cf648",
+    "ts": "2026-10-14T03:11:37Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "Official vm module docs for runInNewContext: a test executes extracted classic-script source inside a fresh supplied sandbox context.",
+    "hash": "61b97fbd",
+    "ts": "2026-10-16T00:28:04Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "TC39 ECMAScript function declarations mutable binding reassignment function environment record; Node.js vm runInNewContext sandbox separate context official documentation",
+    "hash": "fb3c24a8",
+    "ts": "2026-10-16T00:28:07Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "vm.runInNewContext and vm.createContext: reusing a supplied sandbox to execute source-extracted classic scripts sequentially, return expression values, and boundary between context globals and the caller's local scope.",
+    "hash": "f98a14a1",
+    "ts": "2026-10-16T00:28:24Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "requestAnimationFrame timer throttling",
+    "hash": "aa460b0f",
+    "ts": "2026-10-16T00:38:09Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "MDN requestAnimationFrame callback frequency display refresh rate not called hidden background tab",
+    "hash": "5dc8ba74",
+    "ts": "2026-10-16T00:38:59Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "MDN setTimeout \"Reasons for delays longer than specified\" minimum delay 4ms nested background tab 1000ms throttled",
+    "hash": "05026b97",
+    "ts": "2026-10-16T00:39:21Z"
+  },
+  {
+    "tool": "mcp__codex_apps__parallel_search__web_fetch",
+    "query": "",
+    "hash": "6c1fb4cc",
+    "ts": "2026-10-16T00:39:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__parallel_search__web_fetch",
+    "query": "",
+    "hash": "6c1fb4cc",
+    "ts": "2026-10-16T00:39:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__parallel_search__web_fetch",
+    "query": "",
+    "hash": "6c1fb4cc",
+    "ts": "2026-10-16T00:39:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__parallel_search__web_fetch",
+    "query": "",
+    "hash": "6c1fb4cc",
+    "ts": "2026-10-16T00:39:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__parallel_search__web_fetch",
+    "query": "",
+    "hash": "6c1fb4cc",
+    "ts": "2026-10-16T00:39:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__parallel_search__web_fetch",
+    "query": "",
+    "hash": "6c1fb4cc",
+    "ts": "2026-10-16T00:39:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__parallel_search__web_fetch",
+    "query": "",
+    "hash": "6c1fb4cc",
+    "ts": "2026-10-16T00:39:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__parallel_search__web_fetch",
+    "query": "",
+    "hash": "6c1fb4cc",
+    "ts": "2026-10-16T00:39:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__parallel_search__web_fetch",
+    "query": "",
+    "hash": "6c1fb4cc",
+    "ts": "2026-10-16T00:39:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "MDN querySelector performance cost selector matching synchronous",
+    "hash": "72cea386",
+    "ts": "2026-10-16T00:40:06Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "Performance.now is monotonic and suitable for elapsed-time windows; URL pathname and search semantics.",
+    "hash": "b49b53f5",
+    "ts": "2026-10-16T03:01:09Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "MDN official documentation Performance.now monotonically increasing timing measurement URL pathname search custom elements DOM classList",
+    "hash": "c19f9103",
+    "ts": "2026-10-16T03:01:10Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "Performance.now monotonic elapsed time and URL pathname/search to classify an in-page route. Include semantics and browser support caveats relevant to a short negative cache.",
+    "hash": "29c313fa",
+    "ts": "2026-10-16T03:01:20Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "Classic browser script execution scope: top-level declarations in consecutive classic scripts share a global lexical environment; monkey-patching a class prototype method and delegating to the captured original with Function.prototype.call.",
+    "hash": "8c637a34",
+    "ts": "2026-10-16T11:35:03Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "Official MDN Web Docs reference on browser classic scripts execution order and JavaScript prototype method replacement preserving this with Function.prototype.call",
+    "hash": "953eec7c",
+    "ts": "2026-10-16T11:35:05Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "Do consecutive classic (non-module) scripts share the global scope, and does replacing a class prototype method in a later script affect instances created before it? Can the original method be captured and delegated with Function.prototype.call?",
+    "hash": "8ed9bdf4",
+    "ts": "2026-10-16T11:35:24Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "developer.mozilla.org Function.prototype.call JavaScript classic scripts share global scope top-level let const global lexical environment",
+    "hash": "9a59c744",
+    "ts": "2026-10-16T11:35:26Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "Compiler API createSourceFile, ScriptKind, parsing diagnostics, and concatenated JavaScript source",
+    "hash": "794609ee",
+    "ts": "2026-10-16T13:10:01Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "Official TypeScript documentation for Compiler API parsing JavaScript source with createSourceFile and parseDiagnostics; exclude blogs and tutorials.",
+    "hash": "3b33e74a",
+    "ts": "2026-10-16T13:10:08Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "Compiler API createSourceFile for JavaScript text, ScriptKind selection, parse diagnostics, and source files containing concatenated scripts",
+    "hash": "e93376c2",
+    "ts": "2026-10-16T13:10:33Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "Official Node.js v26.12 documentation for ECMAScript modules, import.meta.url, top-level await, and the vm module's Script/SourceTextModule distinction.",
+    "hash": "49996433",
+    "ts": "2026-10-16T13:15:19Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "Find the exact official versioned documentation identifier for Node.js 26.12.0, especially API docs for esm and vm.",
+    "hash": "d29dc2dd",
+    "ts": "2026-10-16T13:15:46Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "In the official Node.js v26.12.0 ECMAScript modules documentation, what are the execution requirements and semantics for static import declarations, import.meta.url, and top-level await? Include the exact section names and versioned source URL if available.",
+    "hash": "478a10eb",
+    "ts": "2026-10-16T13:16:01Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "In official Node.js v26.12.0 vm documentation, distinguish vm.Script/runInContext classic scripts from ESM modules and vm.SourceTextModule, especially static imports, top-level lexical bindings, context reuse, and any experimental flags. Include exact section names and versioned URL if available.",
+    "hash": "4be66de7",
+    "ts": "2026-10-16T13:16:01Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:nodejs.org Node.js v26.12.0 vm.Script runInContext SourceTextModule experimental-vm-modules API documentation",
+    "hash": "86f5ea04",
+    "ts": "2026-10-16T13:16:27Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "Official Node.js v26.12.0 release and versioned API docs for ESM import declarations, import.meta.url, top-level await, and node:vm Script versus SourceTextModule.",
+    "hash": "968a85cd",
+    "ts": "2026-10-16T13:16:33Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_fetch_exa",
+    "query": "",
+    "hash": "fe7cde48",
+    "ts": "2026-10-16T13:16:51Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "JavaScript async functions and await suspension/resumption; revalidate shared mutable state after asynchronous wait",
+    "hash": "1cec780f",
+    "ts": "2026-10-16T13:20:09Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "JavaScript async function await suspends execution until the promise settles. How should mutable external state be re-read after await before deciding an action?",
+    "hash": "6ba9e122",
+    "ts": "2026-10-16T13:20:20Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "MDN JavaScript async function await suspends execution until Promise settlement official docs",
+    "hash": "778fd868",
+    "ts": "2026-10-16T13:20:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "await top level modules evaluation",
+    "hash": "e927bd5a",
+    "ts": "2026-10-16T13:22:46Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "Compiler API createSourceFile parse JavaScript module imports",
+    "hash": "8ef76ebd",
+    "ts": "2026-10-16T13:22:47Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:github.com/microsoft/TypeScript/wiki/Using-the-Compiler-API OR site:developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await",
+    "hash": "f94ca8ec",
+    "ts": "2026-10-16T13:23:13Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "/mdn/content JavaScript await async functions suspension microtasks interleaving mutable state",
+    "hash": "cfd9e103",
+    "ts": "2026-10-16T13:25:05Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "JavaScript await operator and async function: suspension until promise settles, even fulfilled promises yield, microtask resumption permits interleaving other code; implications for mutable state read before await and used after await. Official source URLs.",
+    "hash": "f3679cce",
+    "ts": "2026-10-16T13:25:13Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:developer.mozilla.org/en-US/docs/Web/JavaScript/Reference await control flow effects async function execution pauses microtasks",
+    "hash": "fb1ce617",
+    "ts": "2026-10-16T13:25:21Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "JavaScript await async suspension other code runs const object immutable binding snapshot after await",
+    "hash": "a9c36374",
+    "ts": "2026-10-16T13:31:13Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "Explain await and async function suspension/resumption: caller code runs while suspended; after await synchronous statements run until next await. Explain const binding does not make object properties immutable; capturing fresh primitive values after await for validation.",
+    "hash": "ed97882c",
+    "ts": "2026-10-16T13:31:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:eslint.org/docs/latest/rules/require-atomic-updates local variable never accessed outside function await object property false positive",
+    "hash": "e93cc2f3",
+    "ts": "2026-10-16T13:31:28Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "const declaration creates immutable binding not immutable value; object properties can be updated. async functions allowed in classic scripts versus top-level await module only.",
+    "hash": "06e6409c",
+    "ts": "2026-10-16T13:31:41Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await \"Control flow effects\" async function const immutable binding",
+    "hash": "bd5bf39f",
+    "ts": "2026-10-16T13:31:49Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "OpenFront.io v0.34.12 NukeExecution blast radius City population growth rate September 20 2026",
+    "hash": "71de9cc9",
+    "ts": "2026-10-16T14:03:58Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "NukeExecution explosion euclDistFN inner outer City destroy unit strict boundary and DefaultConfig trade ship train spawn rate v0.34.12 September 20 2026",
+    "hash": "d848539c",
+    "ts": "2026-10-16T14:04:12Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "OpenFront v0.34.12 September 20 2026 increase trade ship train spawn rate early mid game",
+    "hash": "778ee732",
+    "ts": "2026-10-16T14:04:21Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "OpenFrontIO v0.34.12 September 20 2026 trade ship train spawn rate Config PortExecution alliance expiry",
+    "hash": "717c03aa",
+    "ts": "2026-10-16T14:13:09Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "At commit f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb (2026-09-29), PortExecution tradingPorts weighted destination selection isFriendly alliance expiry and Config costWrapper Factory Port build versus upgrade cost. Only matching version evidence.",
+    "hash": "db2060d9",
+    "ts": "2026-10-16T14:13:28Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "OpenFrontIO v0.34.12 September 20 2026 increase trade ship train spawn rate",
+    "hash": "48915d49",
+    "ts": "2026-10-16T14:13:36Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "OpenFront.io openfrontio/openfrontio PortExecution trade destination weights building upgrade costs alliance expiry at f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb",
+    "hash": "a12d590f",
+    "ts": "2026-10-16T14:18:55Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "At commit f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb September 29 2026, PortExecution.tradingPorts weighting normalization; DefaultConfig building cost sum levels extra; source owner alliances expiresAt. Need exact source code version not latest.",
+    "hash": "ab130bea",
+    "ts": "2026-10-16T14:19:11Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:github.com/openfrontio/openfrontio \"v0.34.12\"",
+    "hash": "f72baa40",
+    "ts": "2026-10-16T14:19:48Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:github.com/openfrontio/openfrontio \"PortExecution\" \"weightedPorts\"",
+    "hash": "932ac865",
+    "ts": "2026-10-16T14:20:11Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "ECMAScript modules and the built-in node:assert/strict API for standalone test scripts",
+    "hash": "9cf93609",
+    "ts": "2026-10-16T14:25:13Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "ECMAScript module imports and dynamic import() semantics for standalone Node.js test scripts",
+    "hash": "a68860d1",
+    "ts": "2026-10-16T14:25:35Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "OpenFrontIO PortExecution destination weights trade allied non allied totalWeight f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb",
+    "hash": "9a287f40",
+    "ts": "2026-10-16T14:26:38Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "At commit f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb PortExecution tradingPorts weightedPorts proximityBonusPortsNb tradeShipShortRangeDebuff isFriendly canTrade. Need exact implementation and version matching.",
+    "hash": "4a9477f7",
+    "ts": "2026-10-16T14:26:52Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "github OpenFrontIO \"PortExecution\" \"proximityBonusPortsNb\" \"weightedPorts\"",
+    "hash": "38943193",
+    "ts": "2026-10-16T14:27:23Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "node:assert/strict assert.equal numeric assertions ESM",
+    "hash": "e9eae540",
+    "ts": "2026-10-16T14:30:42Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "ES modules dynamic import temporary sibling module relative import resolution top-level await file URL",
+    "hash": "e468b92d",
+    "ts": "2026-10-16T14:31:53Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "ESM relative import specifiers resolve relative to importing file URL; dynamic import file URLs top-level await",
+    "hash": "08b67c46",
+    "ts": "2026-10-16T14:32:06Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "node:assert/strict deepEqual and async assertions in ESM scripts",
+    "hash": "e45153c7",
+    "ts": "2026-10-16T14:32:30Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "assert/strict deepEqual comparisons between objects from different vm contexts; assert.rejects async",
+    "hash": "8f8a9e20",
+    "ts": "2026-10-16T14:32:42Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "site:nodejs.org/api/child_process.html spawnSync status signal error encoding utf8 env",
+    "hash": "888ed3aa",
+    "ts": "2026-10-16T14:42:02Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "Official source or docs for OpenFront engine trade-port route selection, alliance expiry, and nuke blast boundaries",
+    "hash": "c49a7322",
+    "ts": "2026-10-16T15:00:22Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "OpenFront official GitHub source code mechanics for PortExecution tradingPorts canTrade isFriendly route weights and TradeShipExecution source/destination owner payouts; NationNukeBehavior nukeTileScore and NukeExecution tilesToDestroy exact blast radius",
+    "hash": "f42c54a9",
+    "ts": "2026-10-16T15:00:27Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "In NukeExecution.tilesToDestroy and NationNukeBehavior.nukeTileScore, what exact <= or < radius predicates apply at inner and outer blast boundaries, including whether outer-ring tiles are probabilistic? Include source file and line references.",
+    "hash": "f92bcc8e",
+    "ts": "2026-10-16T15:00:40Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "In the authoritative engine source, which player is the source of each PortExecution trade route, how are trading destinations weighted for alliance/friendliness, and what exact owner pair determines whether a route receives the friendly bonus? Include source file and line references.",
+    "hash": "6d30c49d",
+    "ts": "2026-10-16T15:00:42Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__resolve_library_id",
+    "query": "Official Node.js CLI documentation for --check syntax-check behavior and .mjs module classification, including version history.",
+    "hash": "5ad849b7",
+    "ts": "2026-10-16T15:37:00Z"
+  },
+  {
+    "tool": "mcp__codex_apps__context7__query_docs",
+    "query": "For the Node.js CLI, document the behavior of `node --check file.mjs`: does it only parse syntax without executing the file, how is `.mjs` classified as an ES module, and what Node release first added `--check`?",
+    "hash": "71586d84",
+    "ts": "2026-10-16T15:37:16Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "Official Node.js documentation for `node --check` / `-c` syntax checking without execution, the release where the flag was introduced, and `.mjs` ES module classification.",
+    "hash": "22bbaf09",
+    "ts": "2026-10-16T15:37:37Z"
+  },
+  {
+    "tool": "mcp__codex_apps__exa__web_search_exa",
+    "query": "Node.js official docs release history: when unflagged ECMAScript module loading started for `.mjs` (Node 12.17.0 / 13.2.0), and when `--check` was added (Node 4.2.0 / 5.0.0).",
+    "hash": "1192d148",
+    "ts": "2026-10-16T15:39:19Z"
+  }
+]

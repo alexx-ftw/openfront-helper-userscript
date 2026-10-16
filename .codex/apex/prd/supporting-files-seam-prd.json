@@ -1,0 +1,7 @@
+{
+  "n3": {"files": ["scripts/headless/hybrid-trajectory-contract.mjs", "test/hybrid-trajectory-contract.mjs"], "status": "assigned"},
+  "single": {"files": ["scripts/headless/train-hybrid-returns.mjs", "test/hybrid-return-training.mjs"], "status": "assigned"},
+  "batch": {"files": ["scripts/headless/train-hybrid-return-batch.mjs", "test/hybrid-return-batch.mjs"], "status": "assigned"},
+  "criteria": ["actual validated bytes declaredPath/realpath/hash without rebaseline", "pre/post fit and every publication checks", "original four file bindings unchanged", "synthetic TDD and owned cleanup", "immutable JSON validation without fitting old N8", "six-path lint/format, challenger and sniper"],
+  "scope": "Six authorized source/test paths; APEX tracking metadata required by developer."
+}

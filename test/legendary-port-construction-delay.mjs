@@ -1,14 +1,8 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const structureSource = fs.readFileSync(
-  path.join(repoRoot, "engine/ingame/auto-bot/structureBehavior.js"),
-  "utf8",
-);
+const structureSource = readStructureBehaviorSource();
 const sandbox = {
   Difficulty: {
     Easy: "Easy",

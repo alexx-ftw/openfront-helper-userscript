@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -80,10 +81,7 @@ const adapter = fs.readFileSync(path.join(root, "scripts/headless/opponent-adapt
 const headlessModuleScope = JSON.parse(
   fs.readFileSync(path.join(root, "scripts/headless/package.json"), "utf8"),
 );
-const structureBehavior = fs.readFileSync(
-  path.join(root, "engine/ingame/auto-bot/structureBehavior.js"),
-  "utf8",
-);
+const structureBehavior = readStructureBehaviorSource();
 const nationExecution = fs.readFileSync(
   path.join(root, "engine/ingame/auto-bot/nationExecution.js"),
   "utf8",

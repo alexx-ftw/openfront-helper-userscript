@@ -3,15 +3,11 @@
 // arrival queue (applied at tick start), keep the exact birth-only projection
 // when no lifetime data exists, and bound the live-Config call count.
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
-
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const plannerSandbox = {};
-executeClassicScript(read("engine/ingame/auto-bot/legendaryPlanner.js"), plannerSandbox, {
+executeClassicScript(readLegendaryPlannerSource(), plannerSandbox, {
   filename: "legendaryPlanner.js",
 });
 const { legendaryProjectEconomyFleets: projectFleets } = plannerSandbox;
@@ -53,6 +49,24 @@ assert.ok(
   ) < 1e-12,
   "each train spawn adds the seven Train units counted by the live game",
 );
+
+let integerTrainRateCalls = 0;
+plannerSandbox.legendaryExpectedTrainRateAtFleet(1, 2, 4, {
+  trainSpawnRate: () => {
+    integerTrainRateCalls++;
+    return 130;
+  },
+}, new Map());
+assert.equal(integerTrainRateCalls, 1, "integer train stocks need only one live-rate lookup");
+
+const queriedShipStocks = new Set();
+plannerSandbox.legendaryExpectedTradeRateAtFleet(1, 4, {
+  tradeShipSpawnRate: (_rejections, ships) => {
+    queriedShipStocks.add(ships);
+    return 100;
+  },
+}, new Map());
+assert.deepEqual([...queriedShipStocks], [4], "integer trade-ship stocks avoid the next-stock rate");
 
 // ── Causality: zero outflow before the first lifetime elapses. ──
 const causal = project(20, lifetimeInputs(), { trainSpawnRate: linearTrainSpawnRate });
@@ -206,6 +220,28 @@ assert.deepEqual(
   "no route data preserves the birth-only trade-ship projection",
 );
 
+const initialTradeFleet = project(12, {
+  tradeShipCount: 2,
+  fleetProducerSupply: {
+    trainOwners: [],
+    portOwners: [],
+    initialTradeShipRemainingTicks: [3, 8, 20],
+  },
+}, tradeConfig);
+assert.deepEqual(
+  [0, 2, 3, 7, 8, 12].map((tick) => initialTradeFleet.after.tradeShipCounts[tick]),
+  [2, 2, 1, 1, 0, 0],
+  "known in-flight ships leave the global fleet at their projected arrival ticks",
+);
+const unknownInitialTradeFleet = project(12, {
+  tradeShipCount: 2,
+  fleetProducerSupply: { trainOwners: [], portOwners: [] },
+}, tradeConfig);
+assert.ok(
+  unknownInitialTradeFleet.after.tradeShipCounts.every((count) => count === 2),
+  "initial ships without a motion plan remain in the global fleet conservatively",
+);
+
 // ── Deterministic Config-call budget: one shared trade-rate cache per
 // projection (before and after) and one memoized train-rate cache. ──
 const sigmoid = (value) => 1 / (1 + Math.exp(-value));
@@ -322,6 +358,7 @@ assert.ok(
   `the trade-rate cache is shared across before and after (saw ${sharedTradeCalls})`,
 );
 
+// eslint-disable-next-line no-console -- scenario evidence output
 console.log(
   `train-outflow OK (trainSpawnRate calls: ${trainSpawnRateCalls}, tradeShipSpawnRate calls: ${tradeShipSpawnRateCalls})`,
 );

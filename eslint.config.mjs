@@ -49,6 +49,15 @@ export default tseslint.config(
       "jscpd-report/**",
       "dist/**",
       "build/**",
+      // Byte-preserved fragments; only the hash-verified orchestrator joins them.
+      "test/*-parts/**",
+      // SPLIT_GROUP chunks (scripts/build/sources.mjs); concatenated under the
+      // legacy banner at build time, so only the whole file parses.
+      "engine/ingame/auto-bot/legendary-planner/**",
+      "engine/ingame/auto-bot/nuke-behavior/**",
+      "engine/ingame/auto-bot/structure-behavior/**",
+      // Scratch probe, not part of the suite.
+      "test/tmp-legendary-probe.mjs",
     ],
   },
   {
@@ -75,6 +84,22 @@ export default tseslint.config(
       // evaluated correctly one file at a time by ESLint.
       "no-undef": "off",
       "no-unused-vars": "off",
+    },
+  },
+  {
+    files: ["engine/ingame/estate/**/*.js"],
+    rules: {
+      // Shared lexical scope (same rationale as the engine override above): per-file analysis cannot see cross-file let bindings (estatePanelOpen, estateSortDir, estateData, estateIntervalId) declared in estate/constants.js and mutated in estate/panel.js + estate/lifecycle.js.
+      "prefer-const": "off",
+      "sonarjs/no-implicit-global": "off",
+    },
+  },
+  {
+    files: ["engine/ingame/trade-policy/**/*.js"],
+    rules: {
+      // Shared lexical scope (same rationale as the engine override above): per-file analysis cannot see cross-file let bindings (_lastOpenFrontContextDiscoveryAt, _lastOpenFrontContextMissAt) declared in trade-policy/context.js nor the cross-file function bindings (isTeamGame, isAllowedTradePartnerForMyPlayer, getOpenFrontGameContext) consumed across trade-policy/players.js + partners.js + apply.js.
+      "prefer-const": "off",
+      "sonarjs/no-implicit-global": "off",
     },
   },
   ...tseslint.configs.strictTypeChecked.map((config) => ({

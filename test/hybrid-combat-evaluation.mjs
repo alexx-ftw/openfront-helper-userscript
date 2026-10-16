@@ -116,6 +116,22 @@ assert.throws(
     ]),
   /Unsupported control profile/,
 );
+assert.equal(
+  parseArgs([
+    "--collect",
+    "--policy",
+    "compact-neural",
+    "--feature-profile",
+    "frontier-v1",
+    "--control-profile",
+    "funded-tribe-terminal-v1",
+    "--seeds",
+    "funded-control-profile",
+    "--timeout-ms",
+    "100",
+  ])["control-profile"],
+  "funded-tribe-terminal-v1",
+);
 assert.throws(() => validateSeedIdentities(["Aa", "BB"], []), /effective engine PRNG/);
 // Distinct printable hashes 0/1 enter the same actual house PRNG stream.
 const zeroSeed = "ASD[IWW";

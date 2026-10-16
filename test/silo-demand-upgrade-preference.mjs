@@ -13,7 +13,14 @@ const UNIT = {
 };
 const Difficulty = { LEGENDARY: "LEGENDARY" };
 
-function makeWorld({ gold, upgradeCost, routes, canUpgrade = true, stubSpawn = true }) {
+function makeWorld({
+  gold,
+  upgradeCost,
+  routes,
+  canUpgrade = true,
+  stubSpawn = true,
+  includeSecondSilo = false,
+}) {
   let spawnCalls = 0;
   const silo = {
     id: () => 1,
@@ -21,6 +28,8 @@ function makeWorld({ gold, upgradeCost, routes, canUpgrade = true, stubSpawn = t
     isUnderConstruction: () => false,
     tile: () => 100,
   };
+  const secondSilo = { ...silo, id: () => 2, tile: () => 200 };
+  const silos = includeSecondSilo ? [silo, secondSilo] : [silo];
   const owner = { smallID: () => 2 };
   const targetSam = { id: () => "sam1", owner: () => owner, isActive: () => true };
   const state = {
@@ -45,7 +54,7 @@ function makeWorld({ gold, upgradeCost, routes, canUpgrade = true, stubSpawn = t
     config: () => ({ isUnitDisabled: () => false }),
   };
   behavior.player = {
-    units: (type) => (type === UNIT.MissileSilo ? [silo] : []),
+    units: (type) => (type === UNIT.MissileSilo ? silos : []),
     smallID: () => 1,
     isFriendly: () => false,
     isOnSameTeam: () => false,
@@ -71,7 +80,7 @@ function makeWorld({ gold, upgradeCost, routes, canUpgrade = true, stubSpawn = t
       return false;
     };
   }
-  return { behavior, state, emitted, spawn: () => spawnCalls };
+  return { behavior, state, emitted, silos, spawn: () => spawnCalls };
 }
 
 // A stale player-unit snapshot must not turn one accepted build intent into
@@ -126,6 +135,65 @@ function makeWorld({ gold, upgradeCost, routes, canUpgrade = true, stubSpawn = t
   assert.equal(await behavior.maybeUpgradeSiloForNukeDemand(), true);
   assert.equal(emitted.length, 1, "the demanded silo upgrade is emitted");
   assert.equal(spawn(), 0);
+}
+
+// If the quoted Silo loses its route while the quote is pending, re-probe and
+// upgrade another already-owned route-eligible Silo instead of spawning one.
+{
+  const routes = [];
+  const { behavior, emitted, silos, spawn } = makeWorld({
+    gold: 5000n,
+    upgradeCost: 4000n,
+    routes,
+    includeSecondSilo: true,
+  });
+  routes.push(silos[0]);
+  let resolveFirstQuote;
+  let resolveSecondQuote;
+  const quotedSiloIds = [];
+  behavior.buildableForUnits = (candidates) => {
+    quotedSiloIds.push(Array.from(candidates, (candidate) => candidate.id()));
+    const quotes = candidates.map((candidate) => ({
+      canUpgrade: true,
+      cost: 4000n,
+      siloId: candidate.id(),
+    }));
+    if (quotedSiloIds.length === 1) {
+      return new Promise((resolve) => {
+        resolveFirstQuote = () => resolve(quotes);
+      });
+    }
+    if (quotedSiloIds.length === 2) {
+      return new Promise((resolve) => {
+        resolveSecondQuote = () => resolve(quotes);
+      });
+    }
+    return Promise.resolve(quotes);
+  };
+
+  const pendingUpgrade = behavior.maybeUpgradeSiloForNukeDemand();
+  assert.deepEqual(quotedSiloIds, [[1]], "Silo A is quoted while route-eligible");
+  routes.splice(0, routes.length, silos[1]);
+  resolveFirstQuote();
+  await new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+  assert.equal(quotedSiloIds.length, 2, "re-quote Silo B after A becomes blocked");
+  assert.equal(quotedSiloIds[0][0], 1);
+  assert.equal(quotedSiloIds[1][0], 2);
+  assert.equal(
+    await behavior.maybeUpgradeSiloForNukeDemand(),
+    false,
+    "a second pass cannot enter while Silo B's replacement quote is pending",
+  );
+  assert.equal(quotedSiloIds.length, 2, "the pending reservation blocks duplicate quotes");
+  resolveSecondQuote();
+
+  const upgraded = await pendingUpgrade;
+  assert.equal(spawn(), 0, "a newly eligible existing Silo prevents the spawn fallback");
+  assert.equal(upgraded, true, "upgrade the existing Silo that remains route-eligible");
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].siloId, 2, "the upgrade intent targets Silo B");
 }
 
 // An unknown upgrade probe is not proof that another Silo is needed. Preserve

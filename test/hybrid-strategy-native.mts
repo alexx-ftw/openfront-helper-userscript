@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
 import { setup } from "../openfront-engine/tests/util/Setup.ts";
 import { fileURLToPath } from "node:url";
@@ -47,7 +48,7 @@ const sandbox: any = {
   profileStructureAsync: async (_profile, _name, fn) => fn(),
 };
 executeClassicScript(
-  readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js") +
+  readStructureBehaviorSource() +
     "\nwindow.baseStructure=StructureBehavior;",
   sandbox,
 );

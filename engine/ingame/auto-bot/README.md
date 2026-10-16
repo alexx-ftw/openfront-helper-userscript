@@ -50,6 +50,16 @@ and native winner evidence with gammaTick=1; ACT updates are auxiliary and WAIT
 is inactive. Bootstrap tactical counts are not terminal training evidence. No
 default setting or model activation changes with this profile.
 
+The opt-in `funded-tribe-terminal-v1` profile additionally ranks funded alternatives
+when the leading native candidate is excluded. It leaves excluded predecessors
+in their original positions and inserts the selected candidate at the first
+eligible position, before the same boat boundary. Native dispatch still processes
+those predecessors and applies its final reserve, legality and parallel limits.
+This requires a fresh profile-bound model; old profiles keep their existing
+leading-candidate restriction. Additional funding queries may cost time. Its
+unit caller proof establishes selection behavior, not full-match advantage or
+browser smoothness.
+
 The feature contract uses troop-capacity ratios, own/target land fractions,
 incoming pressure, relative armies, capture budget and existing commitments. It
 has no fixed opponent slots or wait sentinel inside a truncated list. A unit ridge

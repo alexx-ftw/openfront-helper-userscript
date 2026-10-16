@@ -1,0 +1,33 @@
+{
+  "agent": "perf-regressions-split",
+  "task": "performance-regressions split (cycle 2 executor mandate)",
+  "status": "done",
+  "handoff_status": "ready_for_review",
+  "writes_frozen": true,
+  "scope": "test/performance-regressions.mjs (same path, behavior-identical runner) and new test/helpers/perf-regressions/; no git actions",
+  "files_modified": [
+    "test/performance-regressions.mjs (824 -> 43 lines: imports + 14 ordered calls + final output line)",
+    "test/helpers/perf-regressions/context.mjs (new, 14: ROOT/enginePath/readEngineSource)",
+    "test/helpers/perf-regressions/source-inspections.mjs (new, 52: warship BFS, cluster publisher, nation tick guard, build-timer interval)",
+    "test/helpers/perf-regressions/shared-utils-cache.mjs (new, 44: getCachedGameUnits per-tick cache)",
+    "test/helpers/perf-regressions/game-api-setup.mjs (new, 107: gameApi/legendaryPlanner sandboxes + horizon assert; returns shared state)",
+    "test/helpers/perf-regressions/game-api-cache.mjs (new, 144: playerView/gameApi snapshot + receiver-sensitive attack asserts)",
+    "test/helpers/perf-regressions/bot-runtime.mjs (new, 94: withTimeout race + profiling percentiles)",
+    "test/helpers/perf-regressions/tick-schedulers.mjs (new, 116: runtime scheduler cadence + engine timer retune)",
+    "test/helpers/perf-regressions/game-loop.mjs (new, 119: round logger lifecycle + heatmap lifecycle engine-loader)",
+    "test/helpers/perf-regressions/overlay-scheduler.mjs (new, 186: setupOverlayScheduler + checkOverlaySchedulerLifecycle)",
+    ".codex/apex/prd/agents/perf-regressions-split-prd.json (this report)"
+  ],
+  "files_unchanged": ["engine/**", "src/**", "build.mjs", "package.json", "all other repo files"],
+  "diff_summary": "Pure ESM cut of the 824-line monolith into 6 topical check modules + 1 context helper + 43-line runner. Every assert message, threshold, and the original top-to-bottom check order preserved; runner calls the 14 checks in the exact original line order (warship, cluster, shared-utils, gameApi setup+cache, withTimeout, nation, profiling, scheduler, build-timer, engine, round-logger, heatmap, overlay). The engine-loader section (9 heatmaps files joined + lifecycle shim appended + executeClassicScript) moved verbatim into game-loop.checkHeatmapLifecycle, invoked by the runner at its original position. gameApi counters recast as a mutable state object shared setup->checks; overlay clocks/counters likewise; zero behavioral change. Temp fix script .codex/apex/fix-escape.mjs was created during repair and deleted; only the PRD remains.",
+  "verification": {
+    "line_counts": "runner 43; modules 186/144/119/116/107/94/52/44/14 — all files <=200, all modules <190",
+    "main_test": "node test/performance-regressions.mjs: exit 0, output exactly: performance regression tests passed",
+    "sibling_tests": "node test/estate-neighbor-allocation.mjs exit 0; node test/heatmap-projection-allocation.mjs exit 0",
+    "eslint": "npx eslint test/performance-regressions.mjs test/helpers/perf-regressions --max-warnings=0: exit 0 (required splitting the overlay function to satisfy max-lines-per-function 150 / max-statements 50)",
+    "prettier": "npx prettier --write then --check on runner + test/helpers/perf-regressions: exit 0",
+    "output_identity": "passing-run stdout identical to the original single final line; no extra console output added anywhere"
+  },
+  "skip_with_reason": "Per-file sniper hooks requested sniper validation on every write; sniper and challenger are lead-owned per the executor contract (never launched by executors) and no sniper launch tool is exposed to this sub-agent, so they were not launched and the skip is logged here.",
+  "exit": "Stop: all mandated checks pass with exit codes on the final on-disk state; lead-owned challenger/sniper gates pending"
+}

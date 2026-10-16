@@ -376,6 +376,55 @@ const OCEAN = -1;
   const config = {
     tradeShipSpawnRate: (_rejections, ships) => (ships < 1 ? 1 : 10),
   };
+  const oldRoutes = [{ weight: 1, distance: 1 }];
+  const normalizedOldRoutes = sandbox.legendaryNormalizedTradeRoutes(oldRoutes);
+  const oldKey = sandbox.legendaryTradeReplacementKey("1", 1, 0, oldRoutes);
+  assert.equal(
+    sandbox.legendaryTradeReplacementKey("1", 1, 0, normalizedOldRoutes),
+    oldKey,
+    "replacement keys accept both source-distance and normalized travel-tick routes",
+  );
+  const fractionalRoutes = [
+    { weight: 1 / 7, distance: 1 },
+    { weight: 6 / 7, distance: 3 },
+  ];
+  const groupedFractionalRoutes = sandbox.legendaryTradePortCohorts([{
+    ownerId: "1",
+    ports: Array.from({ length: 3 }, () => ({
+      level: 1,
+      readyAtTicks: 0,
+      count: 1,
+      routes: sandbox.legendaryNormalizedTradeRoutes(fractionalRoutes),
+    })),
+  }])[0];
+  assert.equal(
+    sandbox.legendaryTradeReplacementKey("1", 1, 0, fractionalRoutes),
+    sandbox.legendaryTradeReplacementKey(
+      "1",
+      groupedFractionalRoutes.level,
+      groupedFractionalRoutes.readyAtTicks,
+      groupedFractionalRoutes.routes,
+    ),
+    "cohort summation roundoff does not prevent a fractional route from being replaced",
+  );
+  const untouchedOwnerCohorts = sandbox.legendarySubstitutedTradePortCohorts(
+    ["1", "2"].map((ownerId) => ({
+      ownerId,
+      ports: [{
+        level: 1,
+        readyAtTicks: 0,
+        count: 1,
+        routes: normalizedOldRoutes,
+      }],
+    })),
+    [{ ownerId: "1", beforeKey: oldKey }],
+  );
+  assert.equal(
+    untouchedOwnerCohorts.reduce((total, cohort) => total + cohort.count, 0),
+    1,
+    "rerouting one owner's cohort removes only that owner's old schedule",
+  );
+
   const rerouteCandidate = {
     portReadyAt: 0,
     portRoutes: [{ weight: 1, distance: 100 }],
@@ -1383,7 +1432,65 @@ const portCandidates = async (behavior) =>
   );
 }
 
-// A 25-site, match-length decision projects no more than two route signatures.
+// Candidate projections must replace an existing source Port's previous route
+// when the candidate adds a new eligible destination on shared water.
+{
+  const profile = {
+    placementTile: 30,
+    routes: [{ weight: 1, distance: 4, teamGoldPerArrival: 100, postAllianceGoldPerArrival: 100 }],
+    inboundSources: [{
+      ownerId: "2",
+      level: 1,
+      constructionDelayTicks: 0,
+      beforeProfile: { routes: [{ weight: 1, distance: 1 }] },
+      afterProfile: { routes: [{ weight: 1, distance: 4 }] },
+    }],
+  };
+  const inputs = {
+    tradeShipCount: 0,
+    hasCompletedTradePartner: true,
+    fleetProducerSupply: {
+      portOwners: [{
+        ownerId: "2",
+        ports: [{ level: 1, readyAtTicks: 0, routes: [{ weight: 1, distance: 1 }] }],
+      }],
+      trainOwners: [],
+    },
+    portCandidateProfiles: [profile],
+  };
+  const config = {
+    unitInfo: () => ({ constructionDuration: 1 }),
+    tradeShipSpawnRate: () => 10,
+    tradeShipGold: () => 100,
+  };
+  const projectedInbound = [];
+  const originalProject = sandbox.legendaryProjectEconomyFleets;
+  sandbox.legendaryProjectEconomyFleets = (baseline, liveConfig, horizon, candidate) => {
+    if (candidate?.portReadyAt !== undefined) {
+      projectedInbound.push(candidate.portInboundSources ?? []);
+    }
+    return originalProject(baseline, liveConfig, horizon, candidate);
+  };
+  try {
+    sandbox.legendaryEconomyNetGold(UNIT.Port, {
+      cost: 1,
+      horizonTicks: 12,
+      inputs,
+      config,
+    });
+  } finally {
+    sandbox.legendaryProjectEconomyFleets = originalProject;
+  }
+  assert.ok(projectedInbound.some((sources) =>
+    sources.some((source) =>
+      source.ownerId === "2" &&
+      source.routes[0]?.distance === 4 &&
+      source.beforeRoutes?.[0]?.distance === 1,
+    ),
+  ), "candidate fleet scenarios carry both the new and prior schedule for each rerouted source");
+}
+
+// A 25-site, match-length decision counterfactually projects every route signature.
 {
   const profiles = Array.from({ length: 25 }, (_, index) => ({
     placementTile: index + 100,
@@ -1426,8 +1533,98 @@ const portCandidates = async (behavior) =>
     sandbox.legendaryProjectEconomyFleets = project;
   }
   assert.ok(
-    candidateProjectionCount <= 2,
-    `25 distinct placement profiles stay within two full fleet projections (got ${candidateProjectionCount})`,
+    candidateProjectionCount === profiles.length,
+    `25 distinct placement profiles all receive a full fleet projection (got ${candidateProjectionCount})`,
+  );
+}
+
+{
+  const makeRoutes = (weight, count) => Array.from({ length: count }, () => ({
+    weight,
+    distance: 2,
+    teamGoldPerArrival: 500,
+    postAllianceGoldPerArrival: 500,
+  }));
+  const profiles = [
+    { placementTile: 201, routes: makeRoutes(1, 1), teamGoldPerArrival: 500 },
+    { placementTile: 202, routes: makeRoutes(0.5, 2), teamGoldPerArrival: 500 },
+    { placementTile: 203, routes: makeRoutes(0.25, 4), teamGoldPerArrival: 500 },
+  ];
+  const order = profiles.slice().sort((left, right) => {
+    const a = sandbox.legendaryPortCandidateProjectionSignature(left);
+    const b = sandbox.legendaryPortCandidateProjectionSignature(right);
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
+  const winner = order.at(-1);
+  const winnerSignature = sandbox.legendaryPortCandidateProjectionSignature(winner);
+  const inputs = {
+    tradeShipCount: 0,
+    hasCompletedTradePartner: true,
+    fleetProducerSupply: { portOwners: [], trainOwners: [] },
+    portCandidateProfiles: profiles,
+    portProjectionProfile: profiles[1],
+  };
+  const config = {
+    unitInfo: () => ({ constructionDuration: 1 }),
+    tradeShipSpawnRate: (_rejections, ships) => 100 + ships * 100,
+  };
+  const evaluated = new Set();
+  const project = sandbox.legendaryProjectEconomyFleets;
+  sandbox.legendaryProjectEconomyFleets = (fleetInputs, liveConfig, horizon, candidate) => {
+    const result = project(fleetInputs, liveConfig, horizon, candidate);
+    if (candidate?.portReadyAt === undefined) return result;
+    const signature = sandbox.legendaryPortCandidateProjectionSignature(candidate);
+    evaluated.add(signature);
+    const stock = signature === winnerSignature ? 0 : 500;
+    return {
+      ...result,
+      after: {
+        ...result.after,
+        tradeShipCounts: new Array(horizon + 1).fill(stock),
+      },
+    };
+  };
+  let selected;
+  try {
+    selected = sandbox.legendaryEconomyNetGold(UNIT.Port, {
+      cost: 1,
+      horizonTicks: 80,
+      inputs,
+      config,
+    });
+  } finally {
+    sandbox.legendaryProjectEconomyFleets = project;
+  }
+  assert.equal(order.indexOf(winner), 2, "the winning route sorts third in preliminary order");
+  assert.equal(evaluated.size, profiles.length, "all three route signatures are counterfactually scored");
+  assert.equal(
+    selected.portPlacementTile,
+    winner.placementTile,
+    "the third-ranked route wins when its counterfactual fleet saturation is best",
+  );
+}
+
+{
+  const { behavior } = portScenario({ others: [], shared: new Set(), horizonTicks: 80 });
+  const ship = { id: () => 9001 };
+  behavior.game.ticks = () => 100;
+  behavior.game.units = (type) => type === UNIT.TradeShip ? [ship] : [];
+  behavior.game.motionPlans = () => new Map([[
+    ship.id(),
+    { startTick: 102, ticksPerStep: 1, path: new Uint32Array([10, 11, 12]) },
+  ]]);
+  const inputs = behavior.legendaryEconomyInputs({
+    trainCount: 0,
+    tradeShipCount: 1,
+    hasTradePartner: false,
+    hasCompletedTradePartner: false,
+    connectedStops: 0,
+    horizonTicks: 80,
+  });
+  assert.deepEqual(
+    Array.from(inputs.fleetProducerSupply.initialTradeShipRemainingTicks),
+    [4],
+    "starting trade ships use their live motion-plan arrival tick",
   );
 }
 

@@ -3,7 +3,9 @@
 // coverage that appears while the async buildability probe is running.
 
 import assert from "node:assert/strict";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const UNIT = {
   City: "City",
@@ -82,8 +84,8 @@ const reserveSandbox = {
 reserveSandbox.globalThis = reserveSandbox;
 executeClassicScript(
   `${readRepositoryFile("engine/ingame/shared-utils.js")}
-${readRepositoryFile("engine/ingame/auto-bot/legendaryPlanner.js")}
-${readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js")}
+${readLegendaryPlannerSource()}
+${readStructureBehaviorSource()}
 globalThis.__StructureBehavior = StructureBehavior;`,
   reserveSandbox,
   { filename: "mirv-reserve.vm.js" },

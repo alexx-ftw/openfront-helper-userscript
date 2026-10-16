@@ -1,0 +1,60 @@
+{
+  "task": "nuke-split-test-closure-20261016",
+  "subject": "Migrate tests to split nuke behavior sources and preserve native scoring boundary semantics",
+  "owner_corrections": [
+    "Keep engine behavior unchanged; preserve the native bot's inclusive structure-scoring boundary.",
+    "Use the existing shared test source loader and keep every edit within exclusive file ownership.",
+    "Do not commit or push from executor agents."
+  ],
+  "analysis_evidence": {
+    "caller_search": "rg identified seven live test consumers that still read the deleted engine/ingame/auto-bot/nukeBehavior.js banner path.",
+    "challenge": "Fresh challenger confirmed the direct test/legendary.mjs read is stale and refuted the claim that the boundary failure is a new source regression.",
+    "native_source": "Vendored OpenFront commit f372cdf9451cd8c3dc113aaaf8641e2609e2d3cb uses euclDistFN's inclusive <= predicate in NationNukeBehavior scoring; NukeExecution separately uses strict < for unit deletion.",
+    "expected_baseline": "git show HEAD:test/nuke-economy-policy.mjs had expected the inclusive 100000 score at the exact outer boundary."
+  },
+  "analysis_agents": {
+    "explore_codebase": {"agent": "01a144e5-bbf5-7cd2-ae7f-700f147654e1", "status": "in_progress"},
+    "research_expert": {"agent": "01a144e5-ba89-7ca0-a06d-e51bad51f291", "status": "in_progress"},
+    "typescript_domain": {"agent": "01a144e5-c34a-7671-9d6b-3b29b77febcb", "status": "in_progress"}
+  },
+  "agents": {
+    "test_readers_legacy": {
+      "agent": "assigned",
+      "files_owned": [
+        "test/legendary.mjs",
+        "test/legendary-recent-penalty.mjs",
+        "test/nuke-salvo-recheck.mjs"
+      ],
+      "status": "assigned"
+    },
+    "test_readers_nuke": {
+      "agent": "assigned",
+      "files_owned": [
+        "test/nuke-campaign-scenario.mjs",
+        "test/nuke-launch-stagger-fixture.mts",
+        "test/nuke-trade-partner-discount.mjs",
+        "test/nuke-trajectory-sam-coverage.mjs"
+      ],
+      "status": "assigned"
+    },
+    "boundary_expectation": {
+      "agent": "assigned",
+      "files_owned": [
+        "test/nuke-economy-policy-parts/part-03.mjs"
+      ],
+      "status": "assigned"
+    }
+  },
+  "acceptance": [
+    "All seven live test consumers import and call readNukeBehaviorSource from test/helpers/nuke-behavior-source.mjs.",
+    "The exact-boundary score remains 100000 and its assertion text explains that the bot scorer follows inclusive euclDistFN semantics.",
+    "No engine runtime source is changed.",
+    "The seven focused consumer tests and node test/nuke-economy-policy.mjs pass.",
+    "Scoped ESLint and the full project test/verification gates pass."
+  ],
+  "forbidden": [
+    "Do not read or stage test/tmp-legendary-probe.mjs.",
+    "Do not modify engine/ingame/auto-bot/nuke-behavior/*.js.",
+    "Do not commit, push, create a PR, or merge."
+  ]
+}

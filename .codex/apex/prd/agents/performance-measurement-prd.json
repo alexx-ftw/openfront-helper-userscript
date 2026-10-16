@@ -1,0 +1,99 @@
+{
+  "task": "runtime-performance-20261014",
+  "status": "done",
+  "handoff_status": "ready_for_review",
+  "writes_frozen": true,
+  "plan": [
+    {
+      "step": "Build isolated benchmark and semantic assertions",
+      "status": "completed"
+    },
+    {
+      "step": "Await parent source-writer freeze",
+      "status": "completed"
+    },
+    {
+      "step": "Run two balanced measurements and write evidence",
+      "status": "completed"
+    },
+    {
+      "step": "Relocate benchmark and remove forbidden dependency",
+      "status": "completed"
+    },
+    {
+      "step": "Refresh balanced receipts and isolated timing regression evidence",
+      "status": "completed"
+    }
+  ],
+  "tracking": "update_plan tool unavailable; scoped plan recorded here",
+  "files_modified": [
+    "scripts/benchmark-runtime-performance.mjs (moved; old path absent)",
+    "test/benchmark-runtime-performance.mjs",
+    "docs/runtime-performance-20261014.json",
+    "docs/runtime-performance-20261014.md",
+    "docs/runtime-performance-validation-20261014.md",
+    ".codex/apex/prd/agents/performance-measurement-prd.json"
+  ],
+  "files_unchanged": [
+    "engine/",
+    "test/estate-neighbor-allocation.mjs",
+    "test/heatmap-projection-allocation.mjs",
+    "test/structure-performance-regressions.mjs",
+    "test/helpers/classic-script.mjs",
+    "package.json",
+    "dependency-cruiser.config.mjs",
+    "build artifacts"
+  ],
+  "acceptance_owner": "parent challenger and sniper",
+  "readiness": "200 physical lines; node --check, scoped eslint --max-warnings=0 and prettier --check passed. npm run check passed (src TS only). Four bounded fixtures: estate 64/128 and heatmap 1000/10000; no extra helper or dependency.",
+  "preliminary": "Initial run failed on missing localStorage sandbox stub; fixed minimal localStorage/document listener stubs. Subsequent full-source preliminary run exited 0 with exact-output assertions, before final simplification; preliminary timings discarded. A later preliminary subprocess exceeded the initial wait and its receipt was not retained; no benchmark process remains.",
+  "elicitation": {
+    "techniques": ["RegressionAnalysis"],
+    "findings": "Original benchmark compared to relocated bytes: only the helper import changed, 200 lines; root resolution/body/fixtures/order/assertions unchanged. Raw receipt medians/P95/max recomputed; original full receipt retained without relabeling. Source/package/artifact hashes unchanged; isolated timing rerun does not prove noise root cause.",
+    "status": "no unresolved relocation finding; lead acceptance pending"
+  },
+  "sources_verified": [
+    "Lead Analyze trio and 2026-10-14 W3C hr-time-3/TC39/WebKit evidence reused",
+    "https://nodejs.org/api/perf_hooks.html#performancenow freshly opened; Node 26.11.1 documentation",
+    "Parent research 01a13848-c7a3-7603-8de8-002542db2595 completed capture 2026-10-14T02:42:06Z: Node 26.11.1 official URL/perf/fs via Exa and parent web fallback; same-depth ../ root assertion"
+  ],
+  "providers": "fuse-browser unavailable; Context7 not connected; lead official Node Exa evidence reused; fresh official Node docs via web fallback",
+  "final_measurement": {
+    "command": "node test/benchmark-runtime-performance.mjs",
+    "exit_codes": [0, 0],
+    "starts_utc": ["2026-10-14T02:42:36.457Z", "2026-10-14T02:42:48.849Z"],
+    "raw_samples_available": true,
+    "receipt": "docs/runtime-performance-20261014.json",
+    "summary": "docs/runtime-performance-20261014.md",
+    "source_hashes_match": true,
+    "exact_output": "All four fixtures passed for both variants in both processes",
+    "interpretation": "Estate 35.7008–43.1374% lower local synthetic median time; heatmap direction inconsistent. No idle-host claim.",
+    "freeze": "Source/artifact hashes unchanged before/after; sequential runs; no concurrent test process observed.",
+    "benchmark_sha256": "6fa5620c36c0b7052bba1658eecae55cc7325be13bedf20bea5c84417fc0eaf8"
+  },
+  "documentation_followup": "Relocation and refreshed receipts complete; complete historical original receipt retained under historicalReceipt. Writers frozen.",
+  "remaining_issues": "Parent challenger/sniper still pending. Existing pretest/headless/global lint failures retained; host loaded, not fully idle.",
+  "limits": "No build/Git/publication/nested delegation/foreign fixes; no engine/package/allocation-test edits. Post-edit sniper hook recorded for parent, local source search unavailable; no acceptance self-claim.",
+  "verification": {
+    "dependency_red": {
+      "exit": 1,
+      "finding": "no-test-imports-in-production scripts/benchmark-runtime-performance.mjs -> test/helpers/classic-script.mjs"
+    },
+    "dependency_green": {
+      "exit": 0,
+      "modules": 265,
+      "dependencies": 929
+    },
+    "syntax_exit": 0,
+    "eslint_exit": 0,
+    "prettier_exit": 0,
+    "typecheck_exit": 0,
+    "benchmark_exits": [0, 0],
+    "structure_isolated_exit": 0,
+    "structure_fingerprint_ms": 5.1,
+    "prior_structure_failure": "Parent sniper 50.1 ms threshold failure retained; threshold unchanged; one isolated rerun only",
+    "full_pretest_exit": 1,
+    "headless_exit": 1,
+    "global_lint_exit": 2
+  }
+}

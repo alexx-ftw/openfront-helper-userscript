@@ -1,19 +1,20 @@
-// Scenario suite for the seven documented edge cases of the Legendary
+// Scenario suite for the eight documented edge cases of the Legendary
 // economic policy (seed pairs, paid-stop networks, saturation, troop cap,
 // upgrade vs new build, horizon gates, personal affordability). It exercises
 // the live planner functions exactly like test/legendary.mjs and prices the
 // saturation scenarios with the live openfront-engine Config.
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
 
 const plannerSandbox = {};
-executeClassicScript(read("engine/ingame/auto-bot/legendaryPlanner.js"), plannerSandbox, {
+executeClassicScript(readLegendaryPlannerSource(), plannerSandbox, {
   filename: "legendaryPlanner.js",
 });
 assert.equal(
@@ -61,7 +62,7 @@ const scenario = (name, test) => {
   scenarios.push(name);
 };
 
-const structureSource = read("engine/ingame/auto-bot/structureBehavior.js");
+const structureSource = readStructureBehaviorSource();
 const structureSandbox = {
   Difficulty: { Impossible: "Impossible" },
   GameMode: { Team: "Team" },
@@ -89,7 +90,7 @@ const nukePathSandbox = {
 };
 nukePathSandbox.globalThis = nukePathSandbox;
 executeClassicScript(
-  read("engine/ingame/auto-bot/nukeBehavior.js") +
+  readNukeBehaviorSource() +
     "\nglobalThis.__ScenarioUniversalPathFinding = UniversalPathFinding;",
   nukePathSandbox,
   { filename: "nukeBehavior-pathfinder.js" },

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
@@ -13,10 +14,7 @@ const PORT_UTIL_SOURCE = fs.readFileSync(
   path.join(ROOT, "engine/ingame/auto-bot/portutil.js"),
   "utf8",
 );
-const STRUCTURE_SOURCE = fs.readFileSync(
-  path.join(ROOT, "engine/ingame/auto-bot/structureBehavior.js"),
-  "utf8",
-);
+const STRUCTURE_SOURCE = readStructureBehaviorSource();
 
 const UNIT = {
   City: "City",

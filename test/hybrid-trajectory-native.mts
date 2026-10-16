@@ -40,10 +40,18 @@ assert.equal(
 assert.ok(process.env.OFH_NATIVE_TRAJECTORY_OUT, "Declare a new retained evidence directory");
 const controlProfile = process.env.OFH_NATIVE_TRAJECTORY_CONTROL_PROFILE;
 assert.ok(
-  controlProfile === undefined || controlProfile === "tribe-only-terminal-v1",
+  controlProfile === undefined ||
+    ["tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(controlProfile),
   "Unknown native trajectory profile",
 );
-const tribeOnly = controlProfile === "tribe-only-terminal-v1";
+const tribeOnly =
+  controlProfile !== undefined &&
+  ["tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(controlProfile);
+const batchMode = process.env.OFH_NATIVE_TRAJECTORY_BATCH === "1";
+assert.ok(!batchMode || tribeOnly, "Native batch fixture requires native-macro terminal profile");
+const frozenSeeds = batchMode
+  ? ["trajectory-native-batch-frozen-1", "trajectory-native-batch-frozen-2"]
+  : ["trajectory-native-frozen"];
 const profileOptions = tribeOnly ? { "control-profile": controlProfile } : {};
 const gammaTick = tribeOnly ? 1 : 0.9;
 const out = path.resolve(process.env.OFH_NATIVE_TRAJECTORY_OUT);
@@ -71,10 +79,12 @@ const declaration = {
     ? {
         controlProfile,
         gammaTick,
+        tribeChoiceScenario: "all-funded native candidates; no blocked-leader guard proof",
         passiveTribes: "remove only actual spawned TribeExecution; retain PlayerExecution",
         waitNation: { type: "Nation", tile: [20, 0], passive: true },
         freeLandBudget: "eight native frontier capture losses plus one troop",
         refreshWallBoundMs: 60000,
+        ...(batchMode ? { batchMode: true, frozenSeeds } : {}),
       }
     : {}),
   targetTroops: 1,
@@ -566,11 +576,9 @@ const nativeRunner = async ({ seed, mode, learning, modelPath, bundlePath, runID
   }
 };
 
-const cohorts = (seed: string) => ({
+const cohorts = (seeds: string[]) => ({
   version: 1,
-  cells: [
-    { name: "declared-native-tiny", seeds: [seed], expected: { map: "native-tiny-trajectory" } },
-  ],
+  cells: [{ name: "declared-native-tiny", seeds, expected: { map: "native-tiny-trajectory" } }],
 });
 const online = await evaluate(
   {
@@ -579,7 +587,7 @@ const online = await evaluate(
     "feature-profile": "frontier-v1",
     ...profileOptions,
     seeds: ["trajectory-native-bootstrap"],
-    cohorts: cohorts("trajectory-native-bootstrap"),
+    cohorts: cohorts(["trajectory-native-bootstrap"]),
     timeoutMs: 60000,
     out: path.join(out, "bootstrap"),
   },
@@ -595,8 +603,8 @@ const evaluated = await evaluate(
     "feature-profile": "frontier-v1",
     ...profileOptions,
     model: collected,
-    seeds: ["trajectory-native-frozen"],
-    cohorts: cohorts("trajectory-native-frozen"),
+    seeds: frozenSeeds,
+    cohorts: cohorts(frozenSeeds),
     timeoutMs: 60000,
     out: path.join(out, "frozen"),
   },
@@ -639,20 +647,68 @@ const selection = {
 const contract = loadNativeContract();
 const validationOptions = { gammaTick, requireStochastic: false };
 const trajectory = validateTrajectory(dataset, selection, nativeRun, validationOptions);
-const trainingRecords: Array<{ action: string; actionTick: number }> = trajectory.records;
 assert.equal(trajectory.trainable, true);
 assert.ok(trajectory.records.some((row: { action: string }) => row.action === "attack"));
 const before = canonical(trajectory.snapshot);
-const fitted = fitTrajectory(trajectory, contract);
+const batchTrajectories = [trajectory];
+if (batchMode) {
+  assert.equal(evaluated.report.counts.success, 6, "Both complete native paired episodes required");
+  const secondRun = evaluated.report.runs.find(
+    (run) => run.mode === "learned" && run.launch.seed === frozenSeeds[1],
+  );
+  assert.ok(secondRun?.frozenVerified && secondRun.provenanceMatches);
+  assert.equal(secondRun.code, 0);
+  assert.equal(secondRun.interrupted, false);
+  assert.equal(secondRun.launch.learning, false);
+  assert.equal(secondRun.result.hybridCombat.learning, false);
+  assert.equal(secondRun.result.hybridCombat.diagnostics.learning, false);
+  assert.equal(secondRun.start.seed, secondRun.launch.seed);
+  assert.equal(secondRun.start.engineFingerprint.revision, secondRun.launch.engineRevision);
+  assert.equal(secondRun.start.engineFingerprint.diffHash, secondRun.launch.engineDiffHash);
+  assert.equal(secondRun.start.mapFingerprint, secondRun.launch.mapFingerprint);
+  const secondFirst = dataset.records.find(
+    (row) =>
+      row.manifest.runID === secondRun.launch.runID && row.event.kind === "hybrid-combat-decision",
+  );
+  assert.ok(secondFirst, "Second actual first original learned group required");
+  const secondSelection = {
+    manifest: secondFirst.manifest,
+    episodeId: secondFirst.event.episodeId,
+    generation: secondFirst.event.generation,
+    modelIdentity: secondFirst.event.modelIdentity,
+  };
+  assert.equal(secondSelection.modelIdentity, selection.modelIdentity);
+  assert.notEqual(secondRun.launch.runID, nativeRun.launch.runID);
+  const secondTrajectory = validateTrajectory(
+    dataset,
+    secondSelection,
+    secondRun,
+    validationOptions,
+  );
+  assert.equal(secondTrajectory.trainable, true);
+  assert.equal(secondTrajectory.records.length, 1);
+  assert.equal(secondTrajectory.returns[0].return, 1);
+  assert.equal(canonical(secondTrajectory.snapshot), before);
+  batchTrajectories.push(secondTrajectory);
+  write("batch-trajectories.json", batchTrajectories);
+}
+const batchBefore = canonical(batchTrajectories);
+const fitted = batchMode
+  ? contract.fitEpisodeBatchReturns(
+      trajectory.snapshot,
+      batchTrajectories.map(({ records, context }) => ({ records, context })),
+    )
+  : fitTrajectory(trajectory, contract);
+assert.equal(canonical(batchTrajectories), batchBefore);
+contract.validate(fitted.model);
 assert.equal(canonical(trajectory.snapshot), before);
 assert.equal(contract.learningAllowed(fitted.model), false);
 assert.equal(JSON.stringify(fitted.model.offline.originModel), selection.modelIdentity);
 assert.equal(
   fitted.summary.updates,
-  trainingRecords.reduce(
-    (sum: number, row: { action: string }) => sum + (row.action === "attack" ? 2 : 1),
-    0,
-  ),
+  batchTrajectories
+    .flatMap((episode) => episode.records)
+    .reduce((sum: number, row: { action: string }) => sum + (row.action === "attack" ? 2 : 1), 0),
 );
 for (const [index, record] of trajectory.records.entries()) {
   assert.equal(
@@ -661,15 +717,49 @@ for (const [index, record] of trajectory.records.entries()) {
   );
 }
 if (tribeOnly) {
-  assert.equal(fitted.model.offline.version, "offline-terminal-return-v2");
+  assert.equal(
+    fitted.model.offline.version,
+    batchMode ? "offline-terminal-return-batch-v1" : "offline-terminal-return-v2",
+  );
   assert.equal(trajectory.records.length, 1);
-  assert.equal(fitted.summary.updates, 2);
+  assert.equal(fitted.summary.updates, batchMode ? 4 : 2);
   assert.equal(trajectory.returns[0].return, 1);
   assert.ok(
     trajectory.records.every(
       (row) => row.behaviorPolicy === "deterministic-native-tribe-choice-v1",
     ),
   );
+  if (batchMode) {
+    const totalFittedRows = batchTrajectories.reduce(
+      (sum, episode) => sum + episode.records.length,
+      0,
+    );
+    const bootstrapModel = JSON.parse(fs.readFileSync(collected, "utf8")).model;
+    assert.equal(canonical(trajectory.snapshot), canonical(bootstrapModel));
+    assert.equal(fitted.summary.episodes, 2);
+    assert.equal(fitted.summary.fitted, totalFittedRows);
+    assert.equal(fitted.summary.updates, totalFittedRows * 2);
+    assert.equal(fitted.model.offline.headUpdates.wait, 0);
+    assert.equal(fitted.model.offline.headUpdates.act, totalFittedRows);
+    assert.equal(fitted.model.offline.headUpdates.target, totalFittedRows);
+    assert.equal(canonical(fitted.model.models.wait), canonical(trajectory.snapshot.models.wait));
+    for (const episode of batchTrajectories) {
+      assert.equal(episode.context.gammaTick, 1);
+      assert.ok(
+        episode.records.every(
+          (row) =>
+            row.action === "attack" &&
+            row.behaviorPolicy === "deterministic-native-tribe-choice-v1",
+        ),
+      );
+    }
+    for (const name of ["wait", "act", "target"]) {
+      assert.equal(
+        fitted.model.models[name].samples,
+        bootstrapModel.models[name].samples + (name === "wait" ? 0 : totalFittedRows),
+      );
+    }
+  }
 }
 const capped = structuredClone(nativeRun);
 capped.result.stopReason = "max_ticks";

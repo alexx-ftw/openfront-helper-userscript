@@ -68,9 +68,12 @@ function validateSettings(settings) {
   assert.ok(["ridge", "compact-neural"].includes(settings.policy), "Declare a supported policy");
   if (settings.controlProfile !== undefined) {
     assert.ok(
-      ["target-value-v1", "tribe-ranking-v1", "tribe-only-terminal-v1"].includes(
-        settings.controlProfile,
-      ),
+      [
+        "target-value-v1",
+        "tribe-ranking-v1",
+        "tribe-only-terminal-v1",
+        "funded-tribe-terminal-v1",
+      ].includes(settings.controlProfile),
       "Invalid control profile",
     );
     assert.equal(settings.policy, "compact-neural", "Control profile requires compact-neural");

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const plannerSandbox = {};
 executeClassicScript(
-  readRepositoryFile("engine/ingame/auto-bot/legendaryPlanner.js"),
+  readLegendaryPlannerSource(),
   plannerSandbox,
   { filename: "legendaryPlanner.js" },
 );

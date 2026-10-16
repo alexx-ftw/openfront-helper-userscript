@@ -1,0 +1,133 @@
+{
+  "current_task": "econ-projection-perf-split-20261016",
+  "created_at": "2026-10-13T22:30:22Z",
+  "tasks": {
+    "split-tooling-oversized-20261015": {
+      "subject": "Split build.mjs (462) and test/performance-regressions.mjs (824); compact test/benchmark-runtime-performance.mjs (226) to <=200",
+      "status": "done",
+      "phase": "validated",
+      "authorized_by": "owner annotation 2026-10-15 on the three-file SOLID report: handle",
+      "plan": [
+        "Lot 1 (running): compact benchmark-runtime-performance.mjs to <=200, behavior identical",
+        "Lot 2: build.mjs -> entry + scripts/build/*.mjs modules; BUILD_INPUTS updated in both parity checkers",
+        "Lot 3: performance-regressions.mjs -> runner + test/helpers/perf-regressions/*; entry path unchanged",
+        "Gates: scoped eslint/prettier, build parity, benchmark receipt, sniper + challenger"
+      ],
+      "result": "benchmark 198; build.mjs 103 + scripts/build/* (146/164/98/29) with BUILD_INPUTS updated in both parity checkers; performance-regressions 43 + 9 helpers (14-186); all files <=200; lead verify 8/8 exit 0; challenger CONFIRMED 7/7; docs pointers updated"
+    },
+    "split-oversized-modules-20261015": {
+      "subject": "Split heatmaps.js (1016 lines) and estate-panel.js (354 lines) into sub-200-line modules with behavior preserved",
+      "status": "done",
+      "phase": "validated",
+      "authorized_by": "owner annotation 2026-10-15 on SOLID hook item: Do",
+      "continuation": "owner: performance objective unbounded, continue without stopping",
+      "plan": [
+        "Analyze trio in parallel: explore-codebase, research-expert, integration analysis",
+        "Executor lot 1: estate split (estate-panel.js -> engine/ingame/estate/*)",
+        "Executor lot 2: heatmap split (heatmaps.js -> engine/ingame/heatmaps/*)",
+        "Executor lot 3 (sequenced): build.mjs wiring + loader-path tests + benchmark update",
+        "eLicit self-review, Verify (build/tests/benchmark), sniper gate"
+      ],
+      "result": "14 modules <200 lines, byte-identical move (sha256 1b4c2058/13e767bb match Oct-14 receipts); integration 10/10 exit 0; sniper PASS 7/7; challenger CONFIRMED 5/5; receipt docs/split-oversized-modules-20261015.md"
+    },
+    "runtime-performance-20261014": {
+      "subject": "Enhance/Improve the script's performance",
+      "status": "in_progress",
+      "phase": "blocked_scope",
+      "controlled_border_baseline": "CONFIRMED false/false at tick 2379 without and with performance patches; diagnostic scoped sniper PASS; underlying cause unproven",
+      "scoped_review": "Challenger CONFIRMED; sniper PASS, zero introduced errors; source-level measurements and targeted checks verified",
+      "whole_goal": "not complete: broader pretest/headless/global lint gates fail; pending scope decision before modifying existing bot work",
+      "doc_consulted": {
+        "timing": "https://www.w3.org/TR/hr-time-3/",
+        "collections": "https://tc39.es/ecma262/multipage/indexed-collections.html",
+        "benchmark": "https://webkit.org/blog/17899/introducing-the-jetstream-3-benchmark-suite/",
+        "native_contract": "openfront-engine/src/core/game/GameMap.ts:409 and src/client/view/GameView.ts:1328"
+      },
+      "plan": [
+        "Measure runtime hotspots",
+        "Delegate minimal semantics-preserving changes",
+        "Freeze and verify benchmarks, build and regressions",
+        "Independent challenger and sniper"
+      ]
+    },
+    "main": {
+      "subject": "Read-only Node.js supportingFiles validated byte/path binding research",
+      "status": "in_progress",
+      "phase": "init-branch",
+      "started_at": "2026-10-13T22:30:22Z",
+      "doc_consulted": {}
+    },
+    "supporting-files-seam": {
+      "subject": "Coordinator plan: failclosed supportingFiles binding of actual validated bytes",
+      "status": "in_progress",
+      "phase": "plan",
+      "doc_consulted": {
+        "node_fs": "https://nodejs.org/api/fs.html",
+        "node_crypto": "https://nodejs.org/api/crypto.html",
+        "finding": "realpath returns a pathname, readFileSync without encoding returns bytes, hash must use the consumed Buffer; checks do not lock files"
+      },
+      "scope": "Only user six exact implementation files, owned by coordinator executor lots; this research lane owns APEX tracking only. No root edits, games, build, fit, staging, rebaseline or extra implementation files.",
+      "plan": [
+        "1. Complete Analyze trio: explore-codebase, research-expert, NodeJS domain expert.",
+        "2. Execute disjoint NodeJS expert lots: N3 shared+test; single trainer+test; batch trainer+test. Shared API verifySupportingFiles(files=[]); trajectory.supportingFiles captures actual declaredPath/path/hash; supportingFileFixture(file) N3 test helper retains ACT for integrations. Compact additions/functions under 190 lines; do not split existing large files into extra files.",
+        "3. Freeze all writers; named eLicit FailureModeAnalysis plus challenger.",
+        "4. Execute three focused tests, six-file lint/format, actual N8 JSON validation only and frozen N8 hashes.",
+        "5. Fresh challenger plus read-only sniper."
+      ],
+      "research": {
+        "capture": "Retain original absolute declaredPath; resolve path before reading; parse and hash the same Buffer; return supportingFiles from validation, never reread to establish a replacement baseline.",
+        "verification": "Reuse plain realpathSync/readFileSync/hash checks; verify supportingFiles prefit, postfit, and before/after each publication; missing files, path drift, byte drift and contradictory repeated bindings fail closed.",
+        "publication": "Preserve exclusive mkdir, wx temporary creation, fsync/close, link publication and owned-file cleanup; individual exclusive publications are not a multi-file transaction.",
+        "elicitation": "FailureModeAnalysis: same bytes/different target, same path/different bytes, repeated dependency mismatch, mutation after validation or between publications, transient swap restored between checks.",
+        "limitations": "Point-in-time path/hash checks cannot prove absence of transient swap-and-restore or concurrent in-place mutation. No new API or race-free guarantee proposed."
+      },
+      "gate_status": {
+        "tracking_json": "initializer JSON parsed and required fields asserted",
+        "analysis_agents": "blocked: agent thread limit reached",
+        "challenger_sniper": "not verified: agent thread limit reached",
+        "implementation_tests": "not run by research lane"
+      }
+    },
+    "econ-projection-perf-split-20261016": {
+      "subject": "Legendary economy projection performance (payout integration) + approved legendaryPlanner module split",
+      "status": "in_progress",
+      "phase": "execute",
+      "started_at": "2026-10-16T02:39:45Z",
+      "authorized_by": "owner goal 2026-10-15/16: economy building logic, no stutters, Semver, subagents; owner approval: 'Si, procede con el refactor' (22-module split)",
+      "doc_consulted": {
+        "official_rate_change": "OpenFront v0.34.12 release dated 2026-09-20; vendored checkout dated 2026-09-29, therefore its rates already include that change",
+        "javascript_map_semantics": "https://tc39.es/ecma262/multipage/keyed-collections.html",
+        "classic_script_split_pattern": "docs/split-oversized-modules-20261015.md",
+        "planner_callers": "Leibniz report 01a14294-e5ea-7701-8733-b03f6e3c2457"
+      },
+      "plan": [
+        "Analyze completed: profile/harness evidence, caller and cache-key map, official release-date correction; no stale-rate claim",
+        "Execute lot A (Darwin 01a14291-d869-70a2-bf38-929b51d5a708): approved 22-module classic-script split, safe train/trade rate-cache hoist, byte identity and budget harness",
+        "Execute lot B (Carson 01a142b3-3b70-7e53-8f52-4e870d11f703): single shared planner-source loader and migration of all test consumers; disjoint from engine files",
+        "Execute lot C (Euler 01a14291-ce9f-79d2-87f0-e598767ed807): falsifiable synthetic team-economy scenario tests only",
+        "Lead gates after all writers freeze: functional verification, independent challenger, sniper, SemVer patch 1.14.14, npm run build, build parity, local served-byte readback, Telegram milestone"
+      ],
+      "coordination": "sibling lane context-miss-cache-20261016 owns a separate scripts/build/sources.mjs insertion after trade-policy/apply.js; Darwin must re-read that file at edit time and preserve the sibling line. No Agent Mail. Do not build or version while writers are active.",
+      "last_verified_artifact": "Local dev server 127.0.0.1:17373 returned HTTP 200, @version 1.14.13, SHA256 identical to on-disk bundle on 2026-10-16; not the post-change build"
+    },
+    "nuke-split-test-closure-20261016": {
+      "subject": "Migrate tests to split nuke behavior sources and preserve native scoring boundary semantics",
+      "status": "in_progress",
+      "phase": "analyze",
+      "started_at": "2026-10-16T14:24:00+01:00",
+      "authorized_by": "Owner's direct instruction on 2026-10-16 to finish current work, commit all, and push; this subtask is required to make the existing split-source tests valid before publication.",
+      "plan": [
+        "Analyze in parallel: explore-codebase, research-expert, and TypeScript domain expert; freeze writers before integration verification.",
+        "Executor lot A: replace deleted nukeBehavior.js reads in test/legendary.mjs, test/legendary-recent-penalty.mjs, and test/nuke-salvo-recheck.mjs with the shared reader.",
+        "Executor lot B: replace deleted nukeBehavior.js reads in test/nuke-campaign-scenario.mjs, test/nuke-launch-stagger-fixture.mts, test/nuke-trade-partner-discount.mjs, and test/nuke-trajectory-sam-coverage.mjs with the shared reader.",
+        "Executor lot C: align the split nuke economy boundary assertion with the native bot scorer; do not change engine behavior.",
+        "Verify targeted tests, full suite, build parity, lint, line limits, and challenge/sniper gates."
+      ],
+      "non_scope": [
+        "No edits to engine behavior or the split nuke source chunks.",
+        "No staging, commit, push, PR, or merge by executor agents.",
+        "Do not modify test/tmp-legendary-probe.mjs; it is a scratch probe."
+      ]
+    }
+  }
+}

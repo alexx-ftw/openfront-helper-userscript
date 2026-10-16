@@ -1,6 +1,7 @@
-import { executeClassicScript, readRepositoryFile } from "./classic-script.mjs";
+import { executeClassicScript } from "./classic-script.mjs";
+import { readStructureBehaviorSource } from "./structure-behavior-source.mjs";
 
-const source = readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js");
+const source = readStructureBehaviorSource();
 
 export function createStructureUpgradeFixture({ UNIT, Difficulty, state, bindings = {} }) {
   const emitted = [];

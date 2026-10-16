@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,7 @@ import {
 } from "../openfront-engine/src/core/game/Game";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { expectedRailIncomePerTick } from "./helpers/construction-simulator.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const config = new Config({ maxTimerValue: 120 }, null, false);
@@ -25,11 +27,7 @@ config.trainGold = ((relation, citiesVisited, owner) => {
   return gold;
 }) as Config["trainGold"];
 const planner = {};
-executeClassicScript(
-  fs.readFileSync(path.join(ROOT, "engine/ingame/auto-bot/legendaryPlanner.js"), "utf8"),
-  planner,
-  { filename: "legendaryPlanner.js" },
-);
+executeClassicScript(readLegendaryPlannerSource(), planner, { filename: "legendaryPlanner.js" });
 const liveEconomics = {
   trainSpawnRate: (factoryUnits: number, trainUnits: number) =>
     config.trainSpawnRate(factoryUnits, trainUnits),
@@ -248,7 +246,7 @@ executeClassicScript(
   { filename: "helpers.js" },
 );
 executeClassicScript(
-  `${fs.readFileSync(path.join(ROOT, "engine/ingame/auto-bot/structureBehavior.js"), "utf8")}\nglobalThis.__StructureBehavior = StructureBehavior;`,
+  `${readStructureBehaviorSource()}\nglobalThis.__StructureBehavior = StructureBehavior;`,
   structureSandbox,
   { filename: "structureBehavior.js" },
 );
@@ -269,27 +267,45 @@ const ownUnits = {
   ),
 };
 const teammateUnits = { [LiveUnitType.City]: [station("team-city", 20)] };
-const makeOwner = (id: number, units: Record<string, ReturnType<typeof station>[]>) => ({
-  id: () => id,
-  smallID: () => id,
-  teamId: 7,
-  type: () => LivePlayerType.Nation,
-  isLobbyCreator: () => false,
-  isPlayer: () => true,
-  isAlive: () => true,
-  hasEmbargoAgainst: () => false,
-  isFriendly: (other: { teamId?: number }) => other.teamId === 7,
-  isOnSameTeam: (other: { teamId?: number }) => other.teamId === 7,
-  isAlliedWith: () => false,
-  units: (...types: string[]) => types.flatMap((type) => units[type] ?? []),
-  // This economics fixture has no worker; use the explicit unavailable-quote fallback.
-  buildables: async () => null,
-});
+const makeOwner = (id: number, units: Record<string, ReturnType<typeof station>[]>) => {
+  const levels = (type: string) =>
+    (units[type] ?? []).reduce((total, unit) => total + unit.level(), 0);
+  const costOwner = {
+    type: () => LivePlayerType.Nation,
+    isLobbyCreator: () => false,
+    unitsOwned: levels,
+    unitsConstructed: levels,
+  } as Parameters<ReturnType<Config["unitInfo"]>["cost"]>[1];
+  return {
+    id: () => id,
+    smallID: () => id,
+    teamId: 7,
+    type: () => LivePlayerType.Nation,
+    isLobbyCreator: () => false,
+    isPlayer: () => true,
+    isAlive: () => true,
+    hasEmbargoAgainst: () => false,
+    isFriendly: (other: { teamId?: number }) => other.teamId === 7,
+    isOnSameTeam: (other: { teamId?: number }) => other.teamId === 7,
+    isAlliedWith: () => false,
+    units: (...types: string[]) => types.flatMap((type) => units[type] ?? []),
+    // Price-only descriptors model the worker without claiming tile legality.
+    buildables: async (_tile: unknown, types: LiveUnitType[]) =>
+      types.map((type) => ({
+        type,
+        cost: config.unitInfo(type).cost({} as never, costOwner),
+        canBuild: false,
+        canUpgrade: false,
+      })),
+  };
+};
 const actor = Object.assign(makeOwner(1, ownUnits), { gold: () => 10_000_000n });
 const teammate = makeOwner(2, teammateUnits);
 let constructionTrainCount = 0;
 const constructionGame = {
   config: () => config,
+  width: () => 32,
+  height: () => 1,
   players: () => [actor, teammate],
   units: (type: string) =>
     type === LiveUnitType.Train ? Array.from({ length: constructionTrainCount }) : [],
@@ -306,7 +322,7 @@ Object.assign(constructionBehavior, {
         cluster: unit.tile() === 2 || unit.tile() === 20 ? "rail#1" : "rail#2",
       })),
     ),
-  readRailroadState: () => [{ id: "rail#stub" }],
+  readRailroadState: () => new Uint8Array(32),
   assignRailClusters: (tiles: Array<{ tile: number }>) => tiles.map(() => "rail#1"),
   structureCandidateTiles: (type: string) => (type === LiveUnitType.Factory ? [30] : []),
   legendaryRailMetrics: () => ({

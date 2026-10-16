@@ -1,0 +1,76 @@
+{
+  "agent": "estate-split",
+  "status": "done",
+  "handoff_status": "ready_for_review",
+  "writes_frozen": true,
+  "plan": [
+    { "step": "Read source, test loader, boundaries; check fixture/benchmark deps", "status": "completed" },
+    { "step": "Backup + sed extraction of five contiguous ranges", "status": "completed" },
+    { "step": "Byte-identity proof (wc, diff, sha256) then delete original", "status": "completed except rm blocked" },
+    { "step": "RED (loader on deleted file)", "status": "blocked by execution policy" },
+    { "step": "Loader update to five-file join + GREEN", "status": "completed" },
+    { "step": "Regression tests, scoped eslint, read-only game-constants diff", "status": "completed" }
+  ],
+  "scope": [
+    "engine/ingame/estate/constants.js",
+    "engine/ingame/estate/styles.js",
+    "engine/ingame/estate/panel.js",
+    "engine/ingame/estate/compute.js",
+    "engine/ingame/estate/lifecycle.js",
+    "test/estate-neighbor-allocation.mjs",
+    ".codex/apex/prd/agents/estate-split-prd.json"
+  ],
+  "files_modified": [
+    "engine/ingame/estate/constants.js (new, 25 lines)",
+    "engine/ingame/estate/styles.js (new, 103 lines)",
+    "engine/ingame/estate/panel.js (new, 122 lines)",
+    "engine/ingame/estate/compute.js (new, 44 lines)",
+    "engine/ingame/estate/lifecycle.js (new, 60 lines)",
+    "test/estate-neighbor-allocation.mjs (lines 4-6 loader replaced with five-file readRepositoryFile join)",
+    ".codex/apex/prd/agents/estate-split-prd.json (this report)"
+  ],
+  "files_unchanged": [
+    "build.mjs, test/benchmark-runtime-performance.mjs, test/fixtures/game-constants.json, engine/ingame/auto-bot/**, scripts/headless/**, package.json: untouched per guardrails",
+    "test/fixtures/game-constants.json mtime remains Oct 13 21:49; its git M status predates this executor (pre-existing uncommitted tree)"
+  ],
+  "byte_identity": {
+    "wc_lines": { "constants": 25, "styles": 103, "panel": 122, "compute": 44, "lifecycle": 60, "total": 354 },
+    "diff": "cat of five files in order vs original: empty, exit 0",
+    "sha256_original_backup": "/tmp/ofh-split-backup/estate-panel.js.split-original = 1b4c20582ee11218159402b5b574164db3a6827cbe681e5d1d9ca1912a45ca81",
+    "sha256_concat_proof": "/tmp/ofh-split-backup/estate-panel.js.concat-proof = 1b4c20582ee11218159402b5b574164db3a6827cbe681e5d1d9ca1912a45ca81",
+    "note": "Hash equals the candidate hash recorded in docs/runtime-performance-border-baseline-20261014.md:119, confirming uncommitted perf patches moved verbatim"
+  },
+  "red_green": {
+    "red": "NOT DEMONSTRATED: 'rm engine/ingame/estate-panel.js' rejected twice by execution policy (AskForApproval=Never); AGENTS.md single-rerun-with-owner-authorization exception was used and rejected again. Original file still exists on disk; backup and concat proof are in /tmp/ofh-split-backup/.",
+    "green": "node test/estate-neighbor-allocation.mjs with five-file loader: exit 0; 'estate neighbor allocation: 4096 tiles, zero per-tile neighbor arrays; exact legacy parity passed'"
+  },
+  "verification": {
+    "heatmap": "node test/heatmap-projection-allocation.mjs: exit 0",
+    "performance_regressions": "node test/performance-regressions.mjs: exit 0",
+    "scoped_eslint": "npx eslint engine/ingame/estate test/estate-neighbor-allocation.mjs --max-warnings=0: exit 1; direct ./node_modules/.bin/eslint identical: exit 1",
+    "scoped_eslint_detail": "8 errors, all per-file-analysis artifacts of the shared-scope classic script split, not content changes: prefer-const on estatePanelOpen/estateSortDir/estateData/estateIntervalId in constants.js (mutated from lifecycle.js/panel.js) and sonarjs/no-implicit-global on their assignments in lifecycle.js/panel.js. Not fixed: mandate requires pure byte move; eslint.config.mjs engine override comment states cross-file globals 'cannot be evaluated correctly one file at a time by ESLint'. Old single-file layout did not exhibit these.",
+    "game_constants_probe": "node scripts/game-constants.mjs (no --write): exit 0, nothing written. Read-only ESM diff vs test/fixtures/game-constants.json: current 2028 records, fixture 2024; ADDED=4 REMOVED=0 CHANGED=0"
+  },
+  "game_constants_amendment": {
+    "new_entries": [
+      { "name": "ESTATE_PANEL_ID", "file": "engine/ingame/estate/constants.js", "id": "engine/ingame/estate/constants.js:ESTATE_PANEL_ID#1", "declarationKind": "const" },
+      { "name": "ESTATE_PANEL_STYLE_ID", "file": "engine/ingame/estate/constants.js", "id": "engine/ingame/estate/constants.js:ESTATE_PANEL_STYLE_ID#1", "declarationKind": "const" },
+      { "name": "ESTATE_PANEL_POS_KEY", "file": "engine/ingame/estate/constants.js", "id": "engine/ingame/estate/constants.js:ESTATE_PANEL_POS_KEY#1", "declarationKind": "const" },
+      { "name": "ESTATE_COMPUTE_MS", "file": "engine/ingame/estate/constants.js", "id": "engine/ingame/estate/constants.js:ESTATE_COMPUTE_MS#1", "declarationKind": "const" }
+    ],
+    "differing_vs_fixture": "4 added, 0 removed, 0 changed under current disk state because the original engine/ingame/estate-panel.js still exists (rm blocked) and its four ESTATE_* records are still collected. After the lead completes the mandated deletion, regeneration will additionally show the 4 old records removed: engine/ingame/estate-panel.js:ESTATE_PANEL_ID#1, ESTATE_PANEL_STYLE_ID#1, ESTATE_PANEL_POS_KEY#1, ESTATE_COMPUTE_MS#1."
+  },
+  "build_wiring_order": [
+    "estate/constants.js",
+    "estate/styles.js",
+    "estate/panel.js",
+    "estate/compute.js",
+    "estate/lifecycle.js"
+  ],
+  "elicitation": {
+    "AssumptionDecomposition": "Passed with two reported exceptions. (1) Pure move: proven by empty diff and identical sha256 pair. (2) Runtime reference resolution across concatenated files: proven by GREEN estate test plus heatmap and performance-regression suites. (3) RED step: blocked, not demonstrable without the policy-rejected rm; recovery requires lead rerun. (4) Lint pass expectation: measured exit 1; 8 errors are per-file analysis artifacts of the intentional shared lexical scope, documented above, unresolved by design under the byte-only constraint. (5) Lot isolation: git status confirms only estate dir, test file and this PRD added by this executor."
+  },
+  "remaining_issues": "Lead-owned: (1) rerun rm engine/ingame/estate-panel.js (backup + concat proof ready in /tmp/ofh-split-backup/) then demonstrate RED by temporarily reverting test loader lines 4-6 or accept GREEN-only evidence; (2) replace build.mjs line 65 'estate-panel.js' with the five-file wiring order above; (3) fix test/benchmark-runtime-performance.mjs:16 source list to the estate files; (4) regenerate test/fixtures/game-constants.json after deletion (projected -4/+4); (5) hook fired a sniper gate on the test-file edit - sniper/challenger are lead-owned per executor mandate and were not launched; (6) decide lint policy for cross-file engine declarations (per-file overrides or whole-lot lint via concatenated source) since scoped per-file lint of the split lot is exit 1 by tool-scope artifact.",
+  "exit": "Stop: split bytes verified identical, GREEN and both regression tests pass, amendment evidence captured; single blocked step (rm) returned to lead with root cause (execution policy AskForApproval=Never) and full recovery artifacts",
+  "limits": "No builds, Git actions, package changes, nested delegation, or edits to foreign WIP. RED not demonstrated; original file still on disk until lead rerun. Full suite, generated artifact and live browser not checked (out of lot)."
+}

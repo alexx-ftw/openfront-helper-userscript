@@ -264,7 +264,10 @@ affects the denominator and producer rate at the action's effective tick, while
 its route payout can still be delayed. The projection does not model each
 Port's private pity counter. Future train units leave the projected stock after
 their arrival delay; routed trade ships leave after their weighted water-route
-distance. The client does not expose train in-flight ages, so train lifetime
+distance. Existing TradeShips with a public grid motion plan leave the
+projected stock at that plan's endpoint; units without a visible plan remain
+counted conservatively. The client does not expose train in-flight ages, so
+starting Train units remain in the global count, and future train lifetime
 uses the live `trainStationMaxRange` divided by TrainExecution speed as a
 deterministic proxy when no explicit lifetime is available; this can
 underestimate curved rail routes. Unrouted legacy fixtures retain birth-only

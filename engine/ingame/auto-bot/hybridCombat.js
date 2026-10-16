@@ -659,11 +659,12 @@ class HybridCombatPolicy {
 
   tribeRankingEnabled() {
     return this.enabled() && this.backend === "compact-tanh-v1" &&
-      ["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(this.compactContract?.controlProfile);
+      ["tribe-ranking-v1", "tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(this.compactContract?.controlProfile);
   }
 
   tribeOnlyControl() {
-    return this.backend === "compact-tanh-v1" && this.compactContract?.controlProfile === "tribe-only-terminal-v1";
+    return this.backend === "compact-tanh-v1" &&
+      ["tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(this.compactContract?.controlProfile);
   }
 
   nativeStrategicMacro() {
@@ -680,10 +681,10 @@ class HybridCombatPolicy {
     const prefix = candidates.slice(0, end < 0 ? candidates.length : end);
     if (!prefix.length) return plan;
     const firstScored = this.scoreTribeChoiceCandidate(behavior, prefix[0], 0, gate, fundingOptions);
-    if (!firstScored) return plan;
-    const scored = [firstScored, ...prefix.slice(1).map((candidate, index) =>
+    if (!firstScored && this.compactContract.controlProfile !== "funded-tribe-terminal-v1") return plan;
+    const scored = [...(firstScored ? [firstScored] : []), ...prefix.slice(1).map((candidate, index) =>
       this.scoreTribeChoiceCandidate(behavior, candidate, index + 1, gate, fundingOptions)).filter(Boolean)];
-    if (!this.eligible()) return plan;
+    if (!scored.length || !this.eligible()) return plan;
     const ranked = [...scored].sort((left, right) => right.score - left.score || left.index - right.index);
     const selected = ranked[0];
     const first = scored[0].index;

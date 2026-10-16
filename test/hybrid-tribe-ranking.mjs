@@ -439,4 +439,85 @@ const conditionalWait = fixture({
   actions: ["wait"],
 });
 assert.throws(() => validateFixture(conditionalWait, { gammaTick: 1 }), /WAIT/);
+async function fundedAlternativesAfterDeniedLeader() {
+  const snapshot = C.create({
+    featureProfile: "frontier-v1",
+    controlProfile: "funded-tribe-terminal-v1",
+  });
+  for (const [name, dimension] of Object.entries(C.dimensionsFor(snapshot)))
+    for (let sample = 0; sample < dimension; sample++)
+      snapshot.models[name] = C.update(snapshot.models[name], Array(dimension).fill(1), 0.5);
+  const funded = new Policy({ storage: null });
+  funded.importModel(snapshot);
+  funded.configure({ mode: "learned", learning: false });
+  assert.equal(funded.ready(), true);
+  const blocked = { ...small, player: target(9, 1), tribeClusterAccess: 2 };
+  const alternatives = [blocked, clusterSmall, clusterLarge];
+  const quotes = [];
+  const fundedRealm = createAttackBehaviorSandbox();
+  executeClassicScript(readRepositoryFile("engine/ingame/auto-bot/earlyGame.js"), fundedRealm);
+  fundedRealm.profileAttackAsync = async (_profile, _label, callback) => callback();
+  fundedRealm.hasAttackIntentRateCapacity = () => true;
+  fundedRealm.hybridCombatPolicy = funded;
+  const local = Object.create(fundedRealm.AttackBehavior.prototype);
+  Object.assign(local, behavior, {
+    prepareHybridCombatGeometry: async () => {},
+    hybridCombatGeometry: (enemy) => {
+      const geometry = behavior.hybridCombatGeometry(enemy);
+      geometry.frontier.generation = funded.generation;
+      return geometry;
+    },
+    inspectLandAttackFunding: (enemy) => {
+      quotes.push(enemy.smallID());
+      return { allowed: enemy.smallID() !== 9 };
+    },
+    legendaryExpansionBrakeActive: () => false,
+    getReadyEarlyGameTribeCandidates: async () => alternatives,
+    getActiveTribeAttackTargetKeys: () => new Set(),
+    getBotAttackMaxParallelism: () => 1,
+    publishEarlyGameTribeDiagnostics: () => {},
+  });
+  const selected = funded.rankTribeChoice(local, alternatives, optionsFor);
+  assert.equal(selected.chosen?.target.smallID(), 3);
+  assert.deepEqual(Array.from(selected.candidates), [blocked, clusterLarge, clusterSmall]);
+  assert.deepEqual(quotes, [9, 2, 3]);
+  const denied = funded.rankTribeChoice(
+    { ...local, inspectLandAttackFunding: () => ({ allowed: false }) },
+    alternatives,
+    optionsFor,
+  );
+  assert.equal(denied.chosen, null);
+  assert.equal(denied.candidates, alternatives);
+  assert.equal(
+    funded.rankTribeChoice({ ...local, hybridCombatGeometry: () => null }, alternatives, optionsFor)
+      .chosen,
+    null,
+    "unknown geometry cannot manufacture a funded choice",
+  );
+  assert.equal(
+    funded.rankTribeChoice(local, [blocked, boat, clusterLarge], optionsFor).chosen,
+    null,
+  );
+  const cold = new Policy({ storage: null });
+  cold.importModel(
+    C.create({ featureProfile: "frontier-v1", controlProfile: "funded-tribe-terminal-v1" }),
+  );
+  cold.configure({ mode: "learned", learning: false });
+  assert.equal(cold.ready(), false);
+  assert.equal(cold.rankTribeChoice(local, alternatives, optionsFor).chosen, null);
+  const attempted = [];
+  local.launchEarlyGameTribeCandidate = async (candidate) => {
+    attempted.push(candidate.player.smallID());
+    return candidate.player.smallID() !== 9;
+  };
+  assert.equal(await local.attackEarlyGameTribe(), true);
+  assert.deepEqual(
+    attempted,
+    [9, 3],
+    "actual caller preserves denial before choosing funded alternative",
+  );
+  assert.equal(funded.diagnostics().control.acceptedLearnedAttacks, 1);
+  assert.equal(funded.diagnostics().control.confirmedLearnedAttacks, 0);
+}
+await fundedAlternativesAfterDeniedLeader();
 console.warn("hybrid tribe ranking contract passed");

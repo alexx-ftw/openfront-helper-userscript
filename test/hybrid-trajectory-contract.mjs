@@ -42,6 +42,8 @@ function targetEvidence(C, profile, tick, gate) {
 
 import assert from "node:assert/strict";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import { pathToFileURL } from "node:url";
 import {
   canonical,
@@ -51,6 +53,8 @@ import {
   validateTrajectory,
 } from "../scripts/headless/hybrid-trajectory-contract.mjs";
 import { loadNativeContract } from "../scripts/headless/train-hybrid-returns.mjs";
+import * as trajectoryContract from "../scripts/headless/hybrid-trajectory-contract.mjs";
+const { verifySupportingFiles, supportingFilesFor } = trajectoryContract;
 import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
 import { createAttackBehaviorSandbox } from "./helpers/attack-behavior-sandbox.mjs";
 
@@ -350,7 +354,11 @@ export function fixture({
       modelIdentity,
       ...values,
     };
-    if (["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(controlProfile)) {
+    if (
+      ["tribe-ranking-v1", "tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(
+        controlProfile,
+      )
+    ) {
       if (event.behaviorPolicy != null)
         event.behaviorPolicy = "deterministic-native-tribe-choice-v1";
       if (["proposal", "decision"].includes(kind))
@@ -704,7 +712,9 @@ export function ambiguousFixture(options = {}) {
     {
       ...decision,
       sequence: 3,
-      reason: ["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(options.controlProfile)
+      reason: ["tribe-ranking-v1", "tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(
+        options.controlProfile,
+      )
         ? "controlled-tribe-choice"
         : "controlled-attack",
       fallback: false,
@@ -799,6 +809,499 @@ function censoredChecks() {
     const copy = ambiguousFixture();
     mutate(copy.nativeRun.result.hybridEvaluation.ledger.entries[3], copy);
     assert.throws(() => validateFixture(copy));
+  }
+}
+
+function busyAttackChecks(controlProfile) {
+  const input = fixture({
+    actions: ["attack", "attack"],
+    controlProfile,
+    ...(controlProfile ? { profile: "frontier-v1" } : {}),
+  });
+  const events = input.dataset.records.map((row) => row.event);
+  const ownerOutcome = events.find((event) => event.kind === "hybrid-combat-outcome");
+  const decision = events.find(
+    (event) => event.kind === "hybrid-combat-decision" && event.step === 1,
+  );
+  const proposal = events.find(
+    (event) => event.kind === "hybrid-combat-proposal" && event.step === 1,
+  );
+  decision.reason = controlProfile ? "controlled-tribe-choice" : "controlled-attack";
+  decision.fallback = false;
+  const scope = { episodeId: 1, generation: 3, runIdentity: input.selection.manifest.runID };
+  const attempt = {
+    ...scope,
+    kind: "hybrid-combat-dispatch-attempt",
+    sequence: 100,
+    dispatchID: 100,
+    decisionStep: 1,
+    decisionSequence: proposal.sequence,
+    tick: decision.tick,
+    targetSmallID: decision.targetSmallID,
+  };
+  const omission = {
+    ...scope,
+    kind: "hybrid-combat-observation-omitted",
+    sequence: 101,
+    phase: "acceptance",
+    reason: "observation-pending",
+    tick: decision.tick,
+    targetSmallID: decision.targetSmallID,
+  };
+  ownerOutcome.outcomeTick = decision.tick + 1;
+  const ordered = [
+    ...events.filter(
+      (event) =>
+        event.decisionStep !== 1 &&
+        event !== ownerOutcome &&
+        !(event.kind === "hybrid-combat-proposal" && event.step === 1) &&
+        !(event.kind === "hybrid-combat-decision" && event.step === 1),
+    ),
+    proposal,
+    attempt,
+    omission,
+    decision,
+    ownerOutcome,
+  ];
+  const mapping = new Map(ordered.map((event, index) => [event.sequence, index]));
+  for (const event of ordered) {
+    for (const field of ["decisionSequence", "acceptedSequence", "dispatchID"])
+      if (event[field] != null) event[field] = mapping.get(event[field]);
+    event.sequence = mapping.get(event.sequence);
+  }
+  input.dataset.records = ordered.map((event) => ({ ...input.dataset.records[0], event }));
+  input.dataset.recordCount = ordered.length;
+  const safety = {
+    ...scope,
+    kind: "hybrid-safety",
+    step: 1,
+    attemptId: attempt.dispatchID,
+    tick: decision.tick,
+    targetSmallID: decision.targetSmallID,
+    emitted: true,
+    reservePassed: true,
+    legalityPassed: true,
+    payloadTroops: 10,
+    spendableTroops: 10,
+  };
+  const closure = input.nativeRun.result.hybridEvaluation.latestClosure;
+  input.nativeRun.result.hybridEvaluation.ledger.entries = [...ordered];
+  input.nativeRun.result.hybridEvaluation.ledger.entries.splice(attempt.sequence + 1, 0, safety);
+  input.nativeRun.result.hybridEvaluation.ledger.entries.push(closure);
+  input.nativeRun.result.hybridEvaluation.safetyRows = [safety];
+  const options = controlProfile ? { gammaTick: 1 } : {};
+  const validated = validateFixture(input, options);
+  assert.equal(validated.records.length, 1);
+  assert.equal(validated.excluded[0].reason, "censored-busy-act");
+  assert.deepEqual(
+    validated.records.map((record) => record.decisionStep),
+    [0],
+  );
+  assert.equal(validated.context.coverage.excluded[0].decisionStep, 1);
+  for (const mutate of [
+    (copy) => {
+      copy.dataset.records.find((row) => row.event.kind === omission.kind).event.phase = "unknown";
+    },
+    (copy) => {
+      copy.dataset.records.find((row) => row.event.kind === ownerOutcome.kind).event.confirmed =
+        false;
+    },
+    (copy) => {
+      copy.dataset.records.find((row) => row.event.kind === omission.kind).event.tick++;
+    },
+    (copy) => {
+      copy.dataset.records.find((row) => row.event.kind === ownerOutcome.kind).event.outcomeTick =
+        2;
+    },
+    (copy) => {
+      copy.dataset.records.find((row) => row.event.kind === ownerOutcome.kind).event.actorSmallID =
+        99;
+    },
+    (copy) => {
+      copy.nativeRun.result.hybridEvaluation.safetyRows[0].reservePassed = false;
+    },
+  ]) {
+    const copy = structuredClone(input);
+    mutate(copy);
+    assert.throws(() => validateFixture(copy, options));
+  }
+  return input;
+}
+
+function uncontrolledBusyFixture(admissionFile) {
+  const input = busyAttackChecks("tribe-only-terminal-v1");
+  const events = input.dataset.records.map((row) => row.event);
+  const decision = events.find(
+    (event) => event.kind === "hybrid-combat-decision" && event.step === 0,
+  );
+  Object.assign(decision, { controlledAction: null, fallback: true, reason: "native-fallback" });
+  const ownerEvents = events.filter((event) =>
+    ["accepted", "receipt", "outcome"].some((kind) => event.kind === `hybrid-combat-${kind}`),
+  );
+  for (const event of ownerEvents)
+    Object.assign(event, {
+      learned: false,
+      controlledAction: null,
+      decisionStep: null,
+      decisionSequence: null,
+      behaviorPolicy: "legendary-unknown",
+      behaviorProbability: null,
+      logProbability: null,
+    });
+  const owner = ownerEvents.find((event) => event.kind === "hybrid-combat-outcome");
+  const receipt = ownerEvents.find((event) => event.kind === "hybrid-combat-receipt");
+  Object.assign(
+    ownerEvents.find((event) => event.kind === "hybrid-combat-accepted"),
+    { reason: "action-accepted", attackIds: [] },
+  );
+  receipt.reason = "native-receipt";
+  receipt.tick = owner.actionTick;
+  input.nativeRun.result.hybridEvaluation.attackAdmissionFile = admissionFile;
+  input.nativeRun.result.hybridEvaluation.attackAdmissions = { attempts: 1 };
+  return {
+    input,
+    owner,
+    admission: {
+      runIdentity: input.selection.manifest.runID,
+      sequence: 0,
+      tick: owner.actionTick,
+      actorSmallID: owner.actorSmallID,
+      targetSmallID: owner.targetSmallID,
+      emitted: true,
+      forced: false,
+      reason: null,
+      phase: "dispatch",
+      path: "land",
+      payloadTroops: 10,
+      spendableTroops: 10,
+    },
+  };
+}
+
+/** Synthetic admission dependency with a retained controlled ACT; writes only the supplied file. */
+export function supportingFileFixture(admissionFile) {
+  const { input, admission } = uncontrolledBusyFixture(admissionFile);
+  const retained = fixture({
+    profile: "frontier-v1",
+    controlProfile: "tribe-only-terminal-v1",
+    actions: ["attack", "attack", "attack"],
+  }).dataset.records.filter(({ event }) => event.step === 2 || event.decisionStep === 2);
+  const offset = input.dataset.records.length - retained[0].event.sequence;
+  for (const { event } of retained) {
+    if (["accepted", "receipt", "outcome"].some((kind) => event.kind === `hybrid-combat-${kind}`))
+      Object.assign(event, {
+        behaviorPolicy: "deterministic-native-tribe-choice-v1",
+        behaviorProbability: null,
+        logProbability: null,
+      });
+    event.sequence += offset;
+    for (const field of ["decisionSequence", "acceptedSequence"])
+      if (event[field] != null) event[field] += offset;
+  }
+  input.dataset.records.push(...retained);
+  input.dataset.recordCount = input.dataset.records.length;
+  const evaluation = input.nativeRun.result.hybridEvaluation;
+  evaluation.ledger.entries.splice(-1, 0, ...retained.map(({ event }) => event));
+  input.gammaTick = 1;
+  fs.writeFileSync(admissionFile, JSON.stringify(admission) + "\n");
+  return input;
+}
+
+/** Supporting proofs must bind the exact validated admission bytes and survive later checks. */
+export function supportingFileChecks() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ofh-supporting-"));
+  const file = path.join(directory, "admissions.jsonl");
+  try {
+    const input = supportingFileFixture(file);
+    const before = canonical(input);
+    const result = validateFixture(input);
+    assert.equal(result.trainable, true);
+    assert.deepEqual(
+      result.records.map((record) => record.decisionStep),
+      [2],
+    );
+    supportingFixturePolicyChecks(input);
+    assert.equal(canonical(input), before);
+    assert.ok(Array.isArray(result.supportingFiles), "Actual admission proof list required");
+    const bytes = fs.readFileSync(file);
+    const proof = {
+      declaredPath: path.resolve(file),
+      path: fs.realpathSync(file),
+      hash: hash(bytes),
+    };
+    assert.deepEqual(result.supportingFiles, [proof]);
+    assert.deepEqual(supportingFilesFor(result), [proof]);
+    assert.deepEqual(verifySupportingFiles([proof, { ...proof }]), [proof]);
+    const unchanged = canonical(result);
+    const admission = result.excluded.find((entry) => entry.ownerAdmission).ownerAdmission;
+    assert.deepEqual(admission, { ...proof, sequence: 0 });
+    assert.deepEqual(supportingFilesFor({ excluded: [] }), []);
+    assert.deepEqual(verifySupportingFiles(), []);
+    for (const list of [
+      null,
+      {},
+      [null],
+      [{}],
+      [{ ...proof, hash: "invalid" }],
+      [{ ...proof, declaredPath: "relative" }],
+      [{ ...proof, path: "relative" }],
+    ])
+      assert.throws(() => verifySupportingFiles(list), /Malformed supporting/);
+    for (const conflicting of [
+      { ...proof, hash: "0".repeat(64) },
+      { ...proof, path: path.join(directory, "different") },
+      { ...proof, declaredPath: path.join(directory, "alias"), hash: "0".repeat(64) },
+    ])
+      assert.throws(() => verifySupportingFiles([proof, conflicting]), /Conflicting supporting/);
+    for (const supportingFiles of [
+      undefined,
+      [],
+      [{ ...proof, declaredPath: path.join(directory, "alias") }],
+    ]) {
+      if (supportingFiles?.length) fs.symlinkSync(file, supportingFiles[0].declaredPath);
+      assert.throws(
+        () => supportingFilesFor({ ...result, supportingFiles }),
+        /supporting admission proof/,
+      );
+    }
+    assert.throws(
+      () =>
+        supportingFilesFor({
+          ...result,
+          excluded: [{ ownerAdmission: { ...admission, declaredPath: "foreign" } }],
+        }),
+      /supporting admission proof/,
+    );
+    assert.throws(
+      () =>
+        supportingFilesFor({
+          ...result,
+          excluded: [],
+          supportingFiles: [],
+        }),
+      /supporting admission proof/,
+      "Context admission references also require their proofs",
+    );
+    fs.writeFileSync(file, Buffer.concat([bytes, Buffer.from(" ")]));
+    assert.throws(
+      () => verifySupportingFiles(result.supportingFiles),
+      /Supporting file byte drift/,
+    );
+    fs.writeFileSync(file, bytes);
+    fs.unlinkSync(file);
+    assert.throws(() => verifySupportingFiles(result.supportingFiles), /ENOENT/);
+    fs.writeFileSync(file, bytes);
+    const other = path.join(directory, "identical.jsonl");
+    const link = path.join(directory, "declared.jsonl");
+    fs.writeFileSync(other, bytes);
+    fs.symlinkSync(file, link);
+    const aliased = structuredClone(input);
+    aliased.nativeRun.result.hybridEvaluation.attackAdmissionFile = link;
+    const linked = validateFixture(aliased);
+    assert.equal(linked.supportingFiles[0].declaredPath, path.resolve(link));
+    fs.unlinkSync(link);
+    fs.symlinkSync(other, link);
+    assert.throws(
+      () => verifySupportingFiles(linked.supportingFiles),
+      /Supporting file path drift/,
+    );
+    assert.equal(canonical(result), unchanged, "Verification must never mutate captured evidence");
+    supportingExcludedChecks(file, proof);
+    supportingReadDriftChecks(input, file, bytes, other, link);
+    process.stdout.write(
+      "supporting files: capture, drift, duplicate and completeness checks passed\n",
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function supportingFixturePolicyChecks(input) {
+  for (const { event } of input.dataset.records.filter(({ event }) =>
+    ["accepted", "receipt", "outcome"].some((kind) => event.kind === `hybrid-combat-${kind}`),
+  )) {
+    assert.equal(
+      event.behaviorPolicy,
+      event.decisionStep === 2 ? "deterministic-native-tribe-choice-v1" : "legendary-unknown",
+    );
+    assert.equal(event.behaviorProbability, null);
+    assert.equal(event.logProbability, null);
+  }
+}
+
+function supportingExcludedChecks(file, proof) {
+  const { supportingFilesFor } = trajectoryContract;
+  const excluded = validateFixture(uncontrolledBusyFixture(file).input, { gammaTick: 1 });
+  assert.equal(excluded.trainable, false);
+  assert.deepEqual(excluded.supportingFiles, [proof]);
+  assert.deepEqual(supportingFilesFor(excluded), [proof]);
+  assert.throws(
+    () => supportingFilesFor({ ...excluded, supportingFiles: [] }),
+    /supporting admission proof/,
+  );
+}
+
+function supportingReadDriftChecks(input, file, bytes, other, link) {
+  const originalRead = fs.readFileSync;
+  const aliased = structuredClone(input);
+  aliased.nativeRun.result.hybridEvaluation.attackAdmissionFile = link;
+  for (const drift of ["bytes", "path"]) {
+    fs.unlinkSync(link);
+    fs.symlinkSync(file, link);
+    let changed = false;
+    fs.readFileSync = function (filename, ...options) {
+      const consumed = originalRead.call(this, filename, ...options);
+      if (filename === file && !changed) {
+        changed = true;
+        if (drift === "bytes") fs.writeFileSync(file, Buffer.concat([bytes, Buffer.from(" ")]));
+        else {
+          fs.unlinkSync(link);
+          fs.symlinkSync(other, link);
+        }
+      }
+      return consumed;
+    };
+    try {
+      assert.throws(() => validateFixture(aliased), /Supporting file (byte|path) drift/);
+      assert.equal(changed, true, "Drift must occur after consuming the original admission bytes");
+    } finally {
+      fs.readFileSync = originalRead;
+      fs.writeFileSync(file, bytes);
+    }
+  }
+}
+
+export function uncontrolledBusyChecks() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ofh-busy-native-"));
+  const file = path.join(directory, "admissions.jsonl");
+  try {
+    const { input, admission } = uncontrolledBusyFixture(file);
+    const write = (row) => fs.writeFileSync(file, JSON.stringify(row) + "\n");
+    write(admission);
+    const before = canonical(input);
+    const result = validateFixture(input, { gammaTick: 1 });
+    assert.equal(
+      result.records.length,
+      0,
+      "Neither uncontrolled owner nor omitted action is fitted",
+    );
+    assert.ok(
+      result.excluded.some((row) => row.reason === "censored-busy-act" && row.decisionStep === 1),
+    );
+    assert.ok(
+      result.excluded.some((row) => row.reason === "uncontrolled-policy-event" && row.receiptID),
+    );
+    assert.equal(canonical(input), before);
+    for (const mutate of [
+      (x) => {
+        x.dataset.records.find(
+          (row) => row.event.kind === "hybrid-combat-receipt",
+        ).event.receiptID = "orphan";
+      },
+      (x) => {
+        x.dataset.records.find(
+          (row) => row.event.kind === "hybrid-combat-outcome",
+        ).event.confirmed = false;
+      },
+      (x) => {
+        x.dataset.records.find(
+          (row) => row.event.kind === "hybrid-combat-outcome",
+        ).event.truncated = true;
+      },
+      (x) => {
+        x.dataset.records.find((row) => row.event.kind === "hybrid-combat-accepted").event.learned =
+          true;
+      },
+      (x) => {
+        x.dataset.records.find(
+          (row) => row.event.kind === "hybrid-combat-receipt",
+        ).event.actorSmallID = 99;
+      },
+      (x) => {
+        x.dataset.records.find((row) => row.event.kind === "hybrid-combat-receipt").event.tick =
+          100;
+      },
+      (x) => {
+        x.dataset.records.find(
+          (row) => row.event.kind === "hybrid-combat-outcome",
+        ).event.modelIdentity = "{}";
+      },
+      (x) => {
+        x.nativeRun.result.hybridEvaluation.ledger.entries.find(
+          (row) => row.kind === "hybrid-safety",
+        ).legalityPassed = false;
+      },
+      (x) => {
+        x.nativeRun.result.hybridEvaluation.attackAdmissions.attempts = 2;
+      },
+      (x) => {
+        const receipt = x.dataset.records.find(
+          (row) => row.event.kind === "hybrid-combat-receipt",
+        ).event;
+        x.dataset.records.find(
+          (row) => row.event.kind === "hybrid-combat-accepted",
+        ).event.attackIds = [receipt.receiptID];
+      },
+      (x) => {
+        x.dataset.records.find((row) => row.event.kind === "hybrid-combat-outcome").event.reason =
+          "competing-attack-emission";
+      },
+      (x) => {
+        x.dataset.records.find((row) => row.event.kind === "hybrid-combat-outcome").event.terminal =
+          true;
+      },
+      (x) => {
+        x.dataset.records.find((row) => row.event.kind === "hybrid-combat-receipt").event
+          .generation++;
+      },
+      (x) => {
+        x.dataset.records.find((row) => row.event.kind === "hybrid-combat-accepted").event
+          .acceptedSequence++;
+      },
+      (x) => {
+        x.dataset.records.find((row) => row.event.kind === "hybrid-combat-receipt").event
+          .targetSmallID++;
+      },
+      (x) => {
+        const owner = x.dataset.records.find((row) => row.event.kind === "hybrid-combat-outcome");
+        x.dataset.records.push(structuredClone(owner));
+        x.dataset.recordCount++;
+      },
+    ]) {
+      const copy = structuredClone(input);
+      mutate(copy);
+      assert.throws(() => validateFixture(copy, { gammaTick: 1 }));
+    }
+    for (const patch of [
+      { payloadTroops: 11 },
+      { forced: true },
+      { targetSmallID: 99 },
+      { runIdentity: "foreign" },
+      { emitted: false },
+      { payloadTroops: 0 },
+      { spendableTroops: null },
+    ]) {
+      write({ ...admission, ...patch });
+      assert.throws(() => validateFixture(input, { gammaTick: 1 }));
+    }
+    const duplicate = structuredClone(input);
+    duplicate.nativeRun.result.hybridEvaluation.attackAdmissions.attempts = 2;
+    fs.writeFileSync(
+      file,
+      [admission, { ...admission, sequence: 1 }].map((row) => JSON.stringify(row)).join("\n") +
+        "\n",
+    );
+    assert.throws(
+      () => validateFixture(duplicate, { gammaTick: 1 }),
+      /ambiguous uncontrolled native admission/,
+    );
+    fs.unlinkSync(file);
+    assert.throws(() => validateFixture(input, { gammaTick: 1 }));
+    process.stdout.write(
+      "uncontrolled busy owner: strict exclusion/receipt/admission negatives passed\n",
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
   }
 }
 
@@ -900,6 +1403,8 @@ function cancellationChecks() {
 
 function coverageChecks() {
   censoredChecks();
+  busyAttackChecks();
+  busyAttackChecks("tribe-only-terminal-v1");
   cancellationChecks();
   uncontrolledCancellationChecks();
   const gappedInput = fixture({ actions: ["wait", "declined", "wait"] });
@@ -1427,7 +1932,108 @@ async function uncontrolledWaitExclusionChecks() {
   assert.throws(() => validateFixture(unknownOwner.finish()), /Busy WAIT owner scope mismatch/);
 }
 
+function fundedEpisode(seed, win) {
+  const input = fixture({
+    profile: "frontier-v1",
+    controlProfile: "funded-tribe-terminal-v1",
+    actions: ["attack"],
+    win,
+  });
+  const manifest = input.selection.manifest;
+  manifest.seed = seed;
+  manifest.runID = hash(canonical([manifest.experimentID, seed, manifest.mode]));
+  input.nativeRun.start.seed = seed;
+  input.nativeRun.result.seed = seed;
+  input.dataset.coverage[0].runID = manifest.runID;
+  for (const row of input.dataset.records) row.event.runIdentity = manifest.runID;
+  for (const event of input.nativeRun.result.hybridEvaluation.ledger.entries) {
+    event.runIdentity = manifest.runID;
+    if (["accepted", "receipt", "outcome"].some((kind) => event.kind === `hybrid-combat-${kind}`)) {
+      event.behaviorPolicy = "deterministic-native-tribe-choice-v1";
+      event.behaviorProbability = null;
+      event.logProbability = null;
+    }
+  }
+  return input;
+}
+
+export function fundedProfileChecks() {
+  const C = loadNativeContract();
+  const inputs = [
+    fundedEpisode("funded-original-win", true),
+    fundedEpisode("funded-original-loss", false),
+  ];
+  const original = canonical(inputs);
+  const trajectories = inputs.map((input) => validateFixture(input, { gammaTick: 1 }));
+  const fitted = C.fitEpisodeBatchReturns(
+    trajectories[0].snapshot,
+    trajectories.map(({ records, context }) => ({ records, context })),
+  );
+  C.validate(fitted.model);
+  assert.equal(C.learningAllowed(fitted.model), false);
+  assert.equal(fitted.summary.fitted, 2);
+  assert.equal(fitted.summary.updates, 4);
+  assert.deepEqual(JSON.parse(JSON.stringify(fitted.model.offline.headUpdates)), {
+    wait: 0,
+    act: 2,
+    target: 2,
+  });
+  assert.equal(
+    canonical(fitted.model.models.wait),
+    canonical(trajectories[0].snapshot.models.wait),
+  );
+  assert.equal(JSON.stringify(fitted.model.offline.originModel), inputs[0].selection.modelIdentity);
+  assert.deepEqual(
+    trajectories.map((t) => t.returns[0].return),
+    [1, -1],
+  );
+  assert.equal(canonical(inputs), original);
+  assert.throws(() => validateFixture(inputs[0], { gammaTick: 0.9 }), /gammaTick/);
+  busyAttackChecks("funded-tribe-terminal-v1");
+  for (const mutate of [
+    (input) => {
+      input.dataset.coverage[0].dropped = 1;
+    },
+    (input) => {
+      input.nativeRun.result.intentBudgetViolated = true;
+    },
+    (input) => {
+      input.dataset.records.find(
+        (row) => row.event.kind === "hybrid-combat-receipt",
+      ).event.receiptID = "foreign";
+    },
+    (input) => {
+      input.nativeRun.result.hybridCombat.model.actions.tribeRanking = "native-land-subset-v1";
+    },
+  ]) {
+    const input = fundedEpisode("funded-native-negative", false);
+    mutate(input);
+    assert.throws(() => validateFixture(input, { gammaTick: 1 }));
+  }
+  for (const mutate of [
+    (proposal) => {
+      proposal.behaviorPolicy = "deterministic-wait-act-ranked-target";
+    },
+    (proposal) => {
+      proposal.behaviorProbability = 1;
+    },
+    (proposal) => {
+      proposal.candidateSetSource = "invented";
+    },
+  ]) {
+    const input = fundedEpisode("funded-negative", false);
+    mutate(input.dataset.records.find((row) => row.event.kind === "hybrid-combat-proposal").event);
+    assert.throws(() => validateFixture(input, { gammaTick: 1 }));
+  }
+  process.stdout.write(
+    "funded tribe N3: exact original batch SGD and strict policy negatives passed\n",
+  );
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  supportingFileChecks();
+  uncontrolledBusyChecks();
+  fundedProfileChecks();
   trajectoryChecks();
   await producerChecks();
   await waitExclusionChecks();

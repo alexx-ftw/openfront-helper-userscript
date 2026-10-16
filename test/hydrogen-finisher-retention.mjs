@@ -3,12 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const source = fs.readFileSync(
-  path.join(repoRoot, "engine/ingame/auto-bot/nukeBehavior.js"),
-  "utf8",
-);
+const source = readNukeBehaviorSource();
 const sharedUtilsSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/shared-utils.js"),
   "utf8",

@@ -1,0 +1,45 @@
+{
+  "agent": "heatmap-performance",
+  "status": "done",
+  "handoff_status": "ready_for_review",
+  "active_step": "completed",
+  "writes_frozen": true,
+  "plan": ["Allocation test RED", "Invocation-local input reuse GREEN", "RegressionAnalysis and ComplexityCheck", "Focused verification and writer freeze"],
+  "files_owned": ["engine/ingame/heatmaps.js", "test/heatmap-projection-allocation.mjs", ".codex/apex/prd/agents/heatmap-performance-prd.json"],
+  "analysis": "Reuse completed lead Analyze trio; native TransformHandler.ts read locally: synchronous cell read, no input retention.",
+  "files_modified": ["engine/ingame/heatmaps.js", "test/heatmap-projection-allocation.mjs", ".codex/apex/prd/agents/heatmap-performance-prd.json"],
+  "files_unchanged": ["package.json", "build.mjs", "openfront-helper.user.js", "openfront-helper.autobot.js", "engine/ingame/auto-bot/**", "scripts/headless/**"],
+  "red": "node test/heatmap-projection-allocation.mjs exit 1: AssertionError 1000 !== 1 at distinct transform-input assertion; 1000 ordered transform calls passed first.",
+  "green": "node test/heatmap-projection-allocation.mjs exit 0: 1000 calls, 1 input; exact outputs and reentrancy preserved.",
+  "verification": {
+    "projection": "exit 0; exact 1000 output records and transform-call coordinates/order; independent records; null/undefined tile; nonfinite/non-number coordinates; strict four viewport boundaries; empty inputs/null transform result; valid/fallback zoom; camera and source-count changes; reused output/input; nested invocation safety and transform mutation reset",
+    "performance_regressions": "node test/performance-regressions.mjs exit 0",
+    "structure_regressions": "node test/structure-performance-regressions.mjs exit 0",
+    "typecheck": "npm run check exit 0; src/**/*.ts only, does not typecheck classic engine JS",
+    "syntax": "node --check engine/ingame/heatmaps.js and test/heatmap-projection-allocation.mjs both exit 0",
+    "scoped_eslint": "exit 0; fixed initial test no-console finding by using existing console.warn convention",
+    "prettier": "test/heatmap-projection-allocation.mjs exit 0; 165 lines",
+    "references": "Shared declaration and both economy/export callers retained; no new engine file, symbols, imports, config or cadence changes"
+  },
+  "elicitation": {
+    "techniques": ["RegressionAnalysis", "ComplexityCheck"],
+    "status": "applied; no unresolved implementation findings",
+    "RegressionAnalysis": "Invocation-local object prevents nested calls sharing scratch; synchronous native transform consumes cell.x/y without retention; unchanged filters, property copying, weights/types, scale calculation and call order. Allocation/output/regression tests green.",
+    "ComplexityCheck": "Still O(sources) transform calls and independent accepted output allocations. Caller-owned input allocation reduces N to one per invocation; no pooling, affine approximation, new helper or abstraction. Empty invocation allocates one small scratch object.",
+    "corrections": ["Test output changed from console.log to console.warn for repository lint convention"]
+  },
+  "skills_consulted": ["solid-detection", "solid-generic", "tdd", "verification", "elicitation", "ts-testing", "ponytail", "security-scan/references/scan-patterns.md"],
+  "sources_verified": {
+    "local": ["openfront-engine/src/client/TransformHandler.ts:worldToScreenCoordinates/worldToCanvasCoordinates/canvasToScreenCoordinates", "engine/ingame/map-overlay-scheduler.js:mapWorldToScreen", "test/helpers/classic-script.mjs"],
+    "primary": "https://tc39.es/ecma262/multipage/indexed-collections.html opened this session; lead's 2026-10-14 TC39 and W3C hr-time-3 evidence reused",
+    "providers": "fuse-browser fast path not exposed; Context7/Exa not called because no uncertain/new API, completed lead research reused; latest instruction forbids broader research"
+  },
+  "sha256": {
+    "engine/ingame/heatmaps.js": "13e767bbeb2b591f129fe9a9b24e7629b939dbcef534cb7cbf860befa598a852",
+    "test/heatmap-projection-allocation.mjs": "ea8a8fd992e73184b5f66ee051813bdfa5dc291d25fe72aaf4ea1b96f3d3bc62"
+  },
+  "limits": "No full suite, browser, benchmark, build, Git/package edits or nested delegation. Native synchronous input contract required; timing improvement not measured by this lot. Existing large heatmaps.js retained under bounded mandate. update_plan tool unavailable; plan tracked here. Foreign WIP untouched by this executor.",
+  "remaining_issues": "Lead-owned challenger/sniper acceptance and integrated build/benchmark remain pending; not self-cleared.",
+  "hook_notice": "SNIPER VALIDATION REQUIRED: Code file 'heatmaps.js' was modified. You MUST now run the sniper agent (fuse-ai-pilot:sniper) to validate this modification before continuing. Routed to lead under executor no-nested-delegation rule. Generated artifact duplicate-symbol notes refer to the build output, not a second source implementation.",
+  "exit_outcome": "Stop: bounded executor implementation and focused evidence frozen for lead review; final acceptance is lead-owned."
+}

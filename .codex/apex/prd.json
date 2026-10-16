@@ -1,0 +1,7 @@
+{
+  "supporting-files-seam": {"prd": "prd/supporting-files-seam-prd.json", "status": "assigned"},
+  "runtime-performance-20261014": {"prd": "prd/runtime-performance-20261014-prd.json", "status": "in_progress"},
+  "context-miss-cache-20261016": {"prd": "prd/context-miss-cache-20261016-prd.json", "status": "validated"},
+  "econ-projection-perf-split-20261016": {"prd": "prd/econ-projection-perf-split-20261016-prd.json", "status": "in_progress"},
+  "nuke-split-test-closure-20261016": {"prd": "prd/nuke-split-test-closure-20261016-prd.json", "status": "assigned"}
+}

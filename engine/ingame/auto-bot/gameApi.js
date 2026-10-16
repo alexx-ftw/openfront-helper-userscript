@@ -92,6 +92,9 @@
     const unitSnapshotCache = new Map();
     let playerSnapshotTick = null;
     let playerSnapshot = null;
+    let scannedUpdates = null;
+    let winnerObserved = false;
+    let winnerlessEndObserved = false;
     // Prefer an upstream exact hook when one exists. The current GameView has no
     // route worker message, so the local full-resolution water graph is the fallback.
     // DIVERGENCE: this fallback measures shortest full-resolution water distance;
@@ -1082,6 +1085,32 @@
       numLandTiles: () => src.numLandTiles(),
       numTilesWithFallout: () =>
         typeof src.numTilesWithFallout === "function" ? src.numTilesWithFallout() : 0,
+      // GameView fallback: getWinner() is absent client-side, so scan each
+      // update-batch object exactly once (identity cache). WinUpdate is the
+      // only update carrying allPlayersStats; winner != null latches a real
+      // win, while a winnerless WinUpdate is a cancelled game that must stay
+      // false even after gameOver(). gameOver() then recovers a real win whose
+      // batch was missed, because GameView keeps it true once set.
+      hasWinner: () => {
+        if (typeof src.getWinner === "function") return src.getWinner() !== null;
+        if (typeof src.updatesSinceLastTick === "function") {
+          const updates = src.updatesSinceLastTick();
+          if (updates !== scannedUpdates) {
+            scannedUpdates = updates;
+            for (const batch of Object.values(updates ?? {})) {
+              if (!Array.isArray(batch)) continue;
+              for (const update of batch) {
+                if (update == null || !Object.hasOwn(update, "allPlayersStats")) continue;
+                if (update.winner != null) winnerObserved = true;
+                else winnerlessEndObserved = true;
+              }
+            }
+          }
+        }
+        if (winnerObserved) return true;
+        if (winnerlessEndObserved) return false;
+        return typeof src.gameOver === "function" ? src.gameOver() === true : false;
+      },
       getWinner: () => (typeof src.getWinner === "function" ? src.getWinner() : null),
       units: (...types) => cachedUnits(src, "game", types),
       unitCount: (type) => cachedUnits(src, "game", [type]).length,

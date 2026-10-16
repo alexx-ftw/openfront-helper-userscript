@@ -5,6 +5,9 @@ import { Difficulty, UnitType } from "../openfront-engine/src/core/game/Game";
 import { unpackMotionPlans } from "../openfront-engine/src/core/game/MotionPlans";
 import { setupTwoPlayerGame } from "./helpers/two-player-game.mts";
 import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
+import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 
 const game = await setupTwoPlayerGame("big_plains");
 const attacker = game.player("attacker");
@@ -25,14 +28,14 @@ const plans = new Map(
   ),
 );
 const view = Object.assign(Object.create(game), { motionPlans: () => plans });
-const files = [
-  "engine/ingame/shared-utils.js",
-  ...["legendaryPlanner", "structureBehavior", "nukeBehavior"].map(
-    (name) => `engine/ingame/auto-bot/${name}.js`,
-  ),
+const sources = [
+  readRepositoryFile("engine/ingame/shared-utils.js"),
+  readLegendaryPlannerSource(),
+  readStructureBehaviorSource(),
+  readNukeBehaviorSource(),
 ];
 const behavior = executeClassicScript(
-  `${files.map(readRepositoryFile).join("\n")}
+  `${sources.join("\n")}
   const behavior = Object.create(NukeBehavior.prototype);
   behavior.structureBehavior = Object.create(StructureBehavior.prototype);
   behavior;`,

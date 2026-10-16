@@ -47,9 +47,9 @@ Ported from a WebExtension's content scripts + page bridge. **No `import`/`expor
 - **Lobby layer** (`map-data.js`, `shared/settings.js`, `shared/i18n.js`, `lobby/*`): auto-join logic + the floating auto-join panel. Talks to the shell via `window.__OFH.chrome`.
 - **In-game layer** (`ingame/**`): overlays, helper panels, and the auto-bot. `bootstrap.js` (emitted last) is the `window.postMessage` router — it listens for source-tagged messages (`openfront-autojoin-extension` / `…-page`) and toggles each feature (`SHOW_GOLD_PER_MINUTE`, `SET_AUTO_NUKE`, `SET_AUTO_BOT_I18N`, …).
 
-**The exact file order in `build.mjs` (`LOBBY_FILES` / `INGAME_FILES`) is load order and it matters.** If you add an engine file, insert it in the right position in those arrays — there is no auto-discovery for engine files (only locales are auto-discovered).
+**The exact file order in `scripts/build/sources.mjs` (`LOBBY_FILES` / `INGAME_FILES`, wired by `build.mjs`) is load order and it matters.** If you add an engine file, insert it in the right position in those arrays — there is no auto-discovery for engine files (only locales are auto-discovered).
 
-## Build output anatomy (`build.mjs`)
+## Build output anatomy (`build.mjs` + `scripts/build/`)
 
 The single `.user.js` is assembled as:
 
@@ -74,7 +74,7 @@ The most intricate subsystem and the one most likely to need care. It is a **fai
 **Before modifying or porting bot behavior, read `engine/ingame/auto-bot/PORT-CONTRACT.md` and `engine/ingame/auto-bot/README.md`.** Key rules from the contract:
 
 - Translation must be **1:1 faithful** — preserve every branch, constant, probability, strategy order, and call order. The only permitted changes are the mechanical API substitutions documented there. If something can't be reproduced client-side, leave a `// DIVERGENCE:` comment rather than silently approximating.
-- Behaviors are classic scripts with **fixed class names + constructor signatures** (`nationExecution.js` constructs them) and a **fixed load order** in `build.mjs`.
+- Behaviors are classic scripts with **fixed class names + constructor signatures** (`nationExecution.js` constructs them) and a **fixed load order** in `scripts/build/sources.mjs`.
 - Player/owner identity compares by `.smallID()`, not `===`. Gold is `bigint`.
 - The async boundaries (`buildables`/`canBuild`, `bestTransportShipSpawn`, other players' `borderTiles()`, `actions`) are the only places control flow may differ from src — use the documented **rank-then-probe** pattern and wrap in `withTimeout(...)`.
 

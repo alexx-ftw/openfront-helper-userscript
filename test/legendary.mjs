@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import "./legendary-train-outflow.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { expectedRailIncomePerTick } from "./helpers/construction-simulator.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,7 +21,7 @@ for (const difficulty of ["Easy", "Medium", "Hard", "Impossible", "Legendary"]) 
 }
 
 const plannerSandbox = {};
-executeClassicScript(read("engine/ingame/auto-bot/legendaryPlanner.js"), plannerSandbox, {
+executeClassicScript(readLegendaryPlannerSource(), plannerSandbox, {
   filename: "legendaryPlanner.js",
 });
 
@@ -2011,12 +2014,12 @@ assert.match(read("engine/ingame/auto-bot/panel.js"), /return \["Legendary"\]/);
 assert.doesNotMatch(read("engine/ingame/auto-bot/panel.js"), /\["Easy", "Medium", "Hard"/);
 assert.match(read("src/shell/popup/panel.ts"), /DIFFICULTIES/);
 assert.match(read("locales/en/common.json"), /"Legendary"/);
-assert.match(read("build.mjs"), /auto-bot\/legendaryPlanner\.js/);
+assert.match(read("scripts/build/sources.mjs"), /auto-bot\/legendary-planner\//);
 assert.match(
-  read("engine/ingame/auto-bot/legendaryPlanner.js"),
+  readLegendaryPlannerSource(),
   /LEGENDARY_EXACT_SCHEDULE_NODE_LIMIT/,
 );
-const structureSource = read("engine/ingame/auto-bot/structureBehavior.js");
+const structureSource = readStructureBehaviorSource();
 assert.match(structureSource, /rankLegendaryConstructionActions/);
 assert.match(structureSource, /legendaryAllySupportPlacementScore/);
 assert.match(structureSource, /legendaryTeamCenterPlacementScore/);
@@ -2080,7 +2083,7 @@ const nukePathSandbox = {
 };
 nukePathSandbox.globalThis = nukePathSandbox;
 executeClassicScript(
-  `${read("engine/ingame/auto-bot/nukeBehavior.js")}\nglobalThis.__UniversalPathFinding = UniversalPathFinding;`,
+  `${readNukeBehaviorSource()}\nglobalThis.__UniversalPathFinding = UniversalPathFinding;`,
   nukePathSandbox,
   { filename: "nukeBehavior-pathfinder.js" },
 );

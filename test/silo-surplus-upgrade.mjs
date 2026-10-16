@@ -28,6 +28,7 @@ function makeWorld({
   levels = null,
   upgradeCosts = [],
   goldDropDuringProbe = false,
+  demandAppearsDuringProbe = false,
   winFixes = true,
   nukesDisabled = false,
 } = {}) {
@@ -65,6 +66,15 @@ function makeWorld({
   behavior.tileInsideActiveHostileMissileImpact = () => false;
   behavior.buildableFor = async (_type, tile) => {
     if (goldDropDuringProbe) availableGold = 0n;
+    if (demandAppearsDuringProbe) {
+      state.nukeWantSlots = {
+        need: 2,
+        targetSamId: 201,
+        at: 0,
+        targetTile: 900,
+        unblockedSiloIds: ["1"],
+      };
+    }
     return {
       canUpgrade: true,
       cost: upgradeCosts[tile - 100] ?? 1_000_000n,
@@ -151,7 +161,16 @@ function makeWorld({
   assert.equal(emitted.length, 0, "the post-probe reserve gate prevents overspend");
 }
 
-// 9. If the first silo quote is unaffordable, a cheaper later silo can upgrade.
+// 9. A SAM request raised during the async probe keeps the surplus lane out of
+//    the way so the target-specific route and reserve gates can handle it.
+{
+  const { behavior, emitted, state } = makeWorld({ demandAppearsDuringProbe: true });
+  assert.equal(await behavior.maybeUpgradeSiloFromSurplus(), false);
+  assert.equal(state.nukeWantSlots?.targetSamId, 201, "the SAM request remains pending");
+  assert.equal(emitted.length, 0, "the generic upgrade does not mask target-specific demand");
+}
+
+// 10. If the first silo quote is unaffordable, a cheaper later silo can upgrade.
 {
   const { behavior, emitted } = makeWorld({
     gold: 2_000_000n,
@@ -165,7 +184,7 @@ function makeWorld({
 
 await import("./silo-demand-upgrade-preference.mjs");
 
-// 10. Generic surplus leveling yields to an available economy build action.
+// 11. Generic surplus leveling yields to an available economy build action.
 {
   const { behavior, emitted } = makeWorld();
   const economyBuilds = [];

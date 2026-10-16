@@ -1,0 +1,120 @@
+{
+  "agent": "lane-c-nuke-integration",
+  "status": "done",
+  "scope": [
+    "test/nuke-economy-policy.mjs",
+    "test/nuke-economy-policy-parts/part-04.mjs",
+    "test/nuke-economy-policy-parts/part-18.mjs",
+    "this agent PRD only"
+  ],
+  "plan": [
+    {
+      "step": "Read task tracking, owned files, source paths; verify current and HEAD hash provenance",
+      "status": "completed"
+    },
+    {
+      "step": "Pin current joined hash; correct each proven stale edge/target assertion one at a time",
+      "status": "completed"
+    },
+    {
+      "step": "Named eLicit, full test, parser/lint/diff/line checks and record unchanged paths",
+      "status": "completed"
+    }
+  ],
+  "baseline": {
+    "node test/nuke-economy-policy.mjs": {
+      "exit": 1,
+      "actual": "20dfad265456911ec344323a313b879ef169b3e982ba37a2dadfe8e47124ba35",
+      "expected": "4b27bcb100b8dd89daff99a8b8fbb415f87ba552c98e139b0a4cbf07304efa87"
+    },
+    "sha256_after_reversing_only_part03_in_memory": "4b27bcb100b8dd89daff99a8b8fbb415f87ba552c98e139b0a4cbf07304efa87",
+    "current_joined_parts": 27,
+    "head": "test/nuke-economy-policy-parts does not exist at HEAD; HEAD contains original monolith test/nuke-economy-policy.mjs"
+  },
+  "elicitation": {
+    "techniques": [
+      "Boundary Value Analysis",
+      "Regression Analysis"
+    ],
+    "status": "findings corrected before final verification",
+    "review": {
+      "boundary_value_analysis": [
+        "Structure scoring at exact outer radius expects 100000; outside remains 0 and inside remains 100000.",
+        "Friendly structure penalty at exact edge expects 1500 from value 500 times multiplier 3; interior penalty remains positive.",
+        "Hydrogen finisher treats exact edge as value true; inside remains true.",
+        "Friendly land filter uses inclusive circular footprint; own edge tile is risky true, while physical unit deletion remains strict in NukeExecution.",
+        "Hard FFA third-player tile expectation follows existing userscript isValidNukeTile policy; AFK ally false and Hard Team true assertions remain."
+      ],
+      "regression_analysis": [
+        "Only runner expected hash and four existing exact-boundary expectations/messages changed.",
+        "All source behavior is untouched; part-03 remains frozen.",
+        "27 part files remain in order; final expected hash derived from current joined bytes.",
+        "The FFA expectation is intentionally userscript-policy behavior and differs from pinned native Team-only allowance; this lane makes no production parity change."
+      ]
+    },
+    "findings_fixed": [
+      "Runner SHA256 stale because prior part-03 change; reverse-only-in-memory join recreated old pin exactly. Updated runner pin after each part edit.",
+      "Friendly and Hydrogen scorer boundaries had incorrectly applied strict physical-deletion semantics.",
+      "FFA assertion contradicted existing userscript policy; aligned assertion wording/value to policy while retaining AFK and Team cases.",
+      "Friendly land footprint includes edge cells; assertion was incorrectly copied from strict deletion semantics."
+    ],
+    "unresolved": []
+  },
+  "hash_trace": [
+    {
+      "state": "prior part-03 corrected only",
+      "sha256": "20dfad265456911ec344323a313b879ef169b3e982ba37a2dadfe8e47124ba35",
+      "runner_expected_old": "4b27bcb100b8dd89daff99a8b8fbb415f87ba552c98e139b0a4cbf07304efa87",
+      "reverse_only_part03_in_memory_sha256": "4b27bcb100b8dd89daff99a8b8fbb415f87ba552c98e139b0a4cbf07304efa87"
+    },
+    {
+      "after_part04_friendly_edge": "d333ff3ae82356c92d082d9dd1a6808e16a3fbe368a609611870b016331bfe95"
+    },
+    {
+      "after_part04_hydrogen_edge": "00127ea0e4c774e34b4a59950bb4cad2fc79b50ec0559aa703bc3f61229575eb"
+    },
+    {
+      "after_part18_ffa": "83b5d16fe0de315e93ecc5405b5d8771bcfdeccc3792cdb522300120aa625d55"
+    },
+    {
+      "final_after_friendly_land_edge": "cef348967fb3f0fc366e1dd3f07a8f2df8f78563879f0cb76bf7b410c081a1d1"
+    }
+  ],
+  "files_modified": [
+    "test/nuke-economy-policy.mjs",
+    "test/nuke-economy-policy-parts/part-04.mjs",
+    "test/nuke-economy-policy-parts/part-18.mjs"
+  ],
+  "files_unchanged": [
+    "test/nuke-economy-policy-parts/part-03.mjs (frozen)",
+    "all other test/nuke-economy-policy-parts/part-*.mjs",
+    "test/hybrid-runtime-integration.mjs and test/hybrid-runtime-integration-parts/*",
+    "all engine production files including NationNukeBehavior.ts, NukeExecution.ts and engine/ingame/auto-bot/nuke-behavior/*",
+    "package.json and package-lock.json",
+    "route-expiry and six economy scenario lane files",
+    "build artifacts and version metadata"
+  ],
+  "handoff_status": "ready_for_lead_review",
+  "writes_frozen": true,
+  "verification": {
+    "node test/nuke-economy-policy.mjs": "exit 0; nuke economy policy tests passed",
+    "node --check test/nuke-economy-policy.mjs": "exit 0",
+    "node --check --input-type=module (joined source stdin)": "exit 0",
+    "node_modules/.bin/eslint test/nuke-economy-policy.mjs": "exit 0",
+    "node_modules/.bin/eslint --stdin --stdin-filename test/nuke-economy-policy.mjs (joined source stdin)": "exit 0",
+    "node_modules/.bin/prettier --check test/nuke-economy-policy.mjs": "exit 0; all matched files use Prettier code style",
+    "git diff --check -- test/nuke-economy-policy.mjs": "exit 0",
+    "git diff --no-index --check /dev/null test/nuke-economy-policy-parts/part-04.mjs": "exit 1 by untracked-file comparison; no whitespace diagnostics",
+    "git diff --no-index --check /dev/null test/nuke-economy-policy-parts/part-18.mjs": "exit 1 by untracked-file comparison; no whitespace diagnostics",
+    "final joined hash/order assertion": "exit 0; 27 ordered parts; SHA256 70ee1f61fe38b081145d5deea86dae69afa2b8c8d9ccae887b8b1ee2b4b089f0",
+    "line limits": "runner 40; part-04 51; part-18 194; each <=200"
+  },
+  "sources_verified": [
+    "Pinned native openfront-engine src/core/execution/nation/NationNukeBehavior.ts uses euclDistFN(... outer,false); openfront-engine/src/core/game/GameMap.ts:715-723 defines inclusive <= outer\u00b2; NukeExecution.ts:477 physically deletes strictly < outer\u00b2.",
+    "Current production helper engine/ingame/auto-bot/nuke-behavior/part-13.js friendlyFirePenalty uses <= outerSquared; part-24.js postSalvoHydrogenHasValue uses <= outer\u00b2; part-11.js friendly-land footprint retains dx\u00b2+dy\u00b2 <= outer\u00b2; part-12.js Hard port policy admits non-friendly player tiles without game-mode check.",
+    "Head lacks split part paths; git show HEAD:test/nuke-economy-policy.mjs confirms monolithic base, while current 27-part joined source is hash-pinned by updated runner."
+  ],
+  "remaining_issues": [],
+  "known_divergence": "The userscript Hard FFA tile policy admits non-friendly third-player tiles, while pinned native NationNukeBehavior allows third-party player tiles only in Team mode. Test now states the existing userscript policy; production behavior remains unchanged.",
+  "exit_contract": "Stop: all scoped source changes and full nuke-economy-policy test verified green; no remaining test failures. Ready for lead-owned challenger/sniper acceptance."
+}

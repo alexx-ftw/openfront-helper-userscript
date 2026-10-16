@@ -6,22 +6,24 @@
 // cover the integrated behavior end-to-end.
 
 import assert from "node:assert/strict";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 // ── Legendary planner primitives (salvo budget ceiling) ──────────────────────
 const plannerSandbox = {};
-executeClassicScript(read("engine/ingame/auto-bot/legendaryPlanner.js"), plannerSandbox, {
+executeClassicScript(readLegendaryPlannerSource(), plannerSandbox, {
   filename: "legendaryPlanner.js",
 });
 
 // ── structureBehavior sandbox (placement + salvo budget methods) ─────────────
-const structureSource = read("engine/ingame/auto-bot/structureBehavior.js");
+const structureSource = readStructureBehaviorSource();
 const structureSandbox = {
   UNIT: {
     City: "City",

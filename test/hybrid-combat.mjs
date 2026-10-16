@@ -1515,4 +1515,5 @@ const trajectory = await import("./hybrid-trajectory-contract.mjs");
 trajectory.trajectoryChecks();
 await trajectory.producerChecks();
 await import("./hybrid-return-training.mjs");
+await import("./hybrid-return-batch.mjs");
 process.stdout.write("hybrid combat learning tests passed\n");

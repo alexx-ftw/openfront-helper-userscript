@@ -1,0 +1,31 @@
+{
+  "agent": "performance-integration",
+  "status": "done",
+  "handoff_status": "ready_for_review",
+  "writes_frozen": true,
+  "final_acceptance": "Not verified; parent owns independent gates; broad gates failed",
+  "plan": [
+    {"step": "Read frozen inputs and register allocation tests", "status": "completed"},
+    {"step": "Build integrated tree and run requested checks", "status": "completed"},
+    {"step": "Record named elicitation, evidence and residuals", "status": "completed"}
+  ],
+  "scope": ["package.json scripts.test registration only", "openfront-helper.user.js", "openfront-helper.autobot.js", "openfront-helper.build-id.js", "docs/runtime-performance-validation-20261014.md", ".codex/apex/prd/agents/performance-integration-prd.json"],
+  "constraints": "No source, test, benchmark, dependency, version, lock, Git, publication or nested delegation edits. Generated outputs necessarily include foreign WIP. Lead owns challenger/sniper.",
+  "tracking": "Existing task.json read; update_plan tool unavailable, local plan recorded here.",
+  "red": "Registration assertion exited 1 because allocation commands were absent.",
+  "green": "Unique commands in required adjacency; all other package bytes preserved",
+  "files_modified": ["package.json scripts.test only", "openfront-helper.user.js via build", "openfront-helper.autobot.js via build", "openfront-helper.build-id.js via build", "docs/runtime-performance-validation-20261014.md", ".codex/apex/prd/agents/performance-integration-prd.json"],
+  "files_unchanged": ["sources/tests/benchmark", "package-lock.json", "version/dependencies/pretest/rest of package", "Git index"],
+  "verification": {
+    "build_typecheck_parity_smoke_bootstrap_allocation_performance_frame_stall_structure_scoped_lint": "All exit 0",
+    "npm_test": "Exit 1 in pretest construction-simulator-live-config.mts:371, actual undefined expected Factory; identical original-package isolated baseline reproduced",
+    "separate_body": "npm run test --ignore-scripts, session 46920, exit 1 at headless-simulation.mjs:600 landlocked FFA border pressure; not baseline-compared",
+    "quality_global": "Exit 2 at lint, 156 errors/0 warnings in inherited unrelated files; no performance source/test errors; later stages skipped",
+    "preservation": "Frozen named file and Git index hashes unchanged"
+  },
+  "elicitation": {"techniques": ["RegressionAnalysis", "FailureModeAnalysis"], "status": "Applied; no own registration finding"},
+  "logs": "/tmp/ofh-runtime-performance-20261014-integration/{build,focused,npm-test,baseline-construction,quality-global,frozen-hashes}.log; direct body exact failure in validation doc/tool session 46920; quality middle output truncated",
+  "sources_verified": "Supplied current Analyze/Node perf_hooks evidence reused; local package/build/test/maps and frozen executor PRDs read; no new APIs or broad research",
+  "remaining_issues": "Broad pretest/headless/lint failures; headless not baseline-compared; generated outputs combine foreign WIP; skipped later quality stages and browser performance unverified; parent challenger/sniper pending",
+  "exit": "Stop: integration/check execution recorded; ALL writes frozen; no broad retries, foreign fixes or final benchmarks"
+}

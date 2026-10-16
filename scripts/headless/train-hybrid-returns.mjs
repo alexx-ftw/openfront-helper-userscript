@@ -9,6 +9,8 @@ import {
   hash,
   readLedger,
   validateTrajectory,
+  supportingFilesFor,
+  verifySupportingFiles,
   PRODUCER_CONTRACT,
 } from "./hybrid-trajectory-contract.mjs";
 import { validateSeedIdentities, format, modelProvenance } from "./evaluate-hybrid-combat.mjs";
@@ -26,12 +28,15 @@ export function loadNativeContract(source = fs.readFileSync(sourcePath, "utf8"))
 export function fitTrajectory(trajectory, contract = loadNativeContract()) {
   assert.equal(trajectory.trainable, true, "Nonterminal/cap/error trajectory excluded, not a loss");
   assert.equal(typeof contract.fitEpisodeReturns, "function", "Native return SGD API unavailable");
+  const supportingFiles = supportingFilesFor(trajectory);
+  verifySupportingFiles(supportingFiles);
   const frozen = canonical(trajectory);
   const fitted = contract.fitEpisodeReturns(
     trajectory.snapshot,
     trajectory.records,
     trajectory.context,
   );
+  verifySupportingFiles(supportingFiles);
   assert.equal(canonical(trajectory), frozen, "Native trainer mutated frozen input");
   contract.validate(fitted.model);
   assert.equal(fitted.model.reward, "discounted-terminal-win-return-v1");
@@ -46,17 +51,18 @@ export function fitTrajectory(trajectory, contract = loadNativeContract()) {
   return JSON.parse(JSON.stringify(fitted));
 }
 
-function immutableJSON(file, value) {
+function immutableJSON(file, value, published) {
   const temporary = `${file}.tmp`;
   const descriptor = fs.openSync(temporary, "wx");
   try {
-    fs.writeFileSync(descriptor, `${JSON.stringify(value, null, 2)}\n`);
-    fs.fsyncSync(descriptor);
-  } finally {
-    fs.closeSync(descriptor);
-  }
-  try {
+    try {
+      fs.writeFileSync(descriptor, `${JSON.stringify(value, null, 2)}\n`);
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
     fs.linkSync(temporary, file);
+    published.add(file);
   } finally {
     fs.unlinkSync(temporary);
   }
@@ -79,6 +85,7 @@ export function trainReturns(options) {
     nativeEvidenceProducer: fileURLToPath(new URL("./opponent-adapter.js", import.meta.url)),
     seedHelper: fileURLToPath(new URL("../../engine/ingame/auto-bot/portutil.js", import.meta.url)),
     seedValidator: fileURLToPath(new URL("./evaluate-hybrid-combat.mjs", import.meta.url)),
+    evaluationContract: fileURLToPath(new URL("./hybrid-evaluation-contract.mjs", import.meta.url)),
     trainer: fileURLToPath(import.meta.url),
     contract: fileURLToPath(new URL("./hybrid-trajectory-contract.mjs", import.meta.url)),
   };
@@ -89,11 +96,13 @@ export function trainReturns(options) {
       return [key, { path: realPath, hash: hash(fs.readFileSync(realPath)) }];
     }),
   );
+  let supportingFiles = [];
   const verifyFrozen = () => {
     for (const [key, binding] of Object.entries(bindings)) {
       assert.equal(fs.realpathSync(paths[key]), binding.path, `${key} resolved path drift`);
       assert.equal(hash(fs.readFileSync(binding.path)), binding.hash, `${key} input drift`);
     }
+    verifySupportingFiles(supportingFiles);
   };
   const selection = JSON.parse(fs.readFileSync(bindings.selection.path, "utf8"));
   const saved = JSON.parse(fs.readFileSync(bindings.snapshot.path, "utf8"));
@@ -118,6 +127,7 @@ export function trainReturns(options) {
     JSON.parse(fs.readFileSync(bindings.result.path, "utf8")),
     { gammaTick: options.gammaTick, requireStochastic: options.requireStochastic === true },
   );
+  supportingFiles = supportingFilesFor(trajectory);
   verifyFrozen();
   assert.equal(
     trajectory.trainable,
@@ -140,6 +150,7 @@ export function trainReturns(options) {
     originalManifest: trajectory.manifest,
     originalSelection: trajectory.selection,
     bindings,
+    supportingFiles,
     trainingSeeds: uniqueTrainingSeeds,
     reservedHoldoutSeeds: options.holdoutSeeds,
     context: trajectory.context,
@@ -163,8 +174,11 @@ export function trainReturns(options) {
   const directory = path.resolve(options.out);
   fs.mkdirSync(directory);
   let complete = false;
+  const published = new Set();
   try {
-    immutableJSON(path.join(directory, "model.json"), fitted.model);
+    verifyFrozen();
+    immutableJSON(path.join(directory, "model.json"), fitted.model, published);
+    verifyFrozen();
     const manifest = trajectory.manifest;
     const inherited = Object.fromEntries(
       [
@@ -177,32 +191,28 @@ export function trainReturns(options) {
         "engineDiffHash",
       ].map((key) => [key, manifest[key]]),
     );
-    immutableJSON(path.join(directory, "trained-model.json"), {
-      format,
-      policy: "compact-neural",
-      ...inherited,
-      model: fitted.model,
-      ...modelProvenance(fitted.model, manifest.sourceHash),
-      trainingSeeds: uniqueTrainingSeeds,
-      returnTraining: provenance,
-    });
     verifyFrozen();
-    immutableJSON(path.join(directory, "provenance.json"), provenance);
+    immutableJSON(
+      path.join(directory, "trained-model.json"),
+      {
+        format,
+        policy: "compact-neural",
+        ...inherited,
+        model: fitted.model,
+        ...modelProvenance(fitted.model, manifest.sourceHash),
+        trainingSeeds: uniqueTrainingSeeds,
+        returnTraining: provenance,
+      },
+      published,
+    );
+    verifyFrozen();
+    immutableJSON(path.join(directory, "provenance.json"), provenance, published);
+    verifyFrozen();
     complete = true;
   } finally {
     if (!complete) {
-      for (const name of [
-        "model.json",
-        "model.json.tmp",
-        "trained-model.json",
-        "trained-model.json.tmp",
-        "provenance.json",
-        "provenance.json.tmp",
-      ]) {
-        const file = path.join(directory, name);
-        if (fs.existsSync(file)) fs.unlinkSync(file);
-      }
-      fs.rmdirSync(directory);
+      for (const file of published) fs.unlinkSync(file);
+      if (fs.readdirSync(directory).length === 0) fs.rmdirSync(directory);
     }
   }
   return { directory, model: fitted.model, provenance };

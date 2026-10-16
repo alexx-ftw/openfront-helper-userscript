@@ -1,50 +1,4 @@
 {
-    "engine/ingame/auto-bot/legendaryPlanner.js": {
-        "complexity": {
-            "warning": 0,
-            "error": 9
-        },
-        "max-lines-per-function": {
-            "warning": 0,
-            "error": 4
-        },
-        "sonarjs/cognitive-complexity": {
-            "warning": 0,
-            "error": 4
-        },
-        "max-statements": {
-            "warning": 0,
-            "error": 2
-        },
-        "sonarjs/no-inverted-boolean-check": {
-            "warning": 0,
-            "error": 2
-        },
-        "max-depth": {
-            "warning": 0,
-            "error": 11
-        },
-        "max-params": {
-            "warning": 0,
-            "error": 6
-        },
-        "sonarjs/no-nested-conditional": {
-            "warning": 0,
-            "error": 10
-        },
-        "sonarjs/no-nested-functions": {
-            "warning": 0,
-            "error": 1
-        },
-        "sonarjs/no-unenclosed-multiline-block": {
-            "warning": 0,
-            "error": 1
-        },
-        "sonarjs/no-identical-functions": {
-            "warning": 0,
-            "error": 1
-        }
-    },
     "scripts/headless/run-basket.mjs": {
         "no-console": {
             "warning": 0,
@@ -73,58 +27,6 @@
     },
     "test/legendary-goal-validator.mjs": {
         "no-console": {
-            "warning": 0,
-            "error": 1
-        }
-    },
-    "engine/ingame/auto-bot/nukeBehavior.js": {
-        "complexity": {
-            "warning": 0,
-            "error": 2
-        },
-        "sonarjs/cognitive-complexity": {
-            "warning": 0,
-            "error": 1
-        },
-        "sonarjs/no-nested-conditional": {
-            "warning": 0,
-            "error": 1
-        }
-    },
-    "engine/ingame/auto-bot/structureBehavior.js": {
-        "complexity": {
-            "warning": 0,
-            "error": 29
-        },
-        "sonarjs/cognitive-complexity": {
-            "warning": 0,
-            "error": 13
-        },
-        "max-lines-per-function": {
-            "warning": 0,
-            "error": 1
-        },
-        "max-statements": {
-            "warning": 0,
-            "error": 1
-        },
-        "sonarjs/no-nested-functions": {
-            "warning": 0,
-            "error": 1
-        },
-        "sonarjs/no-nested-conditional": {
-            "warning": 0,
-            "error": 4
-        },
-        "max-depth": {
-            "warning": 0,
-            "error": 6
-        },
-        "no-restricted-syntax": {
-            "warning": 0,
-            "error": 2
-        },
-        "sonarjs/no-inverted-boolean-check": {
             "warning": 0,
             "error": 1
         }
@@ -173,28 +75,38 @@
         "require-atomic-updates": {
             "warning": 0,
             "error": 1
-        }
-    },
-    "test/legendary-train-outflow.mjs": {
-        "no-console": {
+        },
+        "sonarjs/no-nested-conditional": {
             "warning": 0,
             "error": 1
         }
     },
-    "scripts/run-gated-validation.mjs": {
+    "engine/ingame/auto-bot/gameApi.js": {
+        "sonarjs/cognitive-complexity": {
+            "warning": 0,
+            "error": 1
+        },
+        "max-depth": {
+            "warning": 0,
+            "error": 2
+        }
+    },
+    "test/legendary-economy-projection-budget.mjs": {
+        "complexity": {
+            "warning": 0,
+            "error": 1
+        },
         "no-console": {
             "warning": 0,
-            "error": 3
+            "error": 11
         },
         "no-restricted-syntax": {
             "warning": 0,
             "error": 1
-        }
-    },
-    "test/nuke-trade-partner-discount.mjs": {
-        "no-console": {
+        },
+        "sonarjs/no-inverted-boolean-check": {
             "warning": 0,
-            "error": 1
+            "error": 2
         }
     }
 }

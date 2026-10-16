@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
@@ -64,8 +66,8 @@ executeClassicScript(
 sandbox.closestTile = geometrySandbox.closestTile;
 executeClassicScript(
   `${read("engine/ingame/shared-utils.js")}
-${read("engine/ingame/auto-bot/legendaryPlanner.js")}
-${read("engine/ingame/auto-bot/structureBehavior.js")}
+${readLegendaryPlannerSource()}
+${readStructureBehaviorSource()}
 globalThis.__StructureBehavior = StructureBehavior;`,
   sandbox,
   { filename: "post-budget.vm.js" },

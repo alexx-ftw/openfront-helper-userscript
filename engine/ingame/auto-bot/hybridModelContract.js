@@ -88,13 +88,18 @@ const HybridCombatContract = {};
   }
 
   function validateControlProfile(controlProfile, featureProfile) {
-    if (controlProfile !== undefined && !["target-value-v1", "tribe-ranking-v1", "tribe-only-terminal-v1"].includes(controlProfile)) throw new Error("Invalid control profile");
-    if (["tribe-ranking-v1", "tribe-only-terminal-v1"].includes(controlProfile) && featureProfile !== "frontier-v1") throw new Error("Tribe ranking requires frontier features");
+    if (controlProfile !== undefined && !["target-value-v1", "tribe-ranking-v1", "tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(controlProfile)) throw new Error("Invalid control profile");
+    if (["tribe-ranking-v1", "tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(controlProfile) && featureProfile !== "frontier-v1") throw new Error("Tribe ranking requires frontier features");
+  }
+
+  function conditionalTribeProfile(controlProfile) {
+    return ["tribe-only-terminal-v1", "funded-tribe-terminal-v1"].includes(controlProfile);
   }
 
   function actionsFor(controlProfile) {
-    if (controlProfile === "tribe-only-terminal-v1") return {
-      macro: [], micro: "exact-player-id-land-target", tribeRanking: "native-land-subset-v1",
+    if (conditionalTribeProfile(controlProfile)) return {
+      macro: [], micro: "exact-player-id-land-target",
+      tribeRanking: controlProfile === "funded-tribe-terminal-v1" ? "native-funded-land-subset-v1" : "native-land-subset-v1",
       activeHeads: ["target"], inactiveHeads: ["wait", "act"],
       strategicMacro: "native-legendary-v1", suppressWait: false };
     const actions = { macro: ["wait", "act"], micro: "exact-player-id-land-target" };
@@ -140,7 +145,7 @@ const HybridCombatContract = {};
 
   function validateReturnProvenance(snapshot) {
     if (snapshot.reward !== "discounted-terminal-win-return-v1") throw new Error("Incompatible terminal reward provenance");
-    validateReturnContext(snapshot, snapshot.offline, snapshot.offline.version === "offline-terminal-return-v1");
+    if (snapshot.offline.version !== "offline-terminal-return-batch-v1") validateReturnContext(snapshot, snapshot.offline, snapshot.offline.version === "offline-terminal-return-v1");
     if (snapshot.offline.returnTrainer !== "monte-carlo-tanh-sgd-v1") throw new Error("Invalid return trainer provenance");
     const origin = returnOrigin(snapshot.offline);
     validate(origin);
@@ -151,6 +156,7 @@ const HybridCombatContract = {};
       validateDecisionCoverage(snapshot.offline.originalDecisionSteps, snapshot.offline.coverage);
       if (snapshot.offline.originalDecisionSteps.length !== snapshot.offline.fittedRecords) throw new Error("Invalid return decision counts");
     }
+    if (snapshot.offline.version === "offline-terminal-return-batch-v1") validateBatchProvenance(snapshot, origin);
     validateReturnCounts(snapshot, origin);
   }
 
@@ -165,7 +171,7 @@ const HybridCombatContract = {};
   }
 
   function returnProvenanceVersion(version) {
-    return version === "offline-terminal-return-v1" || version === "offline-terminal-return-v2";
+    return ["offline-terminal-return-v1", "offline-terminal-return-v2", "offline-terminal-return-batch-v1"].includes(version);
   }
 
   function validateReturnCounts(snapshot, origin) {
@@ -508,7 +514,7 @@ const HybridCombatContract = {};
   }
 
   function validateConditionalTribeReturn(snapshot, context, record) {
-    if (snapshot.controlProfile !== "tribe-only-terminal-v1") return;
+    if (!conditionalTribeProfile(snapshot.controlProfile)) return;
     if (context?.gammaTick !== 1) throw new Error("Conditional tribe terminal objective requires gammaTick 1");
     if (record !== undefined && (record?.action !== "attack" || record?.controlledAction !== "attack" ||
         record?.behaviorPolicy !== "deterministic-native-tribe-choice-v1")) throw new Error("Invalid conditional tribe return record");
@@ -539,10 +545,7 @@ const HybridCombatContract = {};
         record.outcomeTick > terminalTick || (previous && record.actionTick < previous.actionTick)) throw new Error("Invalid controlled return timing");
   }
 
-  // Monte Carlo evaluation of observed controlled actions; native winner and
-  // ledger-reference verification belong to the trajectory validator upstream.
-  function fitEpisodeReturns(snapshot, records, context = {}) {
-    validate(snapshot);
+  function prepareReturnRecords(snapshot, records, context) {
     validateReturnContext(snapshot, context);
     if (context.modelIdentity !== JSON.stringify(snapshot) ||
         !Array.isArray(records) || records.length === 0) throw new Error("Invalid terminal return origin/records");
@@ -570,6 +573,83 @@ const HybridCombatContract = {};
       const label = (context.terminalWin ? 1 : -1) * timing.discount;
       return { examples, transition: { anchor: false, shaped: label } };
     });
+    return { prepared, originalDecisionSteps };
+  }
+
+  function batchEpisodeKey(context) {
+    return JSON.stringify([context.runID, context.episodeId, context.generation, context.actorSmallID]);
+  }
+
+  function validateBatchContexts(snapshot, contexts) {
+    if (!conditionalTribeProfile(snapshot.controlProfile) || !Array.isArray(contexts) || !contexts.length) throw new Error("Invalid conditional return batch");
+    const seen = new Set();
+    for (const context of contexts) {
+      validateReturnContext(snapshot, context, false);
+      const key = batchEpisodeKey(context);
+      if (seen.has(key)) throw new Error("Duplicate batch episode context");
+      seen.add(key);
+      if (["engineRevision", "experimentID", "configHash", "featureProfile"].some(name => context[name] !== contexts[0][name])) throw new Error("Mixed batch native context");
+    }
+  }
+
+  function validateBatchProvenance(snapshot, origin) {
+    const offline = snapshot.offline;
+    validateBatchContexts(snapshot, offline.episodes);
+    let total = 0;
+    for (const context of offline.episodes) total += validateBatchEpisodeProvenance(context);
+    if (offline.fittedRecords !== total || offline.headUpdates?.wait !== 0 || offline.headUpdates?.act !== total || offline.headUpdates?.target !== total ||
+        JSON.stringify(snapshot.models.wait) !== JSON.stringify(origin.models.wait)) throw new Error("Invalid batch aggregate counts");
+  }
+
+  function validateBatchEpisodeProvenance(context) {
+    if ("modelIdentity" in context || "originModelIdentity" in context || "originModel" in context) throw new Error("Repeated batch origin identity");
+    validateDecisionCoverage(context.originalDecisionSteps, context.coverage);
+    if (!exactID(context.fittedRecords) || context.fittedRecords < 1 || context.originalDecisionSteps.length !== context.fittedRecords) throw new Error("Invalid batch episode counts");
+    return context.fittedRecords;
+  }
+
+  function validateBatchReceipts(episodes) {
+    const seen = new Set();
+    for (const episode of episodes) for (const record of episode.records) {
+      const key = JSON.stringify([episode.context.runID, record.receiptID]);
+      if (seen.has(key)) throw new Error("Duplicate batch native receipt within run");
+      seen.add(key);
+    }
+  }
+
+  function fitEpisodeBatchReturns(snapshot, episodes) {
+    validate(snapshot);
+    if (!Array.isArray(episodes) || !episodes.length) throw new Error("Empty return batch");
+    validateBatchContexts(snapshot, episodes.map(episode => episode.context));
+    // Prepare every episode before cloning/updating; input identities stay exact.
+    const prepared = episodes.map(episode => prepareReturnRecords(snapshot, episode.records, episode.context));
+    validateBatchReceipts(episodes);
+    const output = clone(snapshot);
+    for (const episode of prepared) for (const example of episode.prepared) fitRecord(output, example);
+    const fittedRecords = prepared.reduce((sum, episode) => sum + episode.prepared.length, 0);
+    const contexts = episodes.map((episode, index) => {
+      const context = episode.context;
+      return { engineRevision: context.engineRevision, experimentID: context.experimentID, runID: context.runID,
+        configHash: context.configHash, episodeId: context.episodeId, generation: context.generation,
+        actorSmallID: context.actorSmallID, featureProfile: context.featureProfile, gammaTick: context.gammaTick,
+        terminalTick: context.terminalTick, terminalWin: context.terminalWin, resultHash: context.resultHash,
+        fittedRecords: prepared[index].prepared.length, originalDecisionSteps: clone(prepared[index].originalDecisionSteps),
+        ...(context.coverage === undefined ? {} : { coverage: clone(context.coverage) }) };
+    });
+    output.reward = "discounted-terminal-win-return-v1";
+    output.offline = { version: "offline-terminal-return-batch-v1", originModel: clone(snapshot),
+      returnTrainer: "monte-carlo-tanh-sgd-v1", episodes: contexts, fittedRecords,
+      headUpdates: { wait: 0, act: fittedRecords, target: fittedRecords } };
+    validate(output);
+    return { model: output, summary: { fitted: fittedRecords, updates: fittedRecords * 2,
+      episodes: episodes.length, censored: 0, complete: true, performanceClaim: false } };
+  }
+
+  // Monte Carlo evaluation of observed controlled actions; native winner and
+  // ledger-reference verification belong to the trajectory validator upstream.
+  function fitEpisodeReturns(snapshot, records, context = {}) {
+    validate(snapshot);
+    const { prepared, originalDecisionSteps } = prepareReturnRecords(snapshot, records, context);
     const output = clone(snapshot);
     for (const example of prepared) fitRecord(output, example);
     const headUpdates = Object.fromEntries(Object.keys(output.models).map((name) =>
@@ -595,6 +675,6 @@ const HybridCombatContract = {};
   }
 
   Object.assign(HybridCombatContract, { schema, frontierSchema, learningAllowed, features: clone(features), dimensions: clone(dimensions), create,
-    featuresFor, dimensionsFor, frontierFeatures, validate, validateHead, normalize, forward, update, geometry, exactID, offlineTransition, fitOffline, fitEpisodeReturns, freezeMetadata });
+    featuresFor, dimensionsFor, frontierFeatures, validate, validateHead, normalize, forward, update, geometry, exactID, offlineTransition, fitOffline, fitEpisodeReturns, fitEpisodeBatchReturns, freezeMetadata });
   Object.freeze(HybridCombatContract);
 }

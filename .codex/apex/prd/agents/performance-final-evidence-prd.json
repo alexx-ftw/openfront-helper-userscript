@@ -1,0 +1,49 @@
+{
+  "task": "runtime-performance-20261014",
+  "agent": "performance-final-evidence",
+  "status": "done",
+  "handoff_status": "ready_for_review",
+  "tracking": "update_plan unavailable; exclusive agent plan recorded here; task/router PRDs unchanged",
+  "plan": [
+    {
+      "step": "Read measurement and validation receipts",
+      "status": "completed"
+    },
+    {
+      "step": "Persist final gate and partial-acceptance evidence",
+      "status": "completed"
+    },
+    {
+      "step": "Read back all four files and freeze writer",
+      "status": "completed"
+    }
+  ],
+  "ownership": [
+    "docs/runtime-performance-review-20261014.md",
+    ".codex/apex/docs/verify-runtime-performance-20261014.md",
+    ".codex/apex/docs/elicit-runtime-performance-20261014.json",
+    ".codex/apex/prd/agents/performance-final-evidence-prd.json"
+  ],
+  "files_modified": [
+    "docs/runtime-performance-review-20261014.md",
+    ".codex/apex/docs/verify-runtime-performance-20261014.md",
+    ".codex/apex/docs/elicit-runtime-performance-20261014.json",
+    ".codex/apex/prd/agents/performance-final-evidence-prd.json"
+  ],
+  "files_unchanged": [
+    "source",
+    "config",
+    "package",
+    "build artifacts",
+    "tests",
+    "benchmarks",
+    "existing docs",
+    "task/router PRDs",
+    "Git"
+  ],
+  "writes_frozen": true,
+  "overall_goal_complete": false,
+  "parent_state": "waiting_scope; goal active; human decision pending",
+  "verification": "Native receipt readback and format/JSON validation; current lead-provided scoped typecheck exit 0; no tests rerun",
+  "remaining_issues": "Broad pretest/headless/lint failures; unverified FPS and structure rerun raw log; pending human scope"
+}

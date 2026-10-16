@@ -1,0 +1,43 @@
+{
+  "agent": "integration-lot",
+  "status": "done",
+  "writes_frozen": true,
+  "lot": "Estate+heatmaps split integration: delete estate-panel.js monolith, wire build.mjs, rework benchmark A/B, scoped eslint override, regenerate constants fixture",
+  "owned_files": [
+    "engine/ingame/estate-panel.js (deleted)",
+    "build.mjs",
+    "test/benchmark-runtime-performance.mjs",
+    "test/fixtures/game-constants.json",
+    "eslint.config.mjs",
+    ".codex/apex/prd/agents/integration-lot-prd.json (this report)"
+  ],
+  "step_results": [
+    { "step": "1. Byte identity cat(5 estate files) | diff - estate-panel.js", "result": "empty diff, exit 0; monolith deleted via apply_patch Delete File" },
+    { "step": "2. build.mjs INGAME_FILES wiring", "result": "estate-panel.js -> 5 estate entries, heatmaps.js -> 9 heatmaps entries, exact mandated order; no other change" },
+    { "step": "3. benchmark A/B rework", "result": "sourceGroups with logical baseline paths + candidate module lists; runtime/map-overlay-scheduler single-file unchanged; receipt schema fields unchanged (path/baselineSha256/candidateSha256/changed); concurrent-edit assert re-reads group files" },
+    { "step": "4. eslint.config.mjs override", "result": "one block, files engine/ingame/estate/**, prefer-const + sonarjs/no-implicit-global off, one-line shared-lexical-scope comment; no heatmaps override" },
+    { "step": "5. fixture regeneration", "result": "pre-write backup /tmp/ofh-split-backup/game-constants.json.pre-estate-swap (sha256 f9f3b2e6...); generator exit 0, 2024 contracts; backup->new diff = exactly 4 id/file line swaps ESTATE_PANEL_ID/STYLE_ID/POS_KEY/COMPUTE_MS, occurrence #1, identical hash/length/preview, no other record touched; foreign legendaryPlanner lines (pre-existing) preserved" },
+    { "step": "6. validation chain", "result": "npm run build 0; smoke 0; ingame-section-bootstrap 0; check:build-parity 0; estate-neighbor-allocation 0; heatmap-projection-allocation 0; performance-regressions 0; check:constants 0 (2024); benchmark-runtime-performance 0; scoped eslint --max-warnings=0 0" }
+  ],
+  "benchmark_receipt": {
+    "baselineCommit": "7703aa95f3c58a0903cf7ef6aa9c471f4b5defbf",
+    "runtime_and_scheduler": "baseline==candidate hashes, changed=false",
+    "estate": "baseline 3cf1aa5e... vs candidate de3647fc..., changed=true",
+    "heatmaps": "baseline 92d19401... vs candidate 7e380663..., changed=true",
+    "fixture_counts": "candidate: neighbors4Calls 4096/16384 with 1 scratch buffer, 1 world input; baseline: per-call arrays/projections; all exactOutput=true, 12 pairs each; schema byte-compatible in meaning"
+  },
+  "artifacts": {
+    "openfront-helper.user.js": 2393826,
+    "openfront-helper.autobot.js": 1060965,
+    "openfront-helper.build-id.js": 135
+  },
+  "hook_notices": [
+    "SNIPER VALIDATION REQUIRED fired verbatim on each code-file edit (build.mjs, benchmark-runtime-performance.mjs, eslint.config.mjs): 'You MUST now run the sniper agent (fuse-ai-pilot:sniper) to validate this modification before continuing. This is mandatory per CLAUDE.md rules.' Not launched: executor mandate says challenger/sniper are lead-owned gates; left for lead post-integration."
+  ],
+  "deviations": [
+    "Fixture correctness verified against a pre-write backup copy instead of raw git diff vs HEAD, because the fixture already carried uncommitted foreign legendaryPlanner additions before this lot; git diff vs HEAD = my 8 swapped lines + pre-existing foreign record lines, breakdown proven. Backup retained for the lead.",
+    "No RED demonstration attempted: mandate is a fixed integration sequence, not a behavior change; estate/heatmap monolith-vs-module behavior equivalence is covered by the passing allocation, regression, bootstrap and benchmark exact-output assertions."
+  ],
+  "guardrails": "No git add/commit/stash/checkout; no npm install/test/quality:global; no engine/ingame source edits; no package.json/lock or foreign-WIP edits. prettier --check on the three edited source files: exit 0.",
+  "exit": "Stop: all ten mandated validation commands exit 0; sniper/challenger remain lead-owned."
+}

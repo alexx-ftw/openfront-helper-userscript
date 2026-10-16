@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
+import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
 
-const source = readRepositoryFile("engine/ingame/auto-bot/nukeBehavior.js");
+const source = readNukeBehaviorSource();
 const sharedUtilsSource = readRepositoryFile("engine/ingame/shared-utils.js");
 
 const UNIT = { AtomBomb: "Atom Bomb", HydrogenBomb: "Hydrogen Bomb" };

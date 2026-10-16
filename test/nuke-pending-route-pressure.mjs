@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { executeClassicScript, readRepositoryFile } from "./helpers/classic-script.mjs";
+import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
+import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 const UNIT = { MissileSilo: "MissileSilo", AtomBomb: "AtomBomb" };
 const state = { settings: { winFixes: true }, stats: { builds: 0 } };
@@ -15,7 +16,7 @@ const silo = {
 let routeChecks = 0;
 let upgradeProbes = 0;
 const behavior = executeClassicScript(
-  readRepositoryFile("engine/ingame/auto-bot/structureBehavior.js") +
+  readStructureBehaviorSource() +
     "\nObject.create(StructureBehavior.prototype);",
   {
     UNIT,

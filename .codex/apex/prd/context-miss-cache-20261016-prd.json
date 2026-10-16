@@ -1,0 +1,24 @@
+{
+  "task": "context-miss-cache-20261016",
+  "subject": "Menu-page negative cache and idle discovery backoff",
+  "status": "validated",
+  "authorized_by": "Owner: unbounded performance objective; preserve gameplay and unrelated concurrent work.",
+  "final_design": {
+    "note": "A proposed standalone wrapper was discarded; miss caching and backoff are inline in the shared game-context getter.",
+    "implementation": "After the existing 1000 ms positive-cache fast path, failed discovery suppresses rescans for a non-sliding 250 ms window. At 4 consecutive signal-less misses it backs off to 1000 ms, reusing _OPEN_FRONT_CONTEXT_REFRESH_MS. A start signal (body.in-game, supported /live/ game routes, visible starting modal) or successful discovery resets the streak. Positive-cache behavior and runtimeState writes are unchanged; active in-game signals prevent backoff.",
+    "files": ["engine/ingame/trade-policy/context.js", "test/helpers/perf-regressions/context-cache.mjs", "test/helpers/perf-regressions/context-cache-sandbox.mjs"]
+  },
+  "companion_split": {
+    "summary": "The pre-existing 420-line selective-trade-policy.js was split byte-identically into trade-policy/context.js (143 lines before the backoff), players.js (48), partners.js (131), and apply.js (123), wired in scripts/build/sources.mjs:42-45.",
+    "identity_sha256": "c659cae6ce33655cdbc9eb2a277921aca63a6c2783ee93deab061fd447c52fd6"
+  },
+  "validation": {
+    "gates": "All exit 0: direct checkContextMissCache run; node test/performance-regressions.mjs; node test/smoke.mjs; node test/estate-neighbor-allocation.mjs; node test/heatmap-projection-allocation.mjs; node test/public-lobby-unrestricted.mjs; scoped eslint and prettier; npm run build; npm run check:build-parity.",
+    "artifact_sha256": "0887d45a8d598b6672a537b1b3660b3c2a82ff0a5af9b33193a21115a2fc1bcc",
+    "line_counts": {"context.js": 158, "context-cache.mjs": 162, "context-cache-sandbox.mjs": 78},
+    "reviews": "Schrodinger CONFIRMED; Banach PASS and Popper VALIDATED the test fix; Sagan CONFIRMED caller impact, timing boundaries, reset behavior, cache interplay and classic-script constraints; Arendt OK on conventions and documentation."
+  },
+  "measurement": "15 s headed V8 CPU profiles on the menu, separate sessions: discovery self time about 5538 ms before cache, 1453 ms after the 250 ms cache, and 544 ms after idle backoff. Latest change: about 63% lower sampled discovery self time; querySelectorAll about 162 ms to 107 ms. One profile per state, sampled CPU not wall time; no in-match FPS claim.",
+  "limitations": "unitsOwned TypeError remains uncertain and out of scope. Repository-wide lint has concurrent-lane errors; scoped lint passes. No commit or push was made because unrelated concurrent work remains in the shared checkout.",
+  "receipt": "docs/context-miss-cache-20261016.md"
+}

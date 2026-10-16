@@ -1,0 +1,149 @@
+{
+  "task": "context-miss-cache-20261016",
+  "agent": "euclid",
+  "status": "done",
+  "handoff_status": "ready_for_parent_review_with_lint_blocker",
+  "overall_goal_complete": false,
+  "tracking": "No update_plan capability was available in this runtime; this report records execution and handoff. Stale task/router PRDs were left untouched.",
+  "scope": "Finish the menu context miss-cache performance change and verify the selective-trade-policy split from the preserved partial checkout. Heatmaps and estate splits were preserved and not redone.",
+  "files_modified_or_created_in_task_scope": [
+    "engine/ingame/selective-trade-policy.js (deleted)",
+    "engine/ingame/trade-policy/context.js",
+    "engine/ingame/trade-policy/players.js",
+    "engine/ingame/trade-policy/partners.js",
+    "engine/ingame/trade-policy/apply.js",
+    "scripts/build/sources.mjs",
+    "eslint.config.mjs",
+    "test/helpers/perf-regressions/context-cache.mjs",
+    "test/performance-regressions.mjs",
+    "openfront-helper.user.js (generated only through npm run build)",
+    ".codex/apex/prd/agents/euclid-prd.json"
+  ],
+  "changes_made_during_this_continuation": [
+    "Tightened the cache-window regression test to assert the non-sliding boundary at 2249ms and rescan at 2250ms, and context appearance exactly at the expiry boundary (3250ms).",
+    "Ran npm run build as explicitly requested; openfront-helper.user.js was regenerated. The build also rewrote openfront-helper.autobot.js and openfront-helper.build-id.js, which are outside this agent's owned paths; they were preserved and not reverted.",
+    "Created this report."
+  ],
+  "preserved_task_state_verified_unchanged_during_final_checks": [
+    "The four trade-policy modules and their function bodies, except for the known context miss-cache additions in context.js.",
+    "scripts/build/sources.mjs load order and eslint.config.mjs lexical-scope override.",
+    "test/performance-regressions.mjs existing single cache-check import and await.",
+    "Completed engine/ingame/heatmaps/* and engine/ingame/estate/* splits; no files in those split directories were edited."
+  ],
+  "unrelated_or_concurrent_state_preserved": [
+    "The checkout contains extensive pre-existing concurrent Auto-Bot, legendary, hybrid, build, and test changes; none were edited to address this task's lint failure.",
+    "The required full lint command wrote/updated ignored eslint-ratchet-temp.json (sha256 c3af0214a36814de3003336d54b3ab40c179316164a2e64bd2289261670c7e58); it was not changed manually.",
+    "No commit, push, stash, reset, or revert was performed."
+  ],
+  "split_identity": {
+    "original_file": "engine/ingame/selective-trade-policy.js",
+    "original_head_line_count": 420,
+    "original_file_absent": true,
+    "range_mapping": {
+      "players.js": "original lines 60-107",
+      "partners.js": "original lines 109-239",
+      "apply.js": "original lines 241-363",
+      "context.js": "original lines 1, 3-58, and 365-end, excluding only the deliberate negative-cache code"
+    },
+    "canonical_reconstructed_line_count": 415,
+    "canonical_original_ranges_sha256": "c659cae6ce33655cdbc9eb2a277921aca63a6c2783ee93deab061fd447c52fd6",
+    "current_modules_with_only_known_cache_additions_removed_sha256": "c659cae6ce33655cdbc9eb2a277921aca63a6c2783ee93deab061fd447c52fd6",
+    "module_base_sha256": {
+      "context.js": "067082f8b45ed0605cc53ae28dc63cc8f7df74dde94e875db00c6e07e99cf9c9",
+      "players.js": "83493b2126af1cd7529145501309d855f54037d9d135feb629892a6de4a30348",
+      "partners.js": "3e7fc7af0495c768905565d792611dbdbf8411fb9e63e3c95d13154168a944ee",
+      "apply.js": "0ab7633c6d60d0041660e9ca3acc555501e45bb951ef5b792075d337b99e9a00"
+    },
+    "source_order": "context.js, players.js, partners.js, apply.js, then game-start-notification.js; all four paths are present in INGAME_FILES and loadable in classic shared lexical scope.",
+    "line_counts": {
+      "context.js": 143,
+      "players.js": 48,
+      "partners.js": 131,
+      "apply.js": 123,
+      "trade_policy_total": 445
+    },
+    "all_modules_at_most_200_lines": true
+  },
+  "cache_test_coverage": [
+    "First discovery still runs when fake performance.now() is 0; normal initial times are covered.",
+    "Only one DOM scan occurs within 250ms; the deadline is non-sliding, with no scan at 2249ms and a rescan at 2250ms.",
+    "A newly available context is discovered at expiry (3250ms in the fixture).",
+    "All positive start signals are covered: body.in-game, /live/ route, /v/<commit> route, /w<n>/game/ route, and a visible game-starting modal.",
+    "Negative route/modal/body controls are covered.",
+    "Existing positive-context 1000ms cache behavior is checked at 999ms and 1000ms."
+  ],
+  "red_evidence": {
+    "result": "PASS",
+    "method": "Read-only in-memory proof using git show HEAD:engine/ingame/selective-trade-policy.js; no shared file was mutated.",
+    "observation": "The uncached original performs two DOM discovery scans across calls 10ms apart in the negative-context fixture; the candidate regression check verifies suppression within the 250ms window.",
+    "limitation": "This is a deterministic fixture proof, not a browser performance measurement."
+  },
+  "gates": [
+    {
+      "command": "node test/performance-regressions.mjs",
+      "result": "PASS, exit 0; performance regression tests passed."
+    },
+    {
+      "command": "npm run build",
+      "result": "PASS, exit 0; rebuilt the userscript (reported size 2338 KB). openfront-helper.user.js sha256: 15c144ff06c74bed59a12f87d769725453c467402e9e5b27573a13f046a4ac31."
+    },
+    {
+      "command": "node test/smoke.mjs",
+      "result": "PASS, exit 0; engine hook index isolation tests passed; SMOKE OK."
+    },
+    {
+      "command": "npm run check:build-parity",
+      "result": "PASS, exit 0; build parity check passed."
+    },
+    {
+      "command": "node test/estate-neighbor-allocation.mjs",
+      "result": "PASS, exit 0; 4096 tiles, zero per-tile neighbor arrays; exact legacy parity passed."
+    },
+    {
+      "command": "node test/heatmap-projection-allocation.mjs",
+      "result": "PASS, exit 0; 1000 calls, 1 input; exact outputs and reentrancy preserved."
+    },
+    {
+      "command": "npm run lint",
+      "result": "FAIL, exit 2; 176 errors, 0 warnings. The ratchet reports issues in concurrent Auto-Bot/legendary and test paths, including gameApi.js, legendaryPlanner.js, nukeBehavior.js, scripts/run-gated-validation.mjs, legendary economy tests, and silo tests. No out-of-scope files were edited to resolve them."
+    },
+    {
+      "command": "npx eslint eslint.config.mjs scripts/build/sources.mjs engine/ingame/trade-policy/*.js test/performance-regressions.mjs test/helpers/perf-regressions/context-cache.mjs --max-warnings=0",
+      "result": "PASS, exit 0; no findings in the owned source/test lane."
+    },
+    {
+      "command": "npx prettier --check eslint.config.mjs scripts/build/sources.mjs test/performance-regressions.mjs test/helpers/perf-regressions/context-cache.mjs",
+      "result": "PASS, exit 0; all matched files are formatted."
+    },
+    {
+      "command": "wc -l engine/ingame/trade-policy/*.js",
+      "result": "PASS; apply.js 123, context.js 143, partners.js 131, players.js 48; all are below 200 lines."
+    },
+    {
+      "command": "test ! -e engine/ingame/selective-trade-policy.js",
+      "result": "PASS, exit 0; legacy module is absent."
+    }
+  ],
+  "generated_artifact_hashes": {
+    "openfront-helper.user.js": "15c144ff06c74bed59a12f87d769725453c467402e9e5b27573a13f046a4ac31",
+    "openfront-helper.autobot.js": "5e4179cf02559d39d40b48a44d85a91a47080002a0a085f7137e5cf303869314",
+    "openfront-helper.build-id.js": "7dee127de9781d40dc68a674ee7fe62e16d7d62d8209e972c70a610712bf5389"
+  },
+  "research_and_skills": {
+    "project_instructions_read": ["~/AGENTS.md", ".cartographer/project/index.md"],
+    "research_reused": "Parent lead's prior Context7 and Exa lookup of official MDN confirming performance.now() is monotonic and measured in milliseconds; no re-query was needed.",
+    "skills_consulted": ["ai-pilot:elicitation (Boundary Testing and Regression Analysis)", "ai-pilot:verification"],
+    "review_ownership": "Parent lead owns the independent post-writer challenger/sniper; it was not run by this executor."
+  },
+  "limitations_and_deviations": [
+    "The prior executor was closed after more than ten minutes without disk progress. Work resumed from the preserved partial files; the split modules and existing changes were verified before continuation and not overwritten or recreated.",
+    "Full repository lint remains red due to unrelated concurrent changes. The required npm test suite was intentionally not run, per mandate.",
+    "No live-browser FPS or wall-clock performance claim is made; validation is deterministic fixture and structural evidence only.",
+    "Independent parent challenger/sniper review remains pending."
+  ],
+  "writes_frozen": true,
+  "exit_contract": {
+    "outcome": "Escalate to parent lead for independent review",
+    "reason": "The owned task and all scoped gates are complete, but repository-wide lint failed on concurrent paths and the parent-owned challenger/sniper review remains outstanding."
+  }
+}
