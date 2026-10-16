@@ -83,7 +83,7 @@ function makeSalvoWorld() {
   };
   const game = {
     ticks: () => world.tick,
-    config: () => ({ maxSamRange: () => 150, samRange: () => 150 }),
+    config: () => ({ maxSamRange: () => 150, samRange: () => 150, nukeMagnitudes: () => ({ inner: 5, outer: 10 }) }),
     nearbyUnits: (_tile, _radius, type) => (type === UNIT.SAMLauncher ? world.covering : []),
   };
   const player = {
@@ -651,6 +651,67 @@ launchSink = null;
   );
   assert.equal(behavior.hydrogenBombsLaunched, 1, "the finisher counts as a Hydrogen launch");
   assert.equal(sandbox.state.postSalvoHydrogen, null, "a fired finisher clears the schedule");
+}
+
+// Permanent worker rejection must release the shared nuclear reservation.
+{
+  const { world, nukeTarget, behavior } = makeSalvoWorld();
+  behavior.player.buildables = async () => [];
+  behavior.queueDelayedNukeLaunch(20, UNIT.AtomBomb, nukeTarget, 1);
+  const expiry = behavior._pendingNukeLaunches[0].expiresTick;
+  sandbox.state.nukeWantSlots = reservation();
+  world.tick += 1;
+  await behavior.processPendingNukeLaunches();
+  assert.equal(behavior._pendingNukeLaunches[0].expiresTick, expiry,
+    "retry preserves the original expiry");
+  world.tick = expiry;
+  await behavior.processPendingNukeLaunches();
+  assert.equal(behavior.hasPendingNukeLaunches(), false);
+  assert.equal(sandbox.state.nukeWantSlots, null, "expired launch releases silo/MIRV coordination");
+}
+
+// Anti-SAM waves veto friendly structure damage and preserve faithful mode.
+{
+  const { behavior } = makeSalvoWorld();
+  behavior.friendlyFirePenalty = () => 1;
+  assert.equal(behavior.isCooperativeNukeTileSafe(20, UNIT.AtomBomb), false);
+  behavior.getSamSalvo = () => { throw new Error("unsafe salvo must stop before planning launches"); };
+  assert.equal(await behavior.fireSamSalvo({ targetTile: 20 }, {}, 1n), false);
+  assert.equal(await behavior.firePendingNukeLaunch({
+    tile: 20, nukeType: UNIT.AtomBomb, targetPlayer: { smallID: () => 2 }, salvo: {},
+  }, 0), "drop", "new friendly damage drops a delayed salvo instead of retrying forever");
+  behavior.friendlyFirePenalty = () => 0;
+  assert.equal(behavior.isCooperativeNukeTileSafe(20, UNIT.AtomBomb), true);
+  behavior.friendlyFirePenalty = () => 1;
+  sandbox.state.settings.winFixes = false;
+  assert.equal(behavior.isCooperativeNukeTileSafe(20, UNIT.AtomBomb), true);
+  sandbox.state.settings.winFixes = true;
+}
+
+// Shift the salvo center toward a valuable cluster while keeping the SAM
+// inside the same blast. Reusing a predicate rooted at the SAM makes this fail.
+{
+  const owner = { units: () => structures };
+  const sam = { tile: () => 20, owner: () => owner, type: () => UNIT.SAMLauncher, level: () => 1 };
+  const city = { tile: () => 36, type: () => UNIT.City, level: () => 4 };
+  const structures = [sam, city];
+  const game = {
+    config: () => ({ nukeMagnitudes: () => ({ outer: 10 }) }),
+    x: (tile) => tile,
+    y: () => 0,
+    ref: (x) => x,
+    isValidCoord: (x, y) => x >= 0 && x < 100 && y === 0,
+    euclideanDistSquared: (a, b) => (a - b) ** 2,
+  };
+  const behavior = new sandbox.__NukeBehavior(
+    { chance: () => false }, game, {}, {}, {},
+  );
+  assert.equal(behavior.samSalvoAimTile(sam), 28,
+    "salvo shifts to cover the SAM and the valuable enemy city together");
+  assert.equal(behavior.blastStructureValue(20, structures, 10), 1_500_000);
+  assert.equal(behavior.blastStructureValue(28, structures, 10), 2_500_000);
+  assert.equal(behavior.blastStructureValue(50, structures, 10), 0,
+    "candidate scoring follows the candidate center, not the original SAM");
 }
 
 launchSink = null;

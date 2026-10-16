@@ -1629,6 +1629,7 @@
       // to change. Re-run the complete attack policy immediately before
       // actuation so a stale candidate cannot launch after becoming invalid.
       if (!this.isValidNukeTarget(targetPlayer)) return false;
+      if (salvo && !this.isCooperativeNukeTileSafe(tile, nukeType)) return false;
       if (!this.emitNukeBuildable(buildable, tile)) return false;
       await this.rememberSuccessfulNukeLaunch(tile, nukeType, targetPlayer);
       return true;
@@ -1638,6 +1639,9 @@
       if (!this.isValidNukeTarget(targetPlayer)) return false;
       this._pendingNukeLaunches.push({
         dueTick: Number(this.game.ticks()) + delay,
+        // DIVERGENCE: bounded retries release shared nuclear reservations if
+        // worker failures/cooldowns prevent this planned launch for 100 ticks.
+        expiresTick: Number(this.game.ticks()) + delay + 100,
         tile,
         nukeType,
         targetPlayer,
@@ -1720,6 +1724,10 @@
       return this._pendingNukeLaunches.length > 0;
     }
 
+    isPendingNukeLaunchExpired(pending, now) {
+      return state.settings.winFixes === true && now >= pending.expiresTick;
+    }
+
     async processPendingNukeLaunches() {
       if (!this.hasPendingNukeLaunches()) return false;
       const now = Number(this.game.ticks());
@@ -1733,6 +1741,7 @@
       let launched = false;
       let sendsThisTick = 0;
       for (const pending of this._pendingNukeLaunches) {
+        if (this.isPendingNukeLaunchExpired(pending, now)) continue;
         if (pending.salvo && abortedSalvoIds.has(pending.salvo.salvoId)) {
           continue;
         }
@@ -1778,11 +1787,16 @@
      */
     async firePendingNukeLaunch(pending, sendsThisTick) {
       if (!this.isValidNukeTarget(pending.targetPlayer)) return "drop";
+      if (pending.salvo && !this.isCooperativeNukeTileSafe(pending.tile, pending.nukeType)) {
+        return "drop";
+      }
       if (sendsThisTick >= PENDING_NUKE_LAUNCHES_PER_TICK) return "retry";
       const sent = await this.sendNuke(
         pending.tile,
         pending.nukeType,
         pending.targetPlayer,
+        0,
+        pending.salvo,
       );
       return sent ? "fired" : "retry";
     }
@@ -1897,8 +1911,9 @@
       const sorted = [...bombs].sort((a, b) => a.flightTicks - b.flightTicks);
       let bestStart = 0;
       let bestCount = 0;
+      let end = 0;
       for (let start = 0; start < sorted.length; start++) {
-        let end = start;
+        end = Math.max(end, start);
         while (end < sorted.length &&
           sorted[end].flightTicks - sorted[start].flightTicks <= maxSpread) end++;
         if (end - start > bestCount) {
@@ -1949,9 +1964,8 @@
       if (structures.length === 0) return samTile;
       const samX = this.game.x(samTile);
       const samY = this.game.y(samTile);
-      const outerDist = euclDistFN(samTile, radius, false);
       let bestTile = samTile;
-      let bestValue = this.blastStructureValue(samTile, structures, outerDist);
+      let bestValue = this.blastStructureValue(samTile, structures, radius);
       for (const structure of structures) {
         const tile = structure.tile?.();
         if (tile == null) continue;
@@ -1964,7 +1978,7 @@
         // The SAM itself must remain inside the blast or the salvo loses
         // its anti-SAM purpose.
         if (Math.abs(candidateX - samX) + Math.abs(candidateY - samY) > radius) continue;
-        const value = this.blastStructureValue(candidate, structures, outerDist);
+        const value = this.blastStructureValue(candidate, structures, radius);
         if (value > bestValue) {
           bestValue = value;
           bestTile = candidate;
@@ -1973,7 +1987,11 @@
       return bestTile;
     }
 
-    blastStructureValue(tile, structures, outerDist) {
+    blastStructureValue(tile, structures, radius) {
+      // DIVERGENCE: the custom anti-SAM aim scorer evaluates each candidate
+      // from its own center; reusing the original SAM predicate made every
+      // candidate score identically and silently disabled cluster targeting.
+      const outerDist = euclDistFN(tile, radius, false);
       return structures
         .filter((unit) => outerDist(this.game, unit.tile()))
         .reduce((sum, unit) => sum + this.nukeStructureValue(unit), 0);
@@ -2021,7 +2039,16 @@
       return { bombsToFire, waits };
     }
 
+    // DIVERGENCE: with winFixes, anti-SAM salvos share the ordinary nuclear
+    // friendly-structure snapshot. A saturation wave must not repeatedly damage
+    // our or permanent teammates' economy just to remove one hostile SAM.
+    isCooperativeNukeTileSafe(tile, type) {
+      if (state.settings.winFixes !== true) return true;
+      return this.friendlyFirePenalty(tile, this.game.config().nukeMagnitudes(type)) === 0;
+    }
+
     async fireSamSalvo(plan, nukeTarget, atomCost) {
+      if (!this.isCooperativeNukeTileSafe(plan.targetTile, UNIT.AtomBomb)) return false;
       const salvo = this.getSamSalvo(plan);
       if (this.player.gold() < atomCost * BigInt(salvo.bombsToFire)) return false;
       if (state.nukeWantSlots === null || state.nukeWantSlots === undefined) {

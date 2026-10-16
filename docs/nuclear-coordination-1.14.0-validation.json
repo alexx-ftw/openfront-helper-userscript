@@ -1,0 +1,65 @@
+{
+  "version": "1.14.0",
+  "date": "2026-10-16",
+  "artificialScenarios": {
+    "arrivalWindowOracleSeeds": 200,
+    "impactOracleSeeds": 60,
+    "queuedLaunches": 17,
+    "arrivalBenchmarkCandidates": 20000,
+    "denseImpactBuildings": 2500,
+    "denseImpactYieldPoints": 1156,
+    "maximumDistanceReadsPerStep": 565
+  },
+  "engineRuns": [
+    {
+      "seed": "nuclear-coordination-5mm-20261016",
+      "ticks": 1500,
+      "stopReason": "max_ticks",
+      "won": false,
+      "alive": true,
+      "runtimeMs": 3532,
+      "nuclearStrategy": {
+        "isHydroNation": true,
+        "atomBombsLaunched": 0,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      },
+      "profile": {
+        "windowSize": 120,
+        "sampledTicks": 1500,
+        "p95TickMs": 0.7816849999999249,
+        "maxTickMs": 40.100242999999864,
+        "slowTicks": 0,
+        "slowThresholdMs": 100
+      }
+    },
+    {
+      "seed": "nuclear-coordination-25mm-20261016",
+      "ticks": 4091,
+      "stopReason": "bot_dead",
+      "won": false,
+      "alive": false,
+      "runtimeMs": 14965,
+      "nuclearStrategy": {
+        "isHydroNation": false,
+        "atomBombsLaunched": 1,
+        "hydrogenBombsLaunched": 0,
+        "pendingLaunches": 0
+      },
+      "profile": {
+        "windowSize": 120,
+        "sampledTicks": 4091,
+        "p95TickMs": 1.4468730000007781,
+        "maxTickMs": 40.359723999999915,
+        "slowTicks": 0,
+        "slowThresholdMs": 100
+      }
+    }
+  ],
+  "limitations": [
+    "Two short engine matches do not establish improved win rate.",
+    "Measured bot phase timing does not establish absence of browser rendering stutters.",
+    "npm test has a pre-existing engine submodule HEAD versus origin/main mismatch."
+  ],
+  "regressionStatus": "pending final integration"
+}

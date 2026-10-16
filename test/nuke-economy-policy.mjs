@@ -632,6 +632,7 @@ assert.equal(nukeBuilds, 0, "a target that becomes invalid during the worker pro
 
 const partialSalvoBehavior = Object.create(sandbox.__NukeBehavior.prototype);
 partialSalvoBehavior.player = { gold: () => 10n };
+partialSalvoBehavior.isCooperativeNukeTileSafe = () => true;
 partialSalvoBehavior.getSamSalvo = () => ({
   bombsToFire: 2,
   waits: [0, 7],
@@ -679,6 +680,7 @@ const scheduledSalvoBehavior = new sandbox.__NukeBehavior(
   { shouldAttack: () => true },
   { maybeSendEmoji() {} },
 );
+scheduledSalvoBehavior.isCooperativeNukeTileSafe = () => true;
 scheduledSalvoBehavior.cost = async () => 1n;
 scheduledSalvoBehavior.getSamSalvo = () => ({
   bombsToFire: 2,

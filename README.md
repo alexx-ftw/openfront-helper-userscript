@@ -118,6 +118,8 @@ Toggle each overlay independently from the **Helpers** tab. All panels are dragg
 - Ally-safe toggle (skip allied territory)
 - Real-time launch progress panel
 
+Population targeting also considers populated enemy territory without buildings; overlapping blast areas are discounted, and already-covered named objectives cannot justify repeat shots. Hydrogen efficiency is compared with an atom portfolio that respects the combined gold and silo-slot budget and credits each building only once. This comparison uses local forecast state, leaving actual launch reservations unchanged.
+
 **Atom Bomb Batch Fire** — configurable batch size and per-shot delay (minimum 140 ms gap, ~7 shots/sec server-safe). Settings are persisted across sessions.
 
 **Auto Leave on Win** — automatically leaves the match when a win modal appears, pairs naturally with "keep searching" to chain games continuously.

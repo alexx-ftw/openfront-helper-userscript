@@ -10779,6 +10779,7 @@
     async maybeUpgradeSiloForNukeDemand() {
       const request = this.validNukeSiloUpgradeRequest();
       if (request === null) return false;
+      const requestIdentity = state.nukeWantSlots;
       const scopedSilos = this.nukeDemandScopedSilos(request);
       const currentCapacity = scopedSilos.reduce(
         (sum, silo) => sum + Math.max(1, Number(silo.level?.() ?? 1)),
@@ -10792,11 +10793,8 @@
         this.structureBelowUpgradeLimit(silo),
       );
       if (candidates.length === 0) return false;
-      const availableGold = this.availableGoldAfterReserve(UNIT.MissileSilo);
       const minimumCost = this.safeStructureCost(UNIT.MissileSilo);
-      if (!this.nukeSiloUpgradeBudgetAvailable(availableGold, minimumCost)) {
-        return false;
-      }
+      if (this.nukeSiloUpgradeSpendingGold() <= 0n) return false;
       const buildables = await this.buildableForUnits(
         candidates,
         UNIT.MissileSilo,
@@ -10805,12 +10803,28 @@
           timeoutMs: HOSTILE_SILO_SAM_PROBE_TIMEOUT_MS,
         },
       );
+      // DIVERGENCE: winFixes coordinates a target-specific capacity request
+      // with economy/defense reserves. Worker probes can outlive the plan or
+      // budget snapshot; price each upgrade against the remaining live surplus,
+      // never against the estimated new-silo cost used before the probe.
+      if (state.nukeWantSlots !== requestIdentity ||
+          this.validNukeSiloUpgradeRequest() === null) return false;
+      const liveSilos = this.nukeDemandScopedSilos(request);
+      const liveCapacity = liveSilos.reduce(
+        (sum, silo) => sum + Math.max(1, Number(silo.level?.() ?? 1)), 0);
+      if (liveCapacity >= request.requiredCapacity) {
+        state.nukeWantSlots = null;
+        return false;
+      }
+      const liveSiloIds = new Set(liveSilos
+        .filter((silo) => this.structureBelowUpgradeLimit(silo))
+        .map((silo) => String(silo.id())));
       const ranked = this.rankNukeDemandSiloUpgrades({
         candidates,
         buildables,
-        availableGold,
+        availableGold: this.nukeSiloUpgradeSpendingGold(),
         minimumCost,
-      });
+      }).filter((candidate) => liveSiloIds.has(String(candidate.silo.id())));
       return this.executeStructureUpgradeCandidate(ranked[0], UNIT.MissileSilo);
     }
 
@@ -10841,7 +10855,9 @@
       const preferred = builtSilos.filter((silo) =>
         preferredIds.has(String(silo.id())),
       );
-      return preferred.length > 0 ? preferred : builtSilos;
+      // A nonempty route scope must fail closed after a silo disappears.
+      // Another silo may be unable to reach this target or face different SAMs.
+      return preferred;
     }
 
     isBuiltStructure(structure) {
@@ -10861,12 +10877,15 @@
       }
     }
 
-    nukeSiloUpgradeBudgetAvailable(availableGold, minimumCost) {
-      if (availableGold < minimumCost) return false;
+    nukeSiloUpgradeSpendingGold(availableGold = this.availableGoldAfterReserve(UNIT.MissileSilo)) {
       const economic = this.economicConstructionPressure();
       const reserve =
         (economic?.cost ?? 0n) + this.defensiveConstructionReserve();
-      return availableGold >= minimumCost + reserve;
+      return availableGold > reserve ? availableGold - reserve : 0n;
+    }
+
+    nukeSiloUpgradeBudgetAvailable(availableGold, minimumCost) {
+      return minimumCost <= this.nukeSiloUpgradeSpendingGold(availableGold);
     }
 
     rankNukeDemandSiloUpgrades(input) {

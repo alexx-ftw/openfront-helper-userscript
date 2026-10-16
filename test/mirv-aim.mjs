@@ -141,4 +141,37 @@ assert.equal(
   "targets without a units accessor fall back to the geometric centre",
 );
 
-process.stdout.write("mirv aim tests passed\n");
+// Worker responses must not resurrect a cancelled decision or steal the
+// capacity owned by a conventional salvo that became pending during the read.
+const launch = Object.create(sandbox.__MirvBehavior.prototype);
+let sent = 0;
+let afterProbe = () => {};
+launch.game = { ...behavior.game, ticks: () => 100 };
+launch.player = {
+  smallID: () => 1,
+  gold: () => 100n,
+  isFriendly: () => false,
+  units: () => [{ level: () => 1, missileTimerQueue: () => [] }],
+  buildables: async () => { afterProbe(); return [{ type: UNIT.MIRV, canBuild: 0, cost: 10n }]; },
+};
+launch.recentMirvTargets = new Map();
+launch.nukeBehavior = { hasPendingNukeLaunches: () => false };
+const enemy = { smallID: () => 2, id: () => "enemy", isPlayer: () => true, type: () => "Human" };
+sandbox.PlayerType = { Bot: "Bot" };
+sandbox.sendAutoBotBuildOrUpgrade = () => { sent++; return true; };
+sandbox.state.tickGeneration = 1;
+assert.equal(await launch.emitMIRVBuildIntent(enemy, 0), true, "valid tile zero can launch");
+afterProbe = () => { sandbox.state.tickGeneration++; };
+assert.equal(await launch.emitMIRVBuildIntent(enemy, 0), false, "cancelled worker decision cannot launch");
+afterProbe = () => { launch.nukeBehavior.hasPendingNukeLaunches = () => true; };
+assert.equal(await launch.emitMIRVBuildIntent(enemy, 0), false, "a newly pending salvo owns the silo capacity");
+assert.equal(sent, 1);
+launch.nukeBehavior.hasPendingNukeLaunches = () => false;
+afterProbe = () => {};
+assert.equal(await launch.emitMIRVBuildIntent(enemy, 0), true, "capacity returns to MIRV when the conventional queue drains");
+assert.equal(sent, 2);
+afterProbe = () => { launch.isPermanentTeammateAlreadyMirvingThisSpot = () => true; };
+assert.equal(await launch.emitMIRVBuildIntent(enemy, 0), false, "teammate overlap is rechecked after probe");
+assert.equal(sent, 2);
+
+process.stdout.write("mirv aim and launch synchronization tests passed\n");

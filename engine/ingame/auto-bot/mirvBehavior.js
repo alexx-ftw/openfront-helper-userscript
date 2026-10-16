@@ -188,6 +188,7 @@
     }
 
     async considerMIRV() {
+      const generation = state.tickGeneration;
       if (this.player === null) throw new Error("not initialized");
       if (this.game.config().isUnitDisabled(UNIT.MIRV)) {
         return false;
@@ -197,6 +198,7 @@
       }
       // gold is BigInt; cost() is the live MIRV price (BigInt).
       const mirvCost = await this.cost(UNIT.MIRV);
+      if (!this.launchGenerationIsCurrent(generation) || mirvCost <= 0n) return false;
 
       // ── WIN-FIX (leader / pre-empt MIRV + save-up) — NOT in src ──────────────
       // The pure faithful targeting (counter-MIRV / victory-denial ≥55% /
@@ -383,8 +385,16 @@
     }
 
     // ── MIRV Helper Methods ──────────────────────────────────────────────────
+    launchGenerationIsCurrent(generation) {
+      return state.tickGeneration === generation &&
+        state.settings.enabled !== false && state.settings.features?.nuke !== false;
+    }
+
     hasReadyMIRVSlot() {
       if (this.player === null) throw new Error("not initialized");
+      // DIVERGENCE: a scheduled conventional salvo owns its remaining silo
+      // capacity until it completes. Do not spend those slots on a MIRV.
+      if (state.settings.winFixes && this.nukeBehavior?.hasPendingNukeLaunches?.() === true) return false;
       const silos = this.player.units(UNIT.MissileSilo);
       return (Array.isArray(silos) ? silos : []).some((silo) => {
         if (!silo || silo.isActive?.() === false || silo.isUnderConstruction?.()) {
@@ -448,15 +458,17 @@
       if (this.player === null) throw new Error("not initialized");
       if (!this.hasReadyMIRVSlot()) return false;
 
+      const generation = state.tickGeneration;
       this.emojiBehavior.maybeSendAttackEmoji(enemy);
 
       const centerTile = await this.calculateTerritoryCenter(enemy);
       // TileRef zero is a valid map coordinate. Upstream's truthy gate drops it,
       // which can suppress both an outbound MIRV and inbound-MIRV detection.
+      if (!this.launchGenerationIsCurrent(generation)) return false;
       if (centerTile === null || centerTile === undefined) return false;
       if (this.isPermanentTeammateAlreadyMirvingThisSpot(centerTile)) return false;
 
-      if (!(await this.emitMIRVBuildIntent(enemy, centerTile))) return false;
+      if (!(await this.emitMIRVBuildIntent(enemy, centerTile, generation))) return false;
 
       this.recordMirvHit(enemy);
       // WIN-FIX (NOT in src): remember this crater centre so the attack behaviour
@@ -477,7 +489,7 @@
       return true;
     }
 
-    async emitMIRVBuildIntent(enemy, centerTile) {
+    async emitMIRVBuildIntent(enemy, centerTile, generation = state.tickGeneration) {
       // Affordability/actuation via the buildables probe + build menu (the client
       // has no synchronous canBuild / addExecution). Find the MIRV BuildableUnit,
       // check it's buildable AND affordable (gold is BigInt — keep bigint math),
@@ -500,16 +512,23 @@
         bu.canBuild === undefined ||
         this.player.gold() < bu.cost
       ) return false;
-      // Both the territory-center and buildability reads yield to the worker.
-      // Revalidate diplomacy at actuation time so a newly friendly player
-      // cannot receive a MIRV selected from stale state.
-      if (!this.isValidMirvTargetPlayer(enemy)) return false;
+      if (!this.isLiveMIRVLaunchValid(enemy, centerTile, generation)) return false;
       const buildMenu = getBuildMenu();
       if (!buildMenu || typeof buildMenu.sendBuildOrUpgrade !== "function") return false;
       if (!sendAutoBotBuildOrUpgrade(buildMenu, bu, centerTile, this.game, this.player)) {
         return false;
       }
       return true;
+    }
+
+    isLiveMIRVLaunchValid(enemy, centerTile, generation) {
+      // Both worker reads can outlive diplomacy, a silo slot, or a teammate's
+      // launch. Recheck all live conditions immediately before actuation.
+      return this.launchGenerationIsCurrent(generation) &&
+        this.hasReadyMIRVSlot() &&
+        this.player.isAlive?.() !== false && enemy.isAlive?.() !== false &&
+        this.isValidMirvTargetPlayer(enemy) && !this.wasRecentlyMirved(enemy) &&
+        !this.isPermanentTeammateAlreadyMirvingThisSpot(centerTile);
     }
 
     countCities(p) {

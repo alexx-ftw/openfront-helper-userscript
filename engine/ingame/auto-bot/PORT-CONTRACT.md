@@ -501,3 +501,21 @@ The decision cadence is an explicit userscript boundary: with `winFixes` enabled
 `engine.js`'s configured `tickMs` poll is the combat cadence and does not add the
 source Nation's difficulty-based `attackRate` wait. With `winFixes` disabled, the
 faithful `attackRate` / structure-third cadence is retained.
+
+## Coordinated nuclear planning (1.14.0)
+
+The custom `winFixes` nuclear policy preserves economic and defensive reserves
+against the authoritative silo-upgrade price and revalidates demand after worker
+queries. A target-specific route scope never falls back to unrelated silos when
+its last eligible silo disappears. MIRVs defer while conventional salvo entries
+reserve silo capacity and revalidate lifecycle, readiness and cooperative target
+coverage after asynchronous queries. Unlaunched entries expire 100 ticks after
+their original due tick, releasing shared reservations instead of retrying forever.
+Anti-SAM salvos recheck friendly structure damage before actuation. The arrival
+window uses an equivalent sliding scan, and each anti-SAM impact candidate uses
+its own blast center when scoring enemy structures.
+
+Artificial scenarios in `test/nuclear-coordination-simulation.mjs` exercise the
+real behavior methods with a fixed clock and seeded inputs; the test compares
+arrival windows against an exhaustive oracle. This is behavioral regression
+coverage, not evidence that the strategy wins more games.

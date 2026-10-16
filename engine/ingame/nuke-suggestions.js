@@ -134,6 +134,7 @@
   let nukeSuggestionFrameCounter = 2;
   const nukeSuggestionWorldQueryArg = { x: 0, y: 0 };
   let nukeSuggestionTileInfoCache = null;
+  let nukeSuggestionPendingWork = null;
   const nukeSuggestionDomCache = new Map();
   let lastAutoNukeActionAt = 0;
   let autoNukeIncludeAllies = false;
@@ -1742,7 +1743,37 @@
     return best;
   }
 
+  function drainNukeSuggestionWork(work) {
+    let step = work.next();
+    while (!step.done) step = work.next();
+    return step.value;
+  }
+
+  async function runNukeSuggestionWork(work, isActive = () => true) {
+    let sliceStart = performance.now();
+    while (isActive()) {
+      const step = work.next();
+      if (step.done) return step.value;
+      if (performance.now() - sliceStart >= NUKE_SUGGESTION_TILE_SCAN_SLICE_MS) {
+        await new Promise((resolve) => { window.setTimeout(resolve, 0); });
+        sliceStart = performance.now();
+      }
+    }
+    work.return?.();
+    return null;
+  }
+
+  function computeAutoNukeCandidatePoolAsync(game, targetPlayer, mode, options = null, isActive) {
+    return runNukeSuggestionWork(
+      iterateComputeAutoNukeCandidatePool(game, targetPlayer, mode, options), isActive,
+    );
+  }
+
   function optimizeNukeSuggestionCandidateForBuildingImpact(game, context, candidate) {
+    return drainNukeSuggestionWork(iterateOptimizeNukeSuggestionCandidateForBuildingImpact(game, context, candidate));
+  }
+
+  function* iterateOptimizeNukeSuggestionCandidateForBuildingImpact(game, context, candidate) {
     if (
       !candidate ||
       !context?.magnitude ||
@@ -1753,7 +1784,7 @@
       return candidate;
     }
 
-    const impactTile = chooseMaxNukeBuildingImpactTile(
+    const impactTile = yield* iterateMaxNukeBuildingImpactTile(
       game,
       candidate.tile,
       context.structures,
@@ -2303,6 +2334,10 @@
   }
 
   function computeNukeCandidatesForType(game, baseContext, spec, limit) {
+    return drainNukeSuggestionWork(iterateComputeNukeCandidatesForType(game, baseContext, spec, limit));
+  }
+
+  function* iterateComputeNukeCandidatesForType(game, baseContext, spec, limit) {
     const magnitude = getNukeSuggestionMagnitude(game, spec.type);
     const context = {
       ...baseContext,
@@ -2321,6 +2356,7 @@
 
     const rawCandidates = [];
     for (const seed of seeds) {
+      yield;
       const candidate = scoreNukeSuggestionTile(game, context, seed);
       if (candidate) {
         rawCandidates.push(candidate);
@@ -2330,6 +2366,7 @@
     rawCandidates.sort((a, b) => b.totalScore - a.totalScore);
     const refinedCandidates = rawCandidates.slice(0, spec.maxRefineSeeds);
     for (const candidate of refinedCandidates) {
+      yield;
       rawCandidates.push(refineNukeSuggestionCandidate(game, context, candidate));
     }
 
@@ -2338,11 +2375,14 @@
       rawCandidates.length,
       NUKE_SUGGESTION_MAX_BUILDING_IMPACT_OPTIMIZATIONS,
     );
-    const optimizedCandidates = rawCandidates.map((candidate, index) =>
-      index < impactOptimizationCount
-        ? optimizeNukeSuggestionCandidateForBuildingImpact(game, context, candidate)
-        : candidate,
-    );
+    const optimizedCandidates = [];
+    for (let index = 0; index < rawCandidates.length; index++) {
+      yield;
+      const candidate = rawCandidates[index];
+      optimizedCandidates.push(index < impactOptimizationCount
+        ? yield* iterateOptimizeNukeSuggestionCandidateForBuildingImpact(game, context, candidate)
+        : candidate);
+    }
     const candidates = dedupeNukeSuggestionCandidates(optimizedCandidates).slice(
       0,
       limit || NUKE_SUGGESTION_MAX_FINAL_CANDIDATES,
@@ -2350,6 +2390,7 @@
     const candidatesWithSource = [];
 
     for (const candidate of candidates) {
+      yield;
       const sourceSilo = findClosestReadySilo(game, candidate.tile, context.readySilos);
       if (!sourceSilo) {
         continue;
@@ -2382,7 +2423,11 @@
   }
 
   function computeNukeSuggestionForType(game, baseContext, spec) {
-    const candidates = computeNukeCandidatesForType(
+    return drainNukeSuggestionWork(iterateComputeNukeSuggestionForType(game, baseContext, spec));
+  }
+
+  function* iterateComputeNukeSuggestionForType(game, baseContext, spec) {
+    const candidates = yield* iterateComputeNukeCandidatesForType(
       game,
       baseContext,
       spec,
@@ -2396,15 +2441,19 @@
   }
 
   function computeEconomicNukeSuggestion(game, baseContext) {
+    return drainNukeSuggestionWork(iterateComputeEconomicNukeSuggestion(game, baseContext));
+  }
+
+  function* iterateComputeEconomicNukeSuggestion(game, baseContext) {
     const atomSpec = NUKE_SUGGESTION_TYPES.find((spec) => spec.id === "atom");
     const hydrogenSpec = NUKE_SUGGESTION_TYPES.find((spec) => spec.id === "hydrogen");
 
-    function computeForSpec(spec) {
+    function* computeForSpec(spec) {
       if (!shouldComputeNukeSuggestionSpec(game, baseContext.myPlayer, spec)) {
         return null;
       }
 
-      return computeNukeSuggestionForType(game, baseContext, {
+      return yield* iterateComputeNukeSuggestionForType(game, baseContext, {
         ...NUKE_ECONOMIC_SUGGESTION,
         id: `economic-${spec.id}`,
         label: spec.id === "hydrogen" ? "Eco hydrogen" : "Eco atom",
@@ -2422,8 +2471,8 @@
       });
     }
 
-    const atomCandidate = computeForSpec(atomSpec);
-    const hydrogenCandidate = computeForSpec(hydrogenSpec);
+    const atomCandidate = yield* computeForSpec(atomSpec);
+    const hydrogenCandidate = yield* computeForSpec(hydrogenSpec);
     const suggestions = [];
     if (atomCandidate) {
       suggestions.push(atomCandidate);
@@ -2501,6 +2550,10 @@
   }
 
   function computeNukeSuggestions(game, targetPlayer, options = null) {
+    return drainNukeSuggestionWork(iterateComputeNukeSuggestions(game, targetPlayer, options));
+  }
+
+  function* iterateComputeNukeSuggestions(game, targetPlayer, options = null) {
     const myPlayer = game?.myPlayer?.();
     const baseContext = buildNukeSuggestionBaseContext(game, targetPlayer);
     if (!baseContext) {
@@ -2512,14 +2565,16 @@
       requestedMode === "all" || requestedMode === "population";
     const includeEconomic =
       requestedMode === "all" || requestedMode === "economic";
-    const populationSuggestions = includePopulation
-      ? NUKE_SUGGESTION_TYPES
-        .filter((spec) => shouldComputeNukeSuggestionSpec(game, myPlayer, spec))
-        .map((spec) => computeNukeSuggestionForType(game, baseContext, spec))
-        .filter(Boolean)
-      : [];
+    const populationSuggestions = [];
+    if (includePopulation) {
+      for (const spec of NUKE_SUGGESTION_TYPES) {
+        if (!shouldComputeNukeSuggestionSpec(game, myPlayer, spec)) continue;
+        const candidate = yield* iterateComputeNukeSuggestionForType(game, baseContext, spec);
+        if (candidate) populationSuggestions.push(candidate);
+      }
+    }
     const economicSuggestions = includeEconomic
-      ? computeEconomicNukeSuggestion(game, baseContext)
+      ? yield* iterateComputeEconomicNukeSuggestion(game, baseContext)
       : [];
 
     return [...populationSuggestions, ...economicSuggestions];
@@ -2690,6 +2745,7 @@
   }
 
   function clearNukeSuggestionState(container = null) {
+    nukeSuggestionPendingWork = null;
     const hasState =
       runtimeState.currentNukeSuggestionResults.length > 0 ||
       runtimeState.lastNukeSuggestionSignature !== "" ||
@@ -3190,6 +3246,10 @@
     });
   }
   function computeAutoNukeCandidatePool(game, targetPlayer, mode, options = null) {
+    return drainNukeSuggestionWork(iterateComputeAutoNukeCandidatePool(game, targetPlayer, mode, options));
+  }
+
+  function* iterateComputeAutoNukeCandidatePool(game, targetPlayer, mode, options = null) {
     const baseContext = buildNukeSuggestionBaseContext(game, targetPlayer);
     if (!baseContext) {
       return {
@@ -3225,12 +3285,12 @@
     const specs = getAutoNukeCandidateSpecs(game, autoContext.myPlayer, mode);
     for (const spec of specs) {
       candidates.push(
-        ...computeNukeCandidatesForType(
+        ...(yield* iterateComputeNukeCandidatesForType(
           game,
           autoContext,
           spec,
           AUTO_NUKE_MAX_CANDIDATES_PER_SPEC,
-        ),
+        )),
       );
     }
     addAutoNukeSamClearCandidates(game, autoContext, specs, candidates, mode);
@@ -3790,20 +3850,25 @@
       burnCost: getAutoNukeInterceptionBurnCost(context),
     };
   }
+  function normalizeAutoNukeSpread(value) {
+    return Math.max(1, Number(value) || 1);
+  }
+
+  function getAutoNukeOverlapPenalties(spread) {
+    return spread > 1 ? { near: 0.08, far: 0.28 } : { near: 0.15, far: 0.45 };
+  }
+
   function getAutoNukeCircleOverlapFactor(
     candidate,
     selectedCandidates,
     spreadMultiplier = 1,
   ) {
     let factor = 1;
-    const spread = Math.max(1, Number(spreadMultiplier) || 1);
+    const spread = normalizeAutoNukeSpread(spreadMultiplier);
+    const overlapPenalties = getAutoNukeOverlapPenalties(spread);
 
     for (const selected of selectedCandidates) {
-      if (selected.isSamClear) {
-        continue;
-      }
-
-      const distance = Math.hypot(candidate.x - selected.x, candidate.y - selected.y);
+      const distance = selected.isSamClear ? Infinity : Math.hypot(candidate.x - selected.x, candidate.y - selected.y);
       const smallerRadius = Math.min(
         candidate.magnitude.outer,
         selected.magnitude.outer,
@@ -3813,14 +3878,19 @@
         selected.magnitude.outer,
       );
 
+      // A small atom footprint fully inside an earlier hydrogen footprint is
+      // already covered even when its center is far beyond the atom's radius.
+      if (distance + candidate.magnitude.outer <= selected.magnitude.outer) {
+        return 0;
+      }
       // Heavy overlap: candidate center sits inside most of the already-selected blast zone.
       if (distance < smallerRadius * 0.82 * spread) {
         return 0;
       }
       if (distance < smallerRadius * 1.1 * spread) {
-        factor = Math.min(factor, spread > 1 ? 0.08 : 0.15);
+        factor = Math.min(factor, overlapPenalties.near);
       } else if (distance < largerRadius * 1.5 * spread) {
-        factor = Math.min(factor, spread > 1 ? 0.28 : 0.45);
+        factor = Math.min(factor, overlapPenalties.far);
       }
     }
 
@@ -3970,9 +4040,9 @@
 
     // Population mode: marginal score — subtract contributions from already-hit
     // cities/structures so overlapping nukes don't over-value the same buildings.
-    // Only add raw troop/territory population loss when there are untracked city or
-    // economic targets to justify the shot — prevents re-firing at areas where all
-    // named objectives are already covered.
+    // Bare territory is a valid population objective too. For candidates with
+    // named objectives, retain the no-repeat guard once those objectives are hit;
+    // territory-only candidates are separated by the geometric overlap filter.
     let marginalCityPop = 0;
     let hasUntrackedObjectives = false;
     for (const [cityKey, weight] of candidate.hitCityPopulationWeights || []) {
@@ -3987,7 +4057,10 @@
         hasUntrackedObjectives = true;
       }
     }
-    const marginalPopulation = hasUntrackedObjectives
+    const hasNamedObjectives = Boolean(
+      candidate.hitCityPopulationWeights?.size || candidate.hitEconomicStructureWeights?.size,
+    );
+    const marginalPopulation = hasUntrackedObjectives || !hasNamedObjectives
       ? marginalCityPop + Math.max(0, Number(candidate.populationLoss) || 0)
       : marginalCityPop;
     return marginalPopulation *
@@ -4036,7 +4109,12 @@
       remainingGold,
       remainingSiloSlots,
     });
-    const atomPlan = selectAutoNukeAtomAlternatives(atomAlternatives);
+    const atomPlan = selectAutoNukeAtomAlternatives(atomAlternatives, {
+      mode,
+      state,
+      remainingGold,
+      remainingSiloSlots,
+    });
     if (atomPlan.score <= 0 || atomPlan.cost <= 0) return marginalScore > 0;
     const hydrogenDensity = marginalScore / totalCost;
     const atomDensity = atomPlan.score / atomPlan.cost;
@@ -4081,6 +4159,7 @@
       if (atomMarginalScore < AUTO_NUKE_MIN_MARGINAL_SCORE) continue;
 
       alternatives.push({
+        candidate: atomCandidate,
         score: atomMarginalScore,
         cost: atomTotalCost,
         shots: atomShotsNeeded,
@@ -4090,14 +4169,39 @@
     return alternatives.sort((a, b) => b.density - a.density || b.score - a.score);
   }
 
-  function selectAutoNukeAtomAlternatives(alternatives) {
+  function getAutoNukeAtomAlternativeScore(alternative, request, scoreState) {
+    return scoreState && alternative.candidate
+      ? getAutoNukeMarginalScore(alternative.candidate, request.mode, scoreState)
+      : alternative.score;
+  }
+
+  function markAutoNukeAtomAlternativeScore(alternative, state) {
+    if (!state || !alternative.candidate) return;
+    const candidate = alternative.candidate;
+    state.selectedCandidates.push(candidate);
+    addMapKeysToSet(candidate.hitEconomicStructureWeights, state.hitEconomicStructureKeys);
+    addMapKeysToSet(candidate.hitCityPopulationWeights, state.hitCityPopulationKeys);
+    addMapKeysToSet(candidate.hitDestructionStructureWeights, state.hitDestructionStructureKeys);
+  }
+
+  function selectAutoNukeAtomAlternatives(alternatives, request = null) {
     const result = { score: 0, cost: 0, shots: 0 };
+    const shotLimit = Math.min(5, request?.remainingSiloSlots ?? 5);
+    const goldLimit = request?.remainingGold ?? Infinity;
+    // Compare against a feasible atom portfolio. Independent candidate scores can
+    // count one city repeatedly, or spend the same remaining gold/slots twice.
+    // Keep this local: evaluating hydrogen must never reserve live plan resources.
+    const scoreState = request?.state ? cloneAutoNukePlanState(request.state) : null;
     for (const alternative of alternatives) {
-      if (result.shots + alternative.shots > 5) continue;
-      result.score += alternative.score;
+      if (result.shots + alternative.shots > shotLimit ||
+          result.cost + alternative.cost > goldLimit) continue;
+      const score = getAutoNukeAtomAlternativeScore(alternative, request, scoreState);
+      if (!Number.isFinite(score) || score < AUTO_NUKE_MIN_MARGINAL_SCORE) continue;
+      result.score += score;
       result.cost += alternative.cost;
       result.shots += alternative.shots;
-      if (result.shots >= 5) break;
+      markAutoNukeAtomAlternativeScore(alternative, scoreState);
+      if (result.shots >= shotLimit) break;
     }
     return result;
   }
@@ -5306,7 +5410,7 @@
     );
   }
 
-  function buildAutoNukeWavePotentialPlan(params, mode, initialState, waveOptions) {
+  async function buildAutoNukeWavePotentialPlan(params, mode, initialState, waveOptions) {
     const totalSiloSlots = getTotalNukeSiloSlotCount(params.myPlayer);
     const gold = getPlayerGoldNumber(params.myPlayer);
     const availableGold = Number.isFinite(gold) ? Math.max(0, gold) : 0;
@@ -5314,7 +5418,7 @@
       return null;
     }
 
-    const candidatePool = computeAutoNukeCandidatePool(
+    const candidatePool = await computeAutoNukeCandidatePoolAsync(
       params.game,
       params.selected,
       mode,
@@ -5391,7 +5495,7 @@
     waveOptions,
     processStatus = null,
   ) {
-    const potentialPlan = buildAutoNukeWavePotentialPlan(
+    const potentialPlan = await buildAutoNukeWavePotentialPlan(
       params,
       mode,
       initialState,
@@ -5438,7 +5542,7 @@
         !cachedCandidatePool ||
         nowMs - cachedCandidatePoolAt > CANDIDATE_POOL_TTL_MS
       ) {
-        cachedCandidatePool = computeAutoNukeCandidatePool(
+        cachedCandidatePool = await computeAutoNukeCandidatePoolAsync(
           params.game,
           params.selected,
           mode,
@@ -5602,7 +5706,47 @@
     return options;
   }
 
-  function executeAutoNuke(params, mode, tierId = null) {
+  function selectAutoNukeCandidateFromPool(pool, mode) {
+    return pool.candidates.find((candidate) =>
+      !candidate.intercepted && !candidate.isSamClear &&
+      (mode === "economic") === (candidate.spec?.scoreMode === "economic"),
+    ) || null;
+  }
+
+  function hasAutoNukeTierReason(options) {
+    return Boolean(options?.reason);
+  }
+
+  function isAutoNukeActionActive(params, actionAt) {
+    return lastAutoNukeActionAt === actionAt && canContinueAutoNukeSecondPass(params) &&
+      !isAutoNukeRadialItemDisabled(params);
+  }
+
+  function getAutoNukeActionPlan(params, mode, tierOptions, cachedPlan, candidatePool) {
+    return cachedPlan || buildAutoNukePlanForMode(
+      params.game, params.selected, mode,
+      getAutoNukeBuildPlanOptions(mode, tierOptions), candidatePool,
+    );
+  }
+
+  async function launchAutoNukeActionFallback(params, mode, candidatePool, isActive) {
+      const fallbackPool = candidatePool || await computeAutoNukeCandidatePoolAsync(
+        params.game, params.selected, mode, null, isActive,
+      );
+      if (!isActive() || !fallbackPool) return;
+      const fallbackCandidate = selectAutoNukeCandidateFromPool(fallbackPool, mode);
+      if (!fallbackCandidate) {
+        runtimeDebugLog(`OpenFront Helper: no valid auto ${mode} nuke target found.`);
+        return;
+      }
+      launchAutoNukeCandidate(params, fallbackCandidate).then((launched) => {
+        if (!launched) {
+          runtimeDebugLog(`OpenFront Helper: auto ${mode} nuke could not be launched.`);
+        }
+      });
+  }
+
+  async function executeAutoNuke(params, mode, tierId = null) {
     const now = performance.now();
     if (now - lastAutoNukeActionAt < AUTO_NUKE_ACTION_COOLDOWN_MS) {
       return;
@@ -5614,35 +5758,21 @@
     }
 
     const tierOptions = getAutoNukeTierPlanOptions(params, tierId);
-    if (tierOptions?.reason) {
-      return;
-    }
+    if (hasAutoNukeTierReason(tierOptions)) return;
     const planKey = getAutoNukePlanKey(mode, tierId);
-    const plan = params.autoNukePlans?.[planKey] ||
-      buildAutoNukePlanForMode(
-        params.game,
-        params.selected,
-        mode,
-        getAutoNukeBuildPlanOptions(mode, tierOptions),
-      );
+    const cachedPlan = params.autoNukePlans?.[planKey];
+    const actionAt = lastAutoNukeActionAt;
+    const isActive = () => isAutoNukeActionActive(params, actionAt);
+    const candidatePool = cachedPlan ? null : await computeAutoNukeCandidatePoolAsync(
+      params.game, params.selected, mode, null, isActive,
+    );
+    if (!isActive()) return;
+    const plan = getAutoNukeActionPlan(params, mode, tierOptions, cachedPlan, candidatePool);
     if (!plan.shots.length || plan.score <= 0) {
       if (tierId || mode === "destruction" || mode === "sams") {
         return;
       }
-      const fallbackCandidate = selectAutoNukeCandidate(
-        params.game,
-        params.selected,
-        mode,
-      );
-      if (!fallbackCandidate) {
-        runtimeDebugLog(`OpenFront Helper: no valid auto ${mode} nuke target found.`);
-        return;
-      }
-      launchAutoNukeCandidate(params, fallbackCandidate).then((launched) => {
-        if (!launched) {
-          runtimeDebugLog(`OpenFront Helper: auto ${mode} nuke could not be launched.`);
-        }
-      });
+      await launchAutoNukeActionFallback(params, mode, candidatePool, isActive);
       return;
     }
 
@@ -6644,7 +6774,11 @@
       return;
     }
 
-    const candidatePool = computeAutoNukeCandidatePool(params.game, params.selected, mode);
+    const candidatePool = await computeAutoNukeCandidatePoolAsync(
+      params.game, params.selected, mode, null,
+      () => isAutoNukeMenuComputeActive(menu, params, computeId),
+    );
+    if (!candidatePool || !isAutoNukeMenuComputeActive(menu, params, computeId)) return;
     markAutoNukeMenuLoadingStepDone(menu, 0);
     setAutoNukeMenuLoading(
       menu,
@@ -7269,12 +7403,25 @@
     const expired =
       now - runtimeState.lastNukeSuggestionComputedAt >= NUKE_SUGGESTION_REFRESH_MS;
     if (!signatureChanged && !expired) return;
-    runtimeState.currentNukeSuggestionResults = computeNukeSuggestions(
-      game,
-      targetPlayer,
-    );
-    runtimeState.lastNukeSuggestionSignature = signature;
-    runtimeState.lastNukeSuggestionComputedAt = now;
+    if (nukeSuggestionPendingWork?.signature === signature) return;
+    const task = { signature };
+    nukeSuggestionPendingWork = task;
+    const isActive = () => nukeSuggestionPendingWork === task && runtimeState.nukeSuggestionsEnabled;
+    void publishNukeSuggestionWork(game, targetPlayer, task, isActive);
+
+  }
+
+  async function publishNukeSuggestionWork(game, targetPlayer, task, isActive) {
+    try {
+      const results = await runNukeSuggestionWork(iterateComputeNukeSuggestions(game, targetPlayer), isActive);
+      if (!isActive() || results === null || !isEnemyNukeSuggestionTarget(game, targetPlayer)) return;
+      if (getNukeSuggestionSignature(game, targetPlayer) !== task.signature) return;
+      runtimeState.currentNukeSuggestionResults = results;
+      runtimeState.lastNukeSuggestionSignature = task.signature;
+      runtimeState.lastNukeSuggestionComputedAt = performance.now();
+    } finally {
+      if (nukeSuggestionPendingWork === task) nukeSuggestionPendingWork = null;
+    }
   }
 
   function setNukeSuggestionsEnabled(enabled) {
