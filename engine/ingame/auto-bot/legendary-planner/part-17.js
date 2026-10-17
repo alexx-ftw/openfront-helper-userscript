@@ -61,6 +61,18 @@
   };
 }
 
+// Preserve the synchronous API for pure callers and exact numerical regressions.
+function legendaryEconomyNetGold(type, options) {
+  return legendaryDrainEconomySteps(legendaryEconomyNetGoldSteps(type, options));
+}
+
+function legendaryEconomyNetGoldAsync(type, options, scheduling = {}) {
+  return legendaryRunEconomyStepsAsync(
+    legendaryEconomyNetGoldSteps(type, options),
+    scheduling,
+  );
+}
+
 // Conservative upper-bound threat model used as a construction safety gate.
 // It intentionally models what an opponent can do now, not what they are
 // statistically likely to do: silo levels, enough gold for Atom/Hydrogen,

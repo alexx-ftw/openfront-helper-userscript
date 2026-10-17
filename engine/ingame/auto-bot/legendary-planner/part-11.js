@@ -53,7 +53,7 @@
       };
     }
   }
-  let fleetProjection = legendaryProjectEconomyFleets(
+  let fleetProjection = yield* legendaryProjectEconomyFleetsSteps(
     inputs,
     config,
     horizon,

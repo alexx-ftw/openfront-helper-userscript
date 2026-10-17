@@ -1,6 +1,6 @@
 
       // DIVERGENCE: only this builder's usable Ports suppress a shared-water route; teammate Ports may seed its new owner-pair route.
-      this.addLegendaryConstructionCandidate(context, UNIT.Port, {
+      await this.addLegendaryConstructionCandidate(context, UNIT.Port, {
         netTeamGold: usableEvaluation
           ? BigInt(Math.round(evaluation.netTeamGold))
           : 0n,
@@ -16,12 +16,12 @@
       });
     }
 
-    addLegendaryCityCandidates(
+    async addLegendaryCityCandidates(
       candidateContext,
       { citiesDisabled, cityCount, capPressure, strategicState },
     ) {
       if (citiesDisabled) return;
-      this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
+      await this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
         mandatory: cityCount < 2 ? 1 : 0,
         safety: 0,
         capacity: capPressure ? 1 : 0,
@@ -33,7 +33,7 @@
         ? this.legendaryCityUpgradeCandidateInfo()
         : null;
       if (cityUpgrade === null) return;
-      this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
+      await this.addLegendaryConstructionCandidate(candidateContext, UNIT.City, {
         action: "upgrade",
         upgradeStructureId: cityUpgrade.structureId,
         upgradeCost: cityUpgrade.cost,
@@ -84,14 +84,14 @@
       return tileByCluster;
     }
 
-    legendaryBestCityRoute(context, candidate, inputs, profiles, tileByCluster) {
+    async legendaryBestCityRoute(context, candidate, inputs, profiles, tileByCluster) {
       let best = null;
       for (const profile of profiles) {
         const clusterId = String(profile.clusterId ?? "");
         if (!clusterId.startsWith("rail#")) continue;
         const placementTile = tileByCluster.get(clusterId);
         if (placementTile === undefined) continue;
-        const evaluation = legendaryEconomyNetGold(UNIT.City, {
+        const evaluation = await this.legendaryEconomyEvaluation(UNIT.City, {
           cost: Number(candidate.cost),
           horizonTicks: context.strategicState?.economyHorizonTicks,
           inputs: { ...inputs, trainSources: profile.trainSources },
@@ -111,7 +111,7 @@
       return best;
     }
 
-    addLegendaryCityRouteCandidates(context) {
+    async addLegendaryCityRouteCandidates(context) {
       const candidate = context.candidates.find(
         (entry) => entry.type === UNIT.City && entry.action !== "upgrade",
       );
@@ -122,7 +122,7 @@
       candidate.netTeamGold = 0n;
       const tileByCluster = this.legendaryCityRailClusterTiles(inputs);
       if (!tileByCluster) return;
-      const best = this.legendaryBestCityRoute(
+      const best = await this.legendaryBestCityRoute(
         context,
         candidate,
         inputs,
@@ -141,7 +141,7 @@
       return Math.max(strategicState.samLevelParityGap, missileSafety);
     }
 
-    addLegendaryConstructionCandidate(context, type, values = {}) {
+    async addLegendaryConstructionCandidate(context, type, values = {}) {
       if (this.legendaryConstructionCandidateBlocked(context, type)) return;
       // Huge-start burst window (25MM): the planner's parity-driven silo
       // candidate outranked the port burst at tick ~758 on measured rows (a

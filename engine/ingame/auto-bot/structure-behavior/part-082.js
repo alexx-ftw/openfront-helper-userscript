@@ -29,7 +29,7 @@
       const valuesWithPolicy = { ...values };
       if (ECONOMIC_STRUCTURE_TYPES.includes(type)) {
         const evaluation = values.netTeamGold === undefined
-          ? legendaryEconomyNetGold(type, {
+          ? await this.legendaryEconomyEvaluation(type, {
               cost: Number(cost),
               horizonTicks: context.strategicState?.economyHorizonTicks,
               inputs: context.strategicState?.economyInputs,
@@ -97,7 +97,7 @@
       );
     }
 
-    addLegendaryRatioCandidate(context, type, values = {}) {
+    async addLegendaryRatioCandidate(context, type, values = {}) {
       if (!this.legendaryRatioCandidateNeeded(context, type)) return;
       const ratioConfig = context.ratios[type];
       if (ratioConfig === undefined) return;
@@ -124,7 +124,7 @@
         ratio,
       );
       if (candidateValues === null) return;
-      this.addLegendaryConstructionCandidate(context, type, candidateValues);
+      await this.addLegendaryConstructionCandidate(context, type, candidateValues);
     }
 
     legendaryRatioCandidateValues(context, type, values, owned, ratio) {

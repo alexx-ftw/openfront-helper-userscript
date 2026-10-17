@@ -138,7 +138,7 @@
       }, 0);
     const candidatePortIncome = (profile) =>
       routeIncome(profile, 1) + incomingRouteIncome(profile);
-    const selectPortCandidate = (profiles) => {
+    const selectPortCandidate = function* (profiles) {
       const compareText = (left, right) => left < right ? -1 : left > right ? 1 : 0;
       const ranked = profiles.map((profile) => ({
         profile,

@@ -1060,9 +1060,9 @@ const portCandidates = async (behavior) =>
     source && !source.beforeProfile && source.afterProfile,
     "the candidate creates a route for the existing teammate's idle source Port",
   );
-  const originalProject = sandbox.legendaryProjectEconomyFleets;
+  const originalProject = sandbox.legendaryProjectEconomyFleetsSteps;
   const candidateProjections = [];
-  sandbox.legendaryProjectEconomyFleets = (...args) => {
+  sandbox.legendaryProjectEconomyFleetsSteps = (...args) => {
     if (args[3]?.portReadyAt !== undefined) candidateProjections.push(args[3]);
     return originalProject(...args);
   };
@@ -1078,7 +1078,7 @@ const portCandidates = async (behavior) =>
       config: liveConfig,
     });
   } finally {
-    sandbox.legendaryProjectEconomyFleets = originalProject;
+    sandbox.legendaryProjectEconomyFleetsSteps = originalProject;
   }
   assert.ok(
     candidateProjections.some((candidate) =>
@@ -1403,8 +1403,8 @@ const portCandidates = async (behavior) =>
       };
     };
     const projectionSignatures = [];
-    const project = sandbox.legendaryProjectEconomyFleets;
-    sandbox.legendaryProjectEconomyFleets = (inputs, config, horizon, candidate) => {
+    const project = sandbox.legendaryProjectEconomyFleetsSteps;
+    sandbox.legendaryProjectEconomyFleetsSteps = (inputs, config, horizon, candidate) => {
       if (candidate?.portReadyAt !== undefined) {
         projectionSignatures.push(
           `${candidate.portRoutes?.[0]?.distance}:` +
@@ -1417,7 +1417,7 @@ const portCandidates = async (behavior) =>
       const [candidate] = await portCandidates(behavior);
       return { candidate, projectionSignatures };
     } finally {
-      sandbox.legendaryProjectEconomyFleets = project;
+      sandbox.legendaryProjectEconomyFleetsSteps = project;
     }
   };
   const forward = await evaluateOrder([10, 30]);
@@ -1472,8 +1472,8 @@ const portCandidates = async (behavior) =>
     tradeShipGold: () => 100,
   };
   const projectedInbound = [];
-  const originalProject = sandbox.legendaryProjectEconomyFleets;
-  sandbox.legendaryProjectEconomyFleets = (baseline, liveConfig, horizon, candidate) => {
+  const originalProject = sandbox.legendaryProjectEconomyFleetsSteps;
+  sandbox.legendaryProjectEconomyFleetsSteps = (baseline, liveConfig, horizon, candidate) => {
     if (candidate?.portReadyAt !== undefined) {
       projectedInbound.push(candidate.portInboundSources ?? []);
     }
@@ -1487,7 +1487,7 @@ const portCandidates = async (behavior) =>
       config,
     });
   } finally {
-    sandbox.legendaryProjectEconomyFleets = originalProject;
+    sandbox.legendaryProjectEconomyFleetsSteps = originalProject;
   }
   assert.ok(
     projectedInbound.some((sources) =>
@@ -1529,8 +1529,8 @@ const portCandidates = async (behavior) =>
     tradeShipSpawnRate: () => 1_000_000,
   };
   let candidateProjectionCount = 0;
-  const project = sandbox.legendaryProjectEconomyFleets;
-  sandbox.legendaryProjectEconomyFleets = (fleetInputs, liveConfig, horizon, candidate) => {
+  const project = sandbox.legendaryProjectEconomyFleetsSteps;
+  sandbox.legendaryProjectEconomyFleetsSteps = (fleetInputs, liveConfig, horizon, candidate) => {
     if (candidate?.portReadyAt !== undefined) candidateProjectionCount++;
     return project(fleetInputs, liveConfig, horizon, candidate);
   };
@@ -1542,7 +1542,7 @@ const portCandidates = async (behavior) =>
       config,
     });
   } finally {
-    sandbox.legendaryProjectEconomyFleets = project;
+    sandbox.legendaryProjectEconomyFleetsSteps = project;
   }
   assert.ok(
     candidateProjectionCount === profiles.length,
@@ -1582,9 +1582,14 @@ const portCandidates = async (behavior) =>
     tradeShipSpawnRate: (_rejections, ships) => 100 + ships * 100,
   };
   const evaluated = new Set();
-  const project = sandbox.legendaryProjectEconomyFleets;
-  sandbox.legendaryProjectEconomyFleets = (fleetInputs, liveConfig, horizon, candidate) => {
-    const result = project(fleetInputs, liveConfig, horizon, candidate);
+  const project = sandbox.legendaryProjectEconomyFleetsSteps;
+  sandbox.legendaryProjectEconomyFleetsSteps = function* (
+    fleetInputs,
+    liveConfig,
+    horizon,
+    candidate,
+  ) {
+    const result = yield* project(fleetInputs, liveConfig, horizon, candidate);
     if (candidate?.portReadyAt === undefined) return result;
     const signature = sandbox.legendaryPortCandidateProjectionSignature(candidate);
     evaluated.add(signature);
@@ -1606,7 +1611,7 @@ const portCandidates = async (behavior) =>
       config,
     });
   } finally {
-    sandbox.legendaryProjectEconomyFleets = project;
+    sandbox.legendaryProjectEconomyFleetsSteps = project;
   }
   assert.equal(order.indexOf(winner), 2, "the winning route sorts third in preliminary order");
   assert.equal(

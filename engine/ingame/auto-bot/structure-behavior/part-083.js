@@ -5,6 +5,20 @@
       };
     }
 
+    async legendaryEconomyEvaluation(type, options) {
+      const capturedState = typeof state === "undefined" ? null : state;
+      const generation = capturedState?.activeTickGeneration ?? capturedState?.tickGeneration;
+      const isCurrent = () => {
+        if (capturedState && state !== capturedState) return false;
+        if (capturedState && generation != null &&
+          (capturedState.settings?.enabled !== true ||
+            capturedState.tickGeneration !== generation)) return false;
+        return typeof autoBotTickActionAllowed !== "function" || autoBotTickActionAllowed();
+      };
+      if (!isCurrent()) return null;
+      return legendaryEconomyNetGoldAsync(type, options, { isCurrent });
+    }
+
     legendaryRatioCandidateNeeded(context, type) {
       const state = context.strategicState;
       if (type === UNIT.SAMLauncher) {

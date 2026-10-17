@@ -40,8 +40,8 @@ behavior.probeLegendaryThroughputUpgradeCandidates = async () => [];
 behavior.computeTroopCapPressure = () => false;
 behavior.legendaryConstructionCandidateBlocked = () => false;
 behavior.legendaryBigStartSiloCandidateBlocked = () => false;
-behavior.addLegendaryCityCandidates = function (context) {
-  this.addLegendaryConstructionCandidate(context, UNIT.City, {
+behavior.addLegendaryCityCandidates = async function (context) {
+  await this.addLegendaryConstructionCandidate(context, UNIT.City, {
     deficit: 1,
     efficiency: 1,
     netTeamGold: 1n,
@@ -179,17 +179,17 @@ for (const [type, placementKey] of [
   ];
   behavior.addLegendaryCityCandidates = () => {};
   behavior.addLegendaryCityRouteCandidates = () => {};
-  behavior.addLegendaryPortRouteCandidates = function (context) {
+  behavior.addLegendaryPortRouteCandidates = async function (context) {
     if (type === UNIT.Port) {
-      this.addLegendaryConstructionCandidate(context, type, {
+      await this.addLegendaryConstructionCandidate(context, type, {
         [placementKey]: placementTile,
         netTeamGold: 120_000n,
       });
     }
   };
-  behavior.addLegendaryFactoryRouteCandidates = function (context) {
+  behavior.addLegendaryFactoryRouteCandidates = async function (context) {
     if (type === UNIT.Factory) {
-      this.addLegendaryConstructionCandidate(context, type, {
+      await this.addLegendaryConstructionCandidate(context, type, {
         [placementKey]: placementTile,
         netTeamGold: 120_000n,
       });

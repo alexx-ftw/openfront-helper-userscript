@@ -3,6 +3,30 @@
       );
     }
 
+    legendaryUpgradeProjectionStillCurrent(type, target, cost, snapshot) {
+      const targetId = String(target?.id?.() ?? "");
+      const live = (this.player?.units?.(type) ?? []).find(
+        (unit) => String(unit?.id?.() ?? "") === targetId,
+      );
+      if (!live || live.isUnderConstruction?.() === true ||
+        live.level?.() !== snapshot.level || live.tile?.() !== snapshot.tile) return false;
+      if (cost <= 0n || cost > this.availableGoldAfterReserve(type, { includeSam: true })) {
+        return false;
+      }
+      const fresh = this.legendaryConstructionState({
+        cityCount: (this.player?.units?.(UNIT.City) ?? []).length,
+        hasCoastalTiles: this.hasAnyShoreBorderTile(),
+      });
+      const inputs = fresh?.economyInputs;
+      return type === UNIT.Factory
+        ? inputs?.factoryUpgradeTargets?.some(
+            (entry) => String(entry.structureId) === targetId,
+          ) === true
+        : inputs?.portUpgradeTargetIds?.some(
+            (id) => String(id) === targetId,
+          ) === true;
+    }
+
     shouldBuildStructureAfterDensity(type, cityCount, hasCoastalTiles) {
       if (this.shouldReserveEconomicGrowthForOffense(type)) {
         return false;

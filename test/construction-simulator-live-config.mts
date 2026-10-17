@@ -26,7 +26,8 @@ config.trainGold = ((relation, citiesVisited, owner) => {
   observedTrainGoldCalls.push({ relation, citiesVisited, gold: Number(gold) });
   return gold;
 }) as Config["trainGold"];
-const planner = {};
+// Planner functions retain this VM realm when copied into the structure sandbox.
+const planner = { setTimeout };
 executeClassicScript(readLegendaryPlannerSource(), planner, { filename: "legendaryPlanner.js" });
 const liveEconomics = {
   trainSpawnRate: (factoryUnits: number, trainUnits: number) =>

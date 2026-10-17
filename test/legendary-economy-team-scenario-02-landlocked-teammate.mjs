@@ -70,77 +70,80 @@ scenario("landlocked: paid teammate stop funds a Factory; no stop refuses it", (
   );
 });
 
-scenario("landlocked: Factory beats a non-binding City; cap pressure flips to City", () => {
-  // The shared sandbox defaults winFixes off; enable the live pressure gate
-  // explicitly so this fixture exercises the documented 0.9 cap threshold.
-  sandbox.state.settings.winFixes = true;
-  const { behavior } = makeRailNetwork(harness, { City: [networkStation(33, 30, 1)] });
-  const factoryValue = sandbox.legendaryEconomyNetGold(UNIT.Factory, {
-    cost: liveCostOf(UNIT.Factory),
-    horizonTicks: HORIZON_TICKS,
-    inputs: railEconomyInputs(behavior),
-    config: liveEconomyConfig,
-  });
-  assert.ok(
-    factoryValue.refused !== true && factoryValue.netTeamGold > 0,
-    "the paid-stop Factory is profitable before ranking",
-  );
-  const cityCandidate = (capPressure) => {
-    const candidates = [];
-    const capBehavior = Object.create(sandbox.__StructureBehavior.prototype);
-    capBehavior.cost = () => BigInt(liveCostOf(UNIT.City));
-    capBehavior.addLegendaryConstructionCandidate = (_context, type, values) =>
-      candidates.push({ type, ...values });
-    capBehavior.legendaryCityUpgradeCandidateInfo = () => null;
-    capBehavior.addLegendaryCityCandidates(
-      { candidates: [] },
-      { citiesDisabled: false, cityCount: 3, capPressure, strategicState: { railNeed: 0 } },
-    );
-    const city = candidates.find((candidate) => candidate.type === UNIT.City);
-    assert.ok(city, "the production City candidate is emitted");
-    return city;
-  };
-  const portfolioWith = (city) =>
-    sandbox.rankLegendaryConstructionActions(
-      [
-        economyAction(UNIT.Factory, liveCostOf(UNIT.Factory), factoryValue),
-        {
-          type: UNIT.City,
-          action: "build",
-          cost: BigInt(liveCostOf(UNIT.City)),
-          gold: 0,
-          troops: 0,
-          defense: 0,
-          netTeamGold: 0n,
-          capacity: city.capacity,
-        },
-      ],
-      { gold: 100_000_000n },
-    );
-  // Live 0.9 pressure ratio: 35/100 troops is no pressure, 95/100 is.
-  const pressureAt = (troops) => {
-    const capBehavior = Object.create(sandbox.__StructureBehavior.prototype);
-    Object.assign(capBehavior, {
-      game: { config: () => ({ maxTroops: () => 100 }) },
-      player: { troops: () => troops },
-      safeMaxTroops: () => 100,
-      legendaryThinDensityPressure: () => false,
+await scenario(
+  "landlocked: Factory beats a non-binding City; cap pressure flips to City",
+  async () => {
+    // The shared sandbox defaults winFixes off; enable the live pressure gate
+    // explicitly so this fixture exercises the documented 0.9 cap threshold.
+    sandbox.state.settings.winFixes = true;
+    const { behavior } = makeRailNetwork(harness, { City: [networkStation(33, 30, 1)] });
+    const factoryValue = sandbox.legendaryEconomyNetGold(UNIT.Factory, {
+      cost: liveCostOf(UNIT.Factory),
+      horizonTicks: HORIZON_TICKS,
+      inputs: railEconomyInputs(behavior),
+      config: liveEconomyConfig,
     });
-    return capBehavior.computeTroopCapPressure(false);
-  };
-  assert.equal(pressureAt(35), false, "35% of cap leaves the builder unpressured");
-  assert.equal(pressureAt(95), true, "95% of cap is binding pressure");
-  assert.equal(
-    portfolioWith(cityCandidate(false))[0]?.type,
-    UNIT.Factory,
-    "without cap pressure the profitable Factory beats the non-binding City",
-  );
-  assert.equal(
-    portfolioWith(cityCandidate(true))[0]?.type,
-    UNIT.City,
-    "binding troop-cap pressure lets the capacity City outrank the profitable Factory",
-  );
-});
+    assert.ok(
+      factoryValue.refused !== true && factoryValue.netTeamGold > 0,
+      "the paid-stop Factory is profitable before ranking",
+    );
+    const cityCandidate = async (capPressure) => {
+      const candidates = [];
+      const capBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+      capBehavior.cost = () => BigInt(liveCostOf(UNIT.City));
+      capBehavior.addLegendaryConstructionCandidate = (_context, type, values) =>
+        candidates.push({ type, ...values });
+      capBehavior.legendaryCityUpgradeCandidateInfo = () => null;
+      await capBehavior.addLegendaryCityCandidates(
+        { candidates: [] },
+        { citiesDisabled: false, cityCount: 3, capPressure, strategicState: { railNeed: 0 } },
+      );
+      const city = candidates.find((candidate) => candidate.type === UNIT.City);
+      assert.ok(city, "the production City candidate is emitted");
+      return city;
+    };
+    const portfolioWith = (city) =>
+      sandbox.rankLegendaryConstructionActions(
+        [
+          economyAction(UNIT.Factory, liveCostOf(UNIT.Factory), factoryValue),
+          {
+            type: UNIT.City,
+            action: "build",
+            cost: BigInt(liveCostOf(UNIT.City)),
+            gold: 0,
+            troops: 0,
+            defense: 0,
+            netTeamGold: 0n,
+            capacity: city.capacity,
+          },
+        ],
+        { gold: 100_000_000n },
+      );
+    // Live 0.9 pressure ratio: 35/100 troops is no pressure, 95/100 is.
+    const pressureAt = (troops) => {
+      const capBehavior = Object.create(sandbox.__StructureBehavior.prototype);
+      Object.assign(capBehavior, {
+        game: { config: () => ({ maxTroops: () => 100 }) },
+        player: { troops: () => troops },
+        safeMaxTroops: () => 100,
+        legendaryThinDensityPressure: () => false,
+      });
+      return capBehavior.computeTroopCapPressure(false);
+    };
+    assert.equal(pressureAt(35), false, "35% of cap leaves the builder unpressured");
+    assert.equal(pressureAt(95), true, "95% of cap is binding pressure");
+    assert.equal(
+      portfolioWith(await cityCandidate(false))[0]?.type,
+      UNIT.Factory,
+      "without cap pressure the profitable Factory beats the non-binding City",
+    );
+    assert.equal(
+      portfolioWith(await cityCandidate(true))[0]?.type,
+      UNIT.City,
+      "binding troop-cap pressure lets the capacity City outrank the profitable Factory",
+    );
+  },
+);
 
 // Exercise real station discovery, rail BFS, candidate generation and dispatch.
 for (const stopType of [UNIT.City, UNIT.Port]) {

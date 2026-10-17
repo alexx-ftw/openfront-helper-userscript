@@ -118,9 +118,14 @@ export function economyAction(type, cost, evaluation, extra = {}) {
 }
 
 const scenarioNames = [];
-/** Register a synchronous policy assertion. */
+/** Register a policy assertion; async callers must await its completion. */
 export function scenario(name, test) {
-  test();
+  const result = test();
+  if (result && typeof result.then === "function") {
+    return result.then(() => {
+      scenarioNames.push(name);
+    });
+  }
   scenarioNames.push(name);
 }
 /** Print the policy assertions completed in this process. */

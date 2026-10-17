@@ -154,7 +154,10 @@
             inputs.portUpgradeProfile =
               inputs.portUpgradeProfiles?.[String(structureId)];
           }
-          const evaluation = legendaryEconomyNetGold(type, {
+          const upgradeSnapshot = {
+            level: result.structure.level?.(), tile: result.structure.tile?.(),
+          };
+          const evaluation = await this.legendaryEconomyEvaluation(type, {
             cost: Number(result.bu.cost),
             horizonTicks: legendaryUpgradeState.economyHorizonTicks,
             inputs,

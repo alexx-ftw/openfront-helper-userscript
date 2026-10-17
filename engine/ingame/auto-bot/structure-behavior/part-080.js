@@ -15,7 +15,7 @@
         Number(inputs.routeDelayTicks) || 0,
         Math.ceil((Number(context.config?.trainStationMaxRange?.()) || 0) / 2),
       );
-      const evaluation = legendaryEconomyNetGold(UNIT.Factory, {
+      const evaluation = await this.legendaryEconomyEvaluation(UNIT.Factory, {
         cost: Number(cost),
         horizonTicks: context.strategicState?.economyHorizonTicks,
         inputs: {
@@ -41,7 +41,7 @@
           String(profile.placementTile) === String(evaluation.factoryPlacementTile),
       );
       if (!selectedProfile) return;
-      this.addLegendaryConstructionCandidate(context, UNIT.Factory, {
+      await this.addLegendaryConstructionCandidate(context, UNIT.Factory, {
         netTeamGold: BigInt(Math.round(evaluation.netTeamGold)),
         factoryPlacementTile: evaluation.factoryPlacementTile,
         ...(Array.isArray(selectedProfile.factorySeedStopTiles)
@@ -99,7 +99,7 @@
       );
     }
 
-    addLegendaryPortRouteCandidates(context) {
+    async addLegendaryPortRouteCandidates(context) {
       const inputs = context.strategicState?.economyInputs;
       if (
         inputs?.portSeedWindowOpen === true &&
@@ -116,7 +116,7 @@
           !Array.isArray(seedSources) ||
           seedSources.length !== 2
         ) return;
-        const evaluation = legendaryEconomyNetGold(UNIT.Port, {
+        const evaluation = await this.legendaryEconomyEvaluation(UNIT.Port, {
           cost: Number(ownCost + partnerCost),
           horizonTicks: context.strategicState?.economyHorizonTicks,
           inputs: { ...inputs, portSeedPartnerCommitted: true },
@@ -129,7 +129,7 @@
           evaluation.portPlacementTile === null ||
           evaluation.portPlacementTile === undefined
         ) return;
-        this.addLegendaryConstructionCandidate(context, UNIT.Port, {
+        await this.addLegendaryConstructionCandidate(context, UNIT.Port, {
           netTeamGold: BigInt(Math.round(evaluation.netTeamGold)),
           portPlacementTile: evaluation.portPlacementTile,
           seedPair: true,
@@ -148,7 +148,7 @@
 
       const cost = context.economyCostQuotes?.get(UNIT.Port) ??
         this.cost(UNIT.Port);
-      const evaluation = legendaryEconomyNetGold(UNIT.Port, {
+      const evaluation = await this.legendaryEconomyEvaluation(UNIT.Port, {
         cost: Number(cost),
         horizonTicks: context.strategicState?.economyHorizonTicks,
         inputs: { ...inputs, portCandidateProfiles: novelProfiles },

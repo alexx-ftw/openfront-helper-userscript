@@ -8,7 +8,7 @@ import { readStructureBehaviorSource } from "./structure-behavior-source.mjs";
  * @returns The behavior instance and fixture objects consumed by the test.
  */
 export function createLegendaryPortSeedFixture() {
-  const plannerSandbox = {};
+  const plannerSandbox = { setTimeout };
   executeClassicScript(readLegendaryPlannerSource(), plannerSandbox, {
     filename: "legendaryPlanner.js",
   });

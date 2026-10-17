@@ -21,16 +21,16 @@
     if (!after) {
       if (candidate.factoryReadyAt !== undefined && candidate.portReadyAt === undefined) {
         after = {
-          trainCounts: project(true, "train").trainCounts,
+          trainCounts: (yield* project(true, "train")).trainCounts,
           tradeShipCounts: before.tradeShipCounts,
         };
       } else if (candidate.portReadyAt !== undefined && candidate.factoryReadyAt === undefined) {
         after = {
           trainCounts: before.trainCounts,
-          tradeShipCounts: project(true, "trade").tradeShipCounts,
+          tradeShipCounts: (yield* project(true, "trade")).tradeShipCounts,
         };
       } else {
-        after = project(true);
+        after = yield* project(true);
       }
       rateCaches.candidates.set(candidateKey, after);
     }

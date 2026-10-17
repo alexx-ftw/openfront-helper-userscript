@@ -726,3 +726,17 @@ bounded exact backtracking; the search uses binary intercept lookup, copies only
 the SAM state changed by a branch, and removes equivalent ready-slot branches.
 If the search budget is exhausted, Legendary treats the result as
 inconclusive/unsafe rather than assuming a greedy miss proves impossibility.
+
+
+### Cooperative economy calculations
+
+Legendary structure valuation awaits the same pure fleet model used by the
+synchronous planner API, yielding only between complete simulated ticks so the
+browser can process rendering and stop controls. This changes scheduling only;
+projection arithmetic, remaining-game horizon, candidate order and final build
+checks are preserved. The structure wrapper captures the active tick generation:
+a stopped or restarted calculation returns no evaluation and cannot emit an old
+build. Incomplete projections never populate the shared caches. The small seed
+pair snapshot without fleet producer supply remains synchronous. See
+[PORT-CONTRACT.md](PORT-CONTRACT.md#cooperative-legendary-economy-projection) for
+this explicit scheduling exception and worker timeout boundaries.

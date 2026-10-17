@@ -5,7 +5,7 @@
           finalist.profile.inboundSources,
         );
         if (candidateFleetSupply) {
-          fleetProjection = legendaryProjectEconomyFleets(
+          fleetProjection = yield* legendaryProjectEconomyFleetsSteps(
             inputs,
             config,
             horizon,
@@ -50,7 +50,7 @@
     } else if (inputs.hasCompletedTradePartner === true) {
       const candidateProfiles = inputs.portCandidateProfiles ?? [];
       if (candidateProfiles.length > 0) {
-        let selected = selectPortCandidate(candidateProfiles);
+        let selected = yield* selectPortCandidate(candidateProfiles);
         for (let pass = 0; pass < 2; pass++) {
           portPlacementTile = selected.profile?.placementTile;
           if (!selected.profile || selected.profile === portProjectionProfile || !candidateFleetSupply) {
@@ -60,7 +60,7 @@
           const inboundPortSources = legendaryPortCandidateInboundSources(
             selected.profile.inboundSources,
           );
-          fleetProjection = legendaryProjectEconomyFleets(
+          fleetProjection = yield* legendaryProjectEconomyFleetsSteps(
             inputs,
             config,
             horizon,
@@ -75,7 +75,7 @@
             totalTeamGold = candidatePortIncome(selected.profile);
             break;
           }
-          const bestUnderProjection = selectPortCandidate(candidateProfiles);
+          const bestUnderProjection = yield* selectPortCandidate(candidateProfiles);
           if (bestUnderProjection.profile === selected.profile) {
             totalTeamGold = bestUnderProjection.gold;
             break;
@@ -84,7 +84,7 @@
         }
       } else {
         if (candidateFleetSupply) {
-          fleetProjection = legendaryProjectEconomyFleets(
+          fleetProjection = yield* legendaryProjectEconomyFleetsSteps(
             inputs,
             config,
             horizon,
@@ -107,7 +107,7 @@
         // partner commits, neither stream pays until the slower Port completes.
         if (inputs.portSeedPartnerCommitted === true) {
           if (candidateFleetSupply) {
-            fleetProjection = legendaryProjectEconomyFleets(
+            fleetProjection = yield* legendaryProjectEconomyFleetsSteps(
               inputs,
               config,
               horizon,
@@ -136,12 +136,12 @@
       } else if (inputs.hasPendingTradePartner === true) {
         const candidateProfiles = inputs.portCandidateProfiles ?? [];
         if (candidateProfiles.length > 0) {
-          const selected = selectPortCandidate(candidateProfiles);
+          const selected = yield* selectPortCandidate(candidateProfiles);
           totalTeamGold = selected.gold;
           portPlacementTile = selected.profile?.placementTile;
         } else {
           if (candidateFleetSupply) {
-            fleetProjection = legendaryProjectEconomyFleets(
+            fleetProjection = yield* legendaryProjectEconomyFleetsSteps(
               inputs,
               config,
               horizon,

@@ -130,6 +130,8 @@
         }
         tradeShips += tradeShipBirths;
       }
+      // Checkpoint only after both domains finish the same native tick.
+      if ((tick + 1) % 64 === 0) yield;
     }
     if (tradeShipCounts !== null && tradeRatePrefixes.size > 0) {
       rateCaches.tradePrefixes.set(tradeShipCounts, tradeRatePrefixes);
@@ -144,7 +146,7 @@
   ].join(":");
   let before = rateCaches.baseline.get(baselineKey);
   if (!before) {
-    before = project(false);
+    before = yield* project(false);
     rateCaches.baseline.set(baselineKey, before);
   }
   const hasCandidateProducer = candidate?.factoryReadyAt !== undefined ||

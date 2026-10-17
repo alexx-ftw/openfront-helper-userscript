@@ -58,7 +58,12 @@ const liveEconomyConfig = {
 
 const scenarios = [];
 const scenario = (name, test) => {
-  test();
+  const result = test();
+  if (result && typeof result.then === "function") {
+    return result.then(() => {
+      scenarios.push(name);
+    });
+  }
   scenarios.push(name);
 };
 
@@ -77,6 +82,8 @@ const structureSandbox = {
   legendaryEconomySpawnMultipliers: plannerSandbox.legendaryEconomySpawnMultipliers,
   legendaryStructureHorizonTicks: plannerSandbox.legendaryStructureHorizonTicks,
   legendaryEconomyNetGold: plannerSandbox.legendaryEconomyNetGold,
+  legendaryEconomyNetGoldAsync: async (...args) =>
+    structureSandbox.legendaryEconomyNetGold(...args),
   legendaryMissileDefenseSchedule: plannerSandbox.legendaryMissileDefenseSchedule,
   UniversalPathFinding: null,
   state: { settings: { winFixes: true } },
@@ -90,8 +97,7 @@ const nukePathSandbox = {
 };
 nukePathSandbox.globalThis = nukePathSandbox;
 executeClassicScript(
-  readNukeBehaviorSource() +
-    "\nglobalThis.__ScenarioUniversalPathFinding = UniversalPathFinding;",
+  readNukeBehaviorSource() + "\nglobalThis.__ScenarioUniversalPathFinding = UniversalPathFinding;",
   nukePathSandbox,
   { filename: "nukeBehavior-pathfinder.js" },
 );
@@ -603,7 +609,7 @@ scenario("e: an equal-value upgrade wins; a better unused route flips to build",
 
 // ── (d) Same route, City priced at 95% vs 35% of troop cap: the cap-relief
 // value only exists under pressure. ──
-scenario("d: City capacity value appears only under troop-cap pressure", () => {
+await scenario("d: City capacity value appears only under troop-cap pressure", async () => {
   const capBehavior = Object.create(ScenarioStructureBehavior.prototype);
   let currentTroops = 95;
   Object.assign(capBehavior, {
@@ -651,7 +657,7 @@ scenario("d: City capacity value appears only under troop-cap pressure", () => {
       ],
       { gold: 200_000n },
     )[0]?.type;
-  const unpressuredCity = cityCandidateValues(capBehavior.computeTroopCapPressure(false));
+  const unpressuredCity = await cityCandidateValues(capBehavior.computeTroopCapPressure(false));
   assert.equal(
     unpressuredCity.capacity,
     0,
@@ -663,7 +669,7 @@ scenario("d: City capacity value appears only under troop-cap pressure", () => {
     "no pressure: Factory wins on net gold",
   );
   currentTroops = 95;
-  const pressuredCity = cityCandidateValues(capBehavior.computeTroopCapPressure(false));
+  const pressuredCity = await cityCandidateValues(capBehavior.computeTroopCapPressure(false));
   assert.equal(
     pressuredCity.capacity,
     1,
@@ -1003,7 +1009,7 @@ function economyAction(type, cost, evaluation, extra = {}) {
   };
 }
 
-function cityCandidateValues(capPressure) {
+async function cityCandidateValues(capPressure) {
   const candidates = [];
   const behavior = Object.create(ScenarioStructureBehavior.prototype);
   behavior.cost = () => 10_000n;
@@ -1011,7 +1017,7 @@ function cityCandidateValues(capPressure) {
     candidates.push({ type, ...values });
   behavior.legendaryCityUpgradeCandidateInfo = () => null;
   const strategicState = { railNeed: 0 };
-  behavior.addLegendaryCityCandidates(
+  await behavior.addLegendaryCityCandidates(
     { candidates: [] },
     { citiesDisabled: false, cityCount: 3, capPressure, strategicState },
   );

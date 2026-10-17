@@ -48,6 +48,7 @@ export function createLegendaryStructureSandbox({ randTerritoryTiles = [], vmFil
     captureRuntimeException: () => {},
     runtimeDebugLog: () => {},
     console,
+    setTimeout,
   };
   sandbox.globalThis = sandbox;
   executeClassicScript(

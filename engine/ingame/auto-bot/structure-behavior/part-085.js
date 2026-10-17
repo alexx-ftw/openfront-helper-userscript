@@ -15,7 +15,7 @@
       );
     }
 
-    legendaryFactorySeedNetPositive(buildable, options, currentState, config) {
+    async legendaryFactorySeedNetPositive(buildable, options, currentState, config) {
       const inputs = currentState.economyInputs;
       const provenStops = new Map([
         [String(buildable.canBuild), new Set(
@@ -28,7 +28,7 @@
         config,
         provenStops,
       );
-      return this.legendaryFactoryProfilesNetPositive(
+      return await this.legendaryFactoryProfilesNetPositive(
         buildable,
         options,
         currentState,
@@ -37,7 +37,7 @@
       );
     }
 
-    legendaryFactoryProfilesNetPositive(
+    async legendaryFactoryProfilesNetPositive(
       buildable,
       options,
       currentState,
@@ -72,7 +72,7 @@
         buildable,
         this.constructionCostForOptions(UNIT.Factory, options),
       );
-      const evaluation = legendaryEconomyNetGold(UNIT.Factory, {
+      const evaluation = await this.legendaryEconomyEvaluation(UNIT.Factory, {
         cost: Number(cost),
         horizonTicks: currentState.economyHorizonTicks,
         inputs: {
@@ -92,8 +92,7 @@
       );
     }
 
-    legendaryFactoryRouteNetPositive(buildable, options, currentState, config) {
-      const inputs = currentState.economyInputs;
+    legendaryFactoryLiveRouteProfile(buildable, inputs) {
       const stationEntries = Array.isArray(inputs.factoryStationEntries)
         ? inputs.factoryStationEntries
         : [];
@@ -120,8 +119,13 @@
           Number(candidate?.factorySourceCount) === 0 &&
           Number(candidate?.paidStops) > 0,
       );
+      return profile ?? null;
+    }
+
+    async legendaryFactoryRouteNetPositive(buildable, options, currentState, config) {
+      const profile = this.legendaryFactoryLiveRouteProfile(buildable, currentState.economyInputs);
       if (!profile) return false;
-      return this.legendaryFactoryProfilesNetPositive(
+      return await this.legendaryFactoryProfilesNetPositive(
         buildable,
         options,
         currentState,
@@ -130,7 +134,7 @@
       );
     }
 
-    legendaryFactoryBuildStillWorthIt(buildable, options) {
+    async legendaryFactoryBuildStillWorthIt(buildable, options) {
       const currentState = this.legendaryConstructionState({
         cityCount: (this.player?.units?.(UNIT.City) ?? []).length,
         hasCoastalTiles: this.hasAnyShoreBorderTile(),
@@ -140,21 +144,32 @@
       const selectedSeed = Array.isArray(
         options.legendaryEconomyFactorySeedStopTiles,
       ) && options.legendaryEconomyFactorySeedStopTiles.length > 0;
-      return selectedSeed
+      const profitable = selectedSeed
         ? this.legendaryFactorySeedSelectionStillValid(
             buildable,
             options,
             currentState.economyInputs,
             config,
-          ) && this.legendaryFactorySeedNetPositive(
+          ) && await this.legendaryFactorySeedNetPositive(
             buildable,
             options,
             currentState,
             config,
           )
-        : this.legendaryFactoryRouteNetPositive(
+        : await this.legendaryFactoryRouteNetPositive(
             buildable,
             options,
             currentState,
             config,
           );
+      if (!profitable) return false;
+      const fresh = this.legendaryConstructionState({
+        cityCount: (this.player?.units?.(UNIT.City) ?? []).length,
+        hasCoastalTiles: this.hasAnyShoreBorderTile(),
+      });
+      if (!fresh?.economyInputs) return false;
+      return selectedSeed
+        ? this.legendaryFactorySeedSelectionStillValid(
+            buildable, options, fresh.economyInputs, config,
+          )
+        : Boolean(this.legendaryFactoryLiveRouteProfile(buildable, fresh.economyInputs));

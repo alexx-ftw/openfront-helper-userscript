@@ -1,6 +1,6 @@
     }
 
-    legendaryCityBuildStillWorthIt(buildable, options) {
+    async legendaryCityBuildStillWorthIt(buildable, options) {
       const currentState = this.legendaryConstructionState({
         cityCount: (this.player?.units?.(UNIT.City) ?? []).length,
         hasCoastalTiles: this.hasAnyShoreBorderTile(),
@@ -11,14 +11,14 @@
       ) {
         return true;
       }
-      return this.legendaryCityRouteStillWorthIt(
+      return await this.legendaryCityRouteStillWorthIt(
         buildable,
         options,
         currentState,
       );
     }
 
-    legendaryCityRouteStillWorthIt(buildable, options, currentState) {
+    async legendaryCityRouteStillWorthIt(buildable, options, currentState) {
       const tile = options.legendaryEconomyCityTile;
       if (tile === null || tile === undefined) return false;
       const inputs = currentState?.economyInputs;
@@ -30,13 +30,22 @@
       );
       const tileByCluster = this.legendaryCityRailClusterTiles(inputs);
       if (!tileByCluster) return false;
-      const best = this.legendaryBestCityRoute(
+      const best = await this.legendaryBestCityRoute(
         { strategicState: currentState, config },
         { cost },
         inputs,
         inputs.cityRouteProfiles,
         tileByCluster,
       );
+      const fresh = this.legendaryConstructionState({
+        cityCount: (this.player?.units?.(UNIT.City) ?? []).length,
+        hasCoastalTiles: this.hasAnyShoreBorderTile(),
+      });
+      const freshInputs = fresh?.economyInputs;
+      const freshTiles = this.legendaryCityRailClusterTiles(freshInputs);
+      if (!freshTiles || !(freshInputs?.cityRouteProfiles ?? []).some(
+        (profile) => freshTiles.get(String(profile.clusterId)) === tile,
+      )) return false;
       return (
         best !== null &&
         best.placementTile === tile &&
@@ -56,7 +65,7 @@
         buildable,
         this.constructionCostForOptions(UNIT.Port, options),
       );
-      const evaluationFor = (portInputs, totalCost = Number(cost)) => legendaryEconomyNetGold(UNIT.Port, {
+      const evaluationFor = async (portInputs, totalCost = Number(cost)) => this.legendaryEconomyEvaluation(UNIT.Port, {
         cost: totalCost,
         horizonTicks: currentState.economyHorizonTicks,
         inputs: portInputs,
@@ -85,15 +94,24 @@
         const fresh = this.legendaryPortBuildSnapshot(buildable, options);
         if (typeof partnerCost !== "bigint" || !fresh) return false;
         if (!this.legendaryPortSeedQuoteStillValid(partnerSeed, quotedPartner, fresh.inputs)) return false;
-        return this.legendaryPortSeedBuildStillWorthIt(
+        const profitable = await this.legendaryPortSeedBuildStillWorthIt(
           tile, fresh.inputs, fresh.evaluationFor, Number(fresh.cost + partnerCost),
         );
+        const latest = this.legendaryPortBuildSnapshot(buildable, options);
+        return profitable && latest !== null &&
+          latest.inputs.portSeedSources?.some(
+            (source) => source.portSeedStream === "own" && source.placementTile === tile,
+          ) && this.legendaryPortSeedQuoteStillValid(partnerSeed, quotedPartner, latest.inputs);
       }
       const profiles = this.legendaryNovelPortCandidateProfiles(inputs).filter(
         (profile) => profile.placementTile === tile,
       );
       if (profiles.length === 0) return false;
-      const evaluation = evaluationFor({ ...inputs, portCandidateProfiles: profiles });
+      const evaluation = await evaluationFor({ ...inputs, portCandidateProfiles: profiles });
+      const latest = this.legendaryPortBuildSnapshot(buildable, options);
+      if (!latest || !this.legendaryNovelPortCandidateProfiles(latest.inputs).some(
+        (profile) => profile.placementTile === tile,
+      )) return false;
       return (
         evaluation !== null &&
         evaluation.refused !== true &&
@@ -115,7 +133,7 @@
       return Boolean(quotedPartner && freshPartner && quotedPartner.smallID() === freshPartner.smallID());
     }
 
-    legendaryPortSeedBuildStillWorthIt(tile, inputs, evaluationFor, totalCost) {
+    async legendaryPortSeedBuildStillWorthIt(tile, inputs, evaluationFor, totalCost) {
       const ownSeed = inputs.portSeedSources?.find(
         (source) => source.portSeedStream === "own",
       );
@@ -126,7 +144,7 @@
         ownSeed?.placementTile !== tile ||
         partnerSeed?.portSeedWaterComponent !== ownSeed.portSeedWaterComponent
       ) return false;
-      const evaluation = evaluationFor(
+      const evaluation = await evaluationFor(
         { ...inputs, portSeedPartnerCommitted: true },
         totalCost,
       );

@@ -20,7 +20,7 @@ for (const difficulty of ["Easy", "Medium", "Hard", "Impossible", "Legendary"]) 
   assert.equal(settings.difficulty, "Legendary", "saved tiers migrate to Legendary");
 }
 
-const plannerSandbox = {};
+const plannerSandbox = { setTimeout };
 executeClassicScript(readLegendaryPlannerSource(), plannerSandbox, {
   filename: "legendaryPlanner.js",
 });
@@ -2015,10 +2015,7 @@ assert.doesNotMatch(read("engine/ingame/auto-bot/panel.js"), /\["Easy", "Medium"
 assert.match(read("src/shell/popup/panel.ts"), /DIFFICULTIES/);
 assert.match(read("locales/en/common.json"), /"Legendary"/);
 assert.match(read("scripts/build/sources.mjs"), /auto-bot\/legendary-planner\//);
-assert.match(
-  readLegendaryPlannerSource(),
-  /LEGENDARY_EXACT_SCHEDULE_NODE_LIMIT/,
-);
+assert.match(readLegendaryPlannerSource(), /LEGENDARY_EXACT_SCHEDULE_NODE_LIMIT/);
 const structureSource = readStructureBehaviorSource();
 assert.match(structureSource, /rankLegendaryConstructionActions/);
 assert.match(structureSource, /legendaryAllySupportPlacementScore/);
@@ -2068,6 +2065,8 @@ const structureSandbox = {
   legendaryEconomySpawnMultipliers: plannerSandbox.legendaryEconomySpawnMultipliers,
   legendaryStructureHorizonTicks: plannerSandbox.legendaryStructureHorizonTicks,
   legendaryEconomyNetGold: plannerSandbox.legendaryEconomyNetGold,
+  legendaryEconomyNetGoldAsync: async (...args) =>
+    structureSandbox.legendaryEconomyNetGold(...args),
   legendarySeedCandidateBeats: plannerSandbox.legendarySeedCandidateBeats,
   legendaryMissileDefenseSchedule: plannerSandbox.legendaryMissileDefenseSchedule,
   UniversalPathFinding: null,
@@ -3542,6 +3541,8 @@ const capacitySandbox = {
   },
 };
 capacitySandbox.globalThis = capacitySandbox;
+capacitySandbox.legendaryEconomyNetGoldAsync = async (...args) =>
+  capacitySandbox.legendaryEconomyNetGold(...args);
 executeClassicScript(
   `${structureSource}\nglobalThis.StructureBehavior = StructureBehavior;`,
   capacitySandbox,
@@ -5424,7 +5425,7 @@ Object.assign(cityRouteBehavior, {
   assignRailClusters: (entries) =>
     entries.map(({ tile }) => (tile === "station-A" || tile === "city-A" ? "rail#A" : "rail#B")),
 });
-cityRouteBehavior.addLegendaryCityRouteCandidates({
+await cityRouteBehavior.addLegendaryCityRouteCandidates({
   candidates: [boundCityCandidate],
   config: cityRouteConfig,
   strategicState: {
@@ -5712,7 +5713,7 @@ const actualPriceContext = {
   missileSilosEnabled: true,
   typeOrder: { [structureSandbox.UNIT.Port]: 1 },
 };
-actualPricePortBehavior.addLegendaryConstructionCandidate(
+await actualPricePortBehavior.addLegendaryConstructionCandidate(
   actualPriceContext,
   structureSandbox.UNIT.Port,
 );

@@ -48,15 +48,15 @@
       // so it carries the `capacity` priority while the pressure holds.
       const capPressure = this.computeTroopCapPressure(false);
 
-      this.addLegendaryCityCandidates(candidateContext, {
+      await this.addLegendaryCityCandidates(candidateContext, {
         citiesDisabled,
         cityCount,
         capPressure,
         strategicState,
       });
-      this.addLegendaryCityRouteCandidates(candidateContext);
+      await this.addLegendaryCityRouteCandidates(candidateContext);
       for (const upgrade of throughputUpgrades) {
-        this.addLegendaryConstructionCandidate(candidateContext, upgrade.type, upgrade);
+        await this.addLegendaryConstructionCandidate(candidateContext, upgrade.type, upgrade);
       }
 
       const ratios = getStructureRatios(Difficulty.Legendary);
@@ -67,16 +67,16 @@
         ratios,
       };
 
-      this.addLegendaryPortRouteCandidates(ratioContext);
+      await this.addLegendaryPortRouteCandidates(ratioContext);
       await this.addLegendaryFactoryRouteCandidates(ratioContext);
-      this.addLegendaryRatioCandidate(ratioContext, UNIT.SAMLauncher, {
+      await this.addLegendaryRatioCandidate(ratioContext, UNIT.SAMLauncher, {
         mandatory:
           (strategicState.missileThreat.critical ? 1 : 0) +
           (strategicState.samLevelParityGap > 0 ? 1 : 0),
         safety: this.legendarySamCandidateSafety(strategicState),
         strategic: strategicState.missileThreat.score > 0 ? 2 : 0,
       });
-      this.addLegendaryRatioCandidate(ratioContext, UNIT.MissileSilo, {
+      await this.addLegendaryRatioCandidate(ratioContext, UNIT.MissileSilo, {
         strategic: strategicState.targetPressure > 0.75 ? 1 : 0,
       });
 

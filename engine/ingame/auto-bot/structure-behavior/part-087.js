@@ -98,7 +98,7 @@
       }
       if (
         profiledLegendaryFactory &&
-        !this.legendaryFactoryBuildStillWorthIt(buildable, options)
+        !(await this.legendaryFactoryBuildStillWorthIt(buildable, options))
       ) {
         return finishSiloStage(false);
       }
@@ -111,10 +111,16 @@
       }
       if (
         profiledLegendaryCity &&
-        !this.legendaryCityBuildStillWorthIt(buildable, options)
+        !(await this.legendaryCityBuildStillWorthIt(buildable, options))
       ) {
         return finishSiloStage(false);
       }
+      if (economicType && (!this.structureSpawnEligible(type, options) ||
+        this.economicStructureSpawnPending(true, this.player.units(type)) &&
+          !profiledLegendaryPort)) return finishSiloStage(false);
+      if (profiledLegendaryCity && options.legendaryEconomyCityTile == null &&
+        options.legendaryEconomyCityCapRelief === true &&
+        !this.computeTroopCapPressure(false)) return finishSiloStage(false);
       if (
         economicType &&
         this.buildableCostOrFallback(buildable, perceivedCost) >

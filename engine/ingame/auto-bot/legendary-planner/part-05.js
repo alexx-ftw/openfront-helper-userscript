@@ -14,10 +14,59 @@
   return legendaryRatePrefixRangeSum(context.prefix, startTick, endTick);
 }
 
+// Keep the synchronous API for existing diagnostics and offline arithmetic tests.
+function legendaryDrainEconomySteps(iterator) {
+  let step = iterator.next();
+  while (!step.done) step = iterator.next();
+  return step.value;
+}
+
+function legendaryProjectEconomyFleets(inputs, config, horizon, candidate) {
+  return legendaryDrainEconomySteps(
+    legendaryProjectEconomyFleetsSteps(inputs, config, horizon, candidate),
+  );
+}
+
+// The generator owns partial arrays until a complete projection publishes them.
+// Closing it on cancellation releases suspended local references immediately.
+async function legendaryRunEconomyStepsAsync(iterator, {
+  isCurrent = () => true,
+  sliceMs = 8,
+  now = () => globalThis.performance?.now?.() ?? Date.now(),
+} = {}) {
+  const budget = Number.isFinite(Number(sliceMs)) && Number(sliceMs) >= 0
+    ? Number(sliceMs)
+    : 8;
+  let completed = false;
+  let sliceStarted = now();
+  try {
+    while (true) {
+      if (!isCurrent()) return null;
+      const step = iterator.next();
+      if (!isCurrent()) return null;
+      if (step.done) {
+        completed = true;
+        return step.value;
+      }
+      if (now() - sliceStarted >= budget) {
+        const timerHost = typeof window !== "undefined" &&
+            typeof window.setTimeout === "function"
+          ? window
+          : globalThis;
+        await new Promise((resolve) => timerHost.setTimeout(resolve, 0));
+        if (!isCurrent()) return null;
+        sliceStarted = now();
+      }
+    }
+  } finally {
+    if (!completed) iterator.return();
+  }
+}
+
 // One native game tick per step. Integer Config inputs are linearly mixed at
 // fractional expected fleet sizes; this mean-field projection is deterministic
 // and avoids assuming a fixed future spawn rate or a guessed ROI constant.
-function legendaryProjectEconomyFleets(inputs, config, horizon, candidate) {
+function* legendaryProjectEconomyFleetsSteps(inputs, config, horizon, candidate) {
   const supply = inputs?.fleetProducerSupply;
   if (!supply || typeof supply !== "object") return null;
   const ticks = Math.max(0, Math.ceil(horizon));

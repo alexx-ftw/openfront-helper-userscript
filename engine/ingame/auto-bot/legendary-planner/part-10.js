@@ -132,7 +132,7 @@ function legendaryIntegratePayoutTimeline(source, key, startAt, endAt, fallbackR
   return total;
 }
 
-function legendaryEconomyNetGold(
+function* legendaryEconomyNetGoldSteps(
   type,
   { cost = 0, horizonTicks = 0, inputs, config } = {},
 ) {

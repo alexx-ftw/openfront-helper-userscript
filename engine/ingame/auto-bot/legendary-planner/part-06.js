@@ -35,7 +35,7 @@
       };
     })
     .filter(Boolean);
-  const project = (includeCandidate, only = null) => {
+  const project = function* (includeCandidate, only = null) {
     const includeTrains = only !== "trade";
     const includeTradeShips = only !== "train";
     // Replace each rerouted source's per-owner cohort exactly: single-port

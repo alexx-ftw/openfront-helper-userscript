@@ -3,6 +3,9 @@
           if (!evaluation || evaluation.refused === true || evaluation.netTeamGold <= 0) {
             return false;
           }
+          if (!this.legendaryUpgradeProjectionStillCurrent(
+            type, result.structure, BigInt(result.bu.cost), upgradeSnapshot,
+          )) return false;
         }
         if (!this.genericStructureUpgradeAllowed(result, type)) return false;
         // src: addExecution(new UpgradeStructureExecution(player, unit.id())).

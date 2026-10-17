@@ -377,7 +377,38 @@ actual value. Do not infer attribution from the browser fallback alone.
 `transportShipState()`, `health()`. Wrapped players also expose
 `canAttackPlayer(other, treatAFKFriendly)` for engine-exact target eligibility.
 
-## Async boundaries (the ONLY place control flow differs from src)
+## Cooperative Legendary economy projection
+
+`// DIVERGENCE:` the browser may yield between complete simulated ticks of the
+Legendary fleet projection. This is a scheduling exception for UI responsiveness,
+not an approximation: tick order, fleet arithmetic, horizon, route probabilities,
+candidate order and all funding/safety gates remain unchanged. The synchronous
+pure `legendaryEconomyNetGold` API drains the same generator; production structure
+evaluations await `legendaryEconomyNetGoldAsync` through
+`StructureBehavior.legendaryEconomyEvaluation`.
+
+Each structure evaluation captures its active tick generation before work starts.
+Every resume must still belong to that generation and an enabled bot; cancellation
+returns `null` and cannot become valid after stop/restart. No partial projection
+is published to caches. Existing final legality, current cost, reserve and intent
+sender generation checks remain authoritative after the await. Completed prior
+subprojections may remain cached; incomplete subprojections must not be cached.
+
+The small Port seed-pair evaluation in the synchronous economy-input collector
+stays synchronous: its explicit inputs contain no `fleetProducerSupply`, so it
+cannot enter the simulated-fleet tick loop. Worker probes keep their independent
+existing timeout semantics.
+
+After a cooperative valuation, actuation repeats live target identity, level,
+position, construction status, productive-route eligibility, current funding and
+reserve gates. New structures repeat eligibility, pending-build and current
+funding checks; cap-only Cities repeat cap pressure, and profiled placements
+repeat route/seed partner eligibility. The numerical valuation remains a snapshot,
+as with worker probes: changing game ticks alone do not invalidate it or trigger
+an unbounded reevaluation loop. Future saturation and payout changes may change
+its later net value; no live legality, reserve or target guard is waived.
+
+## Async worker boundaries
 
 These client reads are async worker calls. The methods that use them BECOME `async`
 (and nationExecution awaits them — already wired for handleStructures/maybeAttack/

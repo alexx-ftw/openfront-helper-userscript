@@ -21,7 +21,7 @@
             evaluationInputs.portUpgradeProfile =
               inputs?.portUpgradeProfiles?.[String(unit.id())];
           }
-          const evaluation = legendaryEconomyNetGold(type, {
+          const evaluation = await this.legendaryEconomyEvaluation(type, {
             cost: Number(cost),
             horizonTicks: strategicState.economyHorizonTicks,
             inputs: evaluationInputs,
@@ -120,13 +120,17 @@
         evaluationInputs.portUpgradeProfile =
           current.portUpgradeProfiles?.[String(currentTarget.id())];
       }
-      const evaluation = legendaryEconomyNetGold(type, {
+      const upgradeSnapshot = { level: currentTarget.level?.(), tile: currentTarget.tile?.() };
+      const evaluation = await this.legendaryEconomyEvaluation(type, {
         cost: Number(cost),
         horizonTicks: strategicState.economyHorizonTicks,
         inputs: evaluationInputs,
         config: this.game?.config?.(),
       });
       if (!evaluation || evaluation.refused === true || evaluation.netTeamGold <= 0) {
+        return false;
+      }
+      if (!this.legendaryUpgradeProjectionStillCurrent(type, currentTarget, cost, upgradeSnapshot)) {
         return false;
       }
       const buildMenu = getBuildMenu();
