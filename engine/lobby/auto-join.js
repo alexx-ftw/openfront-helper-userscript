@@ -1024,12 +1024,12 @@ function getForecastMapsForType(type) {
   return entries;
 }
 
-function pickWeighted(items) {
+function pickWeighted(items, preparedTotal = null) {
   if (!Array.isArray(items) || items.length === 0) {
     return null;
   }
 
-  const total = items.reduce((sum, item) => sum + item.weight, 0);
+  const total = preparedTotal ?? items.reduce((sum, item) => sum + item.weight, 0);
   if (total <= 0) {
     return null;
   }
@@ -1161,8 +1161,10 @@ function getSpecialForecastExclusions(mapId, isTeamMode, teamConfig) {
   return excludedModifiers;
 }
 
-function createForecastScenario(type) {
-  const map = pickWeighted(getForecastMapsForType(type));
+function createForecastScenario(type, weightedMaps = null) {
+  const map = weightedMaps
+    ? pickWeighted(weightedMaps.items, weightedMaps.total)
+    : pickWeighted(getForecastMapsForType(type));
   if (!map) return null;
   // Scheduled FFA/Team lobbies roll Compact every 3rd playlist rotation
   // (MapPlaylist.gameConfig: playlists[type].length % 3 === 0).
@@ -1218,8 +1220,8 @@ function createForecastScenario(type) {
   };
 }
 
-function scenarioMatchesTeamSizeRange(scenario) {
-  if (lobbyState.settings.minTeamSize == null && lobbyState.settings.maxTeamSize == null) {
+function scenarioMatchesTeamSizeRange(scenario, settings = lobbyState.settings) {
+  if (settings.minTeamSize == null && settings.maxTeamSize == null) {
     return true;
   }
 
@@ -1228,80 +1230,83 @@ function scenarioMatchesTeamSizeRange(scenario) {
     return false;
   }
 
-  if (lobbyState.settings.minTeamSize != null && teamSize < lobbyState.settings.minTeamSize) {
+  if (settings.minTeamSize != null && teamSize < settings.minTeamSize) {
     return false;
   }
 
-  if (lobbyState.settings.maxTeamSize != null && teamSize > lobbyState.settings.maxTeamSize) {
+  if (settings.maxTeamSize != null && teamSize > settings.maxTeamSize) {
     return false;
   }
 
   return true;
 }
 
-function scenarioMatchesFilters(scenario) {
+// Keep this snapshot local to one synchronous model calculation: settings and
+// map catalogues may change before the next cache miss.
+function createForecastFilterContext() {
+  const settings = lobbyState.settings;
+  return {
+    includedMapIds: new Set(MAP_IDS.filter((id) => settings.mapFilters[id])),
+    excludedMapIds: new Set(MAP_IDS.filter((id) => settings.mapExcludeFilters[id])),
+    minTeamSize: settings.minTeamSize,
+    maxTeamSize: settings.maxTeamSize,
+    modifierConstraints: FILTER_KEYS
+      .filter((key) => !START_GOLD_FILTER_KEYS.includes(key))
+      .map((key) => ({
+        key,
+        include: settings.includeFilters[key],
+        exclude: settings.excludeFilters[key],
+      }))
+      .filter((entry) => entry.include || entry.exclude),
+    startGoldIncludes: START_GOLD_FILTER_KEYS.filter((key) => settings.includeFilters[key]),
+    startGoldExcludes: START_GOLD_FILTER_KEYS.filter((key) => settings.excludeFilters[key]),
+  };
+}
+
+function scenarioMatchesFilters(scenario, filterContext = null) {
   if (!scenario || !scenario.mapId) {
     return false;
   }
 
-  const includedMapIds = MAP_IDS.filter((id) => lobbyState.settings.mapFilters[id]);
-  const excludedMapIds = MAP_IDS.filter((id) => lobbyState.settings.mapExcludeFilters[id]);
-  if (excludedMapIds.includes(scenario.mapId)) {
+  const context = filterContext || createForecastFilterContext();
+  if (context.excludedMapIds.has(scenario.mapId)) {
     return false;
   }
-  if (includedMapIds.length > 0 && !includedMapIds.includes(scenario.mapId)) {
+  if (context.includedMapIds.size > 0 && !context.includedMapIds.has(scenario.mapId)) {
+    return false;
+  }
+  if (!scenarioMatchesTeamSizeRange(scenario, context)) {
     return false;
   }
 
-  if (!scenarioMatchesTeamSizeRange(scenario)) {
-    return false;
-  }
-
-  // NOTE: the "teams in match" filter (minTeamCount/maxTeamCount) is applied to
-  // real lobbies in lobbyMatchesFilters but intentionally NOT modeled here. The
-  // synthetic forecast scenarios don't carry a team-count dimension, so the
-  // lobby forecast may slightly over-estimate when that filter is active.
-  const nonStartGoldMatches = FILTER_KEYS.every((key) => {
-    if (START_GOLD_FILTER_KEYS.includes(key)) {
-      return true;
-    }
-    if (lobbyState.settings.includeFilters[key] && !scenario[key]) {
-      return false;
-    }
-    if (lobbyState.settings.excludeFilters[key] && scenario[key]) {
-      return false;
-    }
+  // Team-count filters remain real-lobby-only: synthetic scenarios do not
+  // carry that dimension, so this forecast can slightly over-estimate hits.
+  const nonStartGoldMatches = context.modifierConstraints.every((entry) => {
+    if (entry.include && !scenario[entry.key]) return false;
+    if (entry.exclude && scenario[entry.key]) return false;
     return true;
   });
-  if (!nonStartGoldMatches) {
-    return false;
-  }
-
-  const selectedStartGoldIncludes = START_GOLD_FILTER_KEYS.filter(
-    (key) => lobbyState.settings.includeFilters[key],
-  );
-  const selectedStartGoldExcludes = START_GOLD_FILTER_KEYS.filter(
-    (key) => lobbyState.settings.excludeFilters[key],
-  );
-  if (selectedStartGoldExcludes.some((key) => scenario[key] === true)) {
-    return false;
-  }
-  if (selectedStartGoldIncludes.length === 0) {
-    return true;
-  }
-  return selectedStartGoldIncludes.some((key) => scenario[key] === true);
+  if (!nonStartGoldMatches) return false;
+  if (context.startGoldExcludes.some((key) => scenario[key] === true)) return false;
+  if (context.startGoldIncludes.length === 0) return true;
+  return context.startGoldIncludes.some((key) => scenario[key] === true);
 }
 
-function estimateModelHitRateByType(type) {
+function estimateModelHitRateByType(type, filterContext = null) {
+  const context = filterContext || createForecastFilterContext();
+  const items = getForecastMapsForType(type);
+  // Sum in the same order as pickWeighted; retain its subtraction and <=
+  // boundary rather than changing to cumulative weights or a binary search.
+  const weightedMaps = { items, total: items.reduce((sum, item) => sum + item.weight, 0) };
   let matches = 0;
   let total = 0;
   for (let i = 0; i < LOBBY_FORECAST_MODEL_DRAWS; i += 1) {
-    const scenario = createForecastScenario(type);
+    const scenario = createForecastScenario(type, weightedMaps);
     if (!scenario) {
       continue;
     }
     total += 1;
-    if (scenarioMatchesFilters(scenario)) {
+    if (scenarioMatchesFilters(scenario, context)) {
       matches += 1;
     }
   }
@@ -1317,10 +1322,11 @@ function getModelHitRates() {
     return lobbyForecastModelCache.values;
   }
 
+  const context = createForecastFilterContext();
   const values = {
-    special: estimateModelHitRateByType("special"),
-    ffa: estimateModelHitRateByType("ffa"),
-    team: estimateModelHitRateByType("team"),
+    special: estimateModelHitRateByType("special", context),
+    ffa: estimateModelHitRateByType("ffa", context),
+    team: estimateModelHitRateByType("team", context),
   };
   lobbyForecastModelCache = {
     signature,

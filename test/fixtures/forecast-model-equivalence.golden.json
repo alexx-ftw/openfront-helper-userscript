@@ -1,0 +1,153 @@
+{
+  "referenceCommit": "da128b4e80d1c19bfb6fa0a01a7f9af6e8ef64fa",
+  "sourceSHA256": "20fde24968eaba251db7a2f5f3a6095da7f555833c43c4e880e1e04392d475c0",
+  "mapsSHA256": "7c54e5d150d4085adec4a9605f1df015cbd5e867e362cd505c12f190dad30fdf",
+  "mapCount": 132,
+  "records": [
+    {
+      "index": 0,
+      "settings": {},
+      "scenariosSHA256": "0895f5803bd0a49fb7037b606b2f820b6cfa6ecb428fa19eff81b1659ade6195",
+      "allScenariosSHA256": "03e1a681f89d018804d68b2e502477e68b3b5101937d120e5c1e5d20a106aea5",
+      "scenarioCount": 10884,
+      "randomSHA256": "4d8b9d0cb9000306da06173cefd8387490e1279f55d2887e8e406cbf36288086",
+      "randomDraws": 136169,
+      "rngState": 1157779788,
+      "rates": {
+        "special": 1,
+        "ffa": 1,
+        "team": 1
+      }
+    },
+    {
+      "index": 1,
+      "settings": {
+        "includeFilters": {
+          "compact": true
+        }
+      },
+      "scenariosSHA256": "6b54b67934638d671324613ddb9b2dc6574d9f4664fb5d6412032efd9e575ec3",
+      "allScenariosSHA256": "b6587095fcd9d5bb84c5d6ef3ee4446a8bdd5edf17e31259fc128de2a6019866",
+      "scenarioCount": 10884,
+      "randomSHA256": "2fc90a354d2ed7e9a80af4cacabda1b8b02b08740cbb4647544ec14683ffa9cd",
+      "randomDraws": 136180,
+      "rngState": 2854273982,
+      "rates": {
+        "special": 0.25,
+        "ffa": 0.34885714285714287,
+        "team": 0.32857142857142857
+      }
+    },
+    {
+      "index": 2,
+      "settings": {
+        "includeFilters": {
+          "crowded": true,
+          "waterNukes": true
+        }
+      },
+      "scenariosSHA256": "8d320120105117d904871cb51db89bf0f1340c5bd5700f5248d8cc53a92a26fd",
+      "allScenariosSHA256": "7d8f11d57eb45fe955890237213ee6e191f6142cacf7f74fa01d1cbf657ea389",
+      "scenarioCount": 10884,
+      "randomSHA256": "f60f2b23acc3e8b9941ba24a2ef535484e9bee10845b4edfafe6fc5bf1fcfa47",
+      "randomDraws": 136186,
+      "rngState": 319914589,
+      "rates": {
+        "special": 0.022571428571428572,
+        "ffa": 0,
+        "team": 0
+      }
+    },
+    {
+      "index": 3,
+      "settings": {
+        "includeFilters": {
+          "startingGold1M": true,
+          "startingGold25M": true
+        },
+        "excludeFilters": {
+          "nukesDisabled": true
+        }
+      },
+      "scenariosSHA256": "cbb07f709fe070736f98fedb0ea496ef886ab8823246bc5acc98fd61c986a5fe",
+      "allScenariosSHA256": "f241ca32eaee84ac9ed6d827753d040646ec61f38a60c77ca029e5dd696f7fda",
+      "scenarioCount": 10884,
+      "randomSHA256": "371767b5aa4dba8c225f3e2ce51f8e1180bde89813b9375e30786136f705f82a",
+      "randomDraws": 136209,
+      "rngState": 2632595707,
+      "rates": {
+        "special": 0.20114285714285715,
+        "ffa": 0,
+        "team": 0
+      }
+    },
+    {
+      "index": 4,
+      "settings": {
+        "mapFilters": {
+          "baikal": true,
+          "fourislands": true,
+          "luna": true
+        },
+        "minTeamSize": 2,
+        "maxTeamSize": 4
+      },
+      "scenariosSHA256": "4e0cb0798b0a9b7a99e712492072fef89defe0e42d2e72de67d42dbfd1806f67",
+      "allScenariosSHA256": "18efb8cfe007483bb4c4cbbc0e1353e984165f78bd2280930bb65365aa598016",
+      "scenarioCount": 10884,
+      "randomSHA256": "c197924a545143e26b85c6e783c2dd7d8f739adf311f45b2157b6db05d1bce97",
+      "randomDraws": 136111,
+      "rngState": 3164790086,
+      "rates": {
+        "special": 0.014285714285714285,
+        "ffa": 0,
+        "team": 0.05085714285714286
+      }
+    },
+    {
+      "index": 5,
+      "settings": {
+        "mapExcludeFilters": {
+          "world": true,
+          "europe": true
+        },
+        "excludeFilters": {
+          "compact": true,
+          "startingGold0M": true
+        }
+      },
+      "scenariosSHA256": "fcb31f49166f83efcdd57d6b41d3b91be7e7fe28e4d4e2dc55076421e89e75bc",
+      "allScenariosSHA256": "81fbaacc44036782e5a520e70129de76b35a57d8ce5c2ef93754f594f3600d75",
+      "scenarioCount": 10884,
+      "randomSHA256": "2e8c37eff61379e5c9f571214833cf6f3468234a17ef9d00e16d395e487aaf4f",
+      "randomDraws": 136117,
+      "rngState": 1815616057,
+      "rates": {
+        "special": 0.3414285714285714,
+        "ffa": 0,
+        "team": 0
+      }
+    },
+    {
+      "index": 6,
+      "settings": {
+        "mapFilters": {
+          "sierpinski": true,
+          "thebox": true,
+          "didier": true
+        }
+      },
+      "scenariosSHA256": "b0b7952f184cd9f018d7edf924e54902202df3e1c1fb7b60a224937bd3b30cd3",
+      "allScenariosSHA256": "c618333b01bf367161fd6f209cd239de733075964879b5d157cb69a547ba76cd",
+      "scenarioCount": 10884,
+      "randomSHA256": "5f2f70cc326b1cf0306c3c88727d6e4b50504b52da6d068f1ce8c193370ec184",
+      "randomDraws": 136152,
+      "rngState": 3170522903,
+      "rates": {
+        "special": 0.03628571428571428,
+        "ffa": 0,
+        "team": 0
+      }
+    }
+  ]
+}

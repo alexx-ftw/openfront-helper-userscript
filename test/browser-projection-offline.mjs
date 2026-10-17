@@ -12,12 +12,18 @@ import { readStructureBehaviorSource } from "#test/helpers/structure-behavior-so
 const root = fileURLToPath(new URL("../", import.meta.url));
 const directory = process.env.OFH_BROWSER_ARTIFACT_DIR || join(tmpdir(), "ofh-browser-projection");
 mkdirSync(directory, { recursive: true });
-const baseline = process.argv.includes("--baseline");
+const baselineArgument = process.argv.find((argument) => argument.startsWith("--baseline-ref="));
+const baselineRef =
+  baselineArgument?.slice("--baseline-ref=".length) ?? "399ec4ff7c99f3a02165ce65b5b433a784c761db";
+assert.match(baselineRef, /^[0-9a-f]{40}$/, "baseline must be an immutable full commit hash");
+const baseline = process.argv.includes("--baseline") || Boolean(baselineArgument);
 const withArtifact = process.argv.includes("--with-artifact");
 const controlledGesture = withArtifact && !process.argv.includes("--raw-first-gesture");
-const mode = (baseline ? "baseline-399ec4" : "cooperative") + (withArtifact ? "-artifact" : "");
+const mode =
+  (baseline ? `baseline-${baselineRef.slice(0, 7)}` : "cooperative") +
+  (withArtifact ? "-artifact" : "");
 const sourceAt = (path) =>
-  execFileSync("/usr/bin/git", ["show", `399ec4ff7c99f3a02165ce65b5b433a784c761db:${path}`], {
+  execFileSync("/usr/bin/git", ["show", `${baselineRef}:${path}`], {
     cwd: root,
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
@@ -41,7 +47,7 @@ const structure = baseline
         "ls-tree",
         "-r",
         "--name-only",
-        "399ec4ff7c99f3a02165ce65b5b433a784c761db",
+        baselineRef,
         "--",
         "engine/ingame/auto-bot/structure-behavior/",
       ],
@@ -339,7 +345,11 @@ try {
   }
   writeFileSync(
     `${directory}/${mode}.json`,
-    JSON.stringify({ browser: browser.version(), url, report }, null, 2) + "\n",
+    JSON.stringify(
+      { browser: browser.version(), baselineRef: baseline ? baselineRef : null, url, report },
+      null,
+      2,
+    ) + "\n",
   );
   process.stdout.write(
     JSON.stringify(

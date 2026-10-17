@@ -24,11 +24,14 @@ export const defaultAutoJoinSettings = {
 
 export function createAutoJoinSandbox(
   driverSource,
-  { filterKeys = [], startGoldFilterKeys = [] } = {},
+  { filterKeys = [], startGoldFilterKeys = [], autoJoinSource } = {},
 ) {
   // The userscript concatenates engine files into one sloppy-mode scope; mirror
   // that here so auto-join.js sees core.js's top-level bindings.
-  const engineSource = [read("engine/lobby/core.js"), read("engine/lobby/auto-join.js")].join("\n");
+  const engineSource = [
+    read("engine/lobby/core.js"),
+    autoJoinSource ?? read("engine/lobby/auto-join.js"),
+  ].join("\n");
   const sandbox = {
     console,
     // Declared in floating-autojoin.js, which this two-file concatenation omits.
