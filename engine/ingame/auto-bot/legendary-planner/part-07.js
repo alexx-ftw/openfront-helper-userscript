@@ -105,11 +105,9 @@
           prefix[tick + 1] = prefix[tick] + rate;
         }
         let tradeShipBirths = 0;
-        for (const port of activeTradeProducerCohorts) {
-          const readyAt = Math.max(0, Number(port.readyAtTicks) || 0);
-          if (tick >= readyAt) {
-            const level = Math.max(0, Math.floor(Number(port.level) || 0));
-            const birthsPerPort = tradeRateAtLevel[level];
+        for (const port of normalizedTradeProducerCohorts) {
+          if (tick >= port.readyAtTicks) {
+            const birthsPerPort = tradeRateAtLevel[port.level];
             tradeShipBirths += birthsPerPort * port.count;
             scheduleTradeShipArrivals(birthsPerPort, port.routes, tick);
           }

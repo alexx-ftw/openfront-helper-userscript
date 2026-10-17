@@ -47,6 +47,14 @@
     const activeTradeProducerCohorts = includeCandidate
       ? activeTradePortCohorts.concat(candidateInboundPortCohorts)
       : activeTradePortCohorts;
+    // Cohorts are fresh local records and cannot change during this synchronous
+    // projection. Normalize once, preserving their iteration and summation order,
+    // rather than repeating numeric coercions for every cohort on every tick.
+    const normalizedTradeProducerCohorts = activeTradeProducerCohorts.map((port) => ({
+      ...port,
+      readyAtTicks: Math.max(0, Number(port.readyAtTicks) || 0),
+      level: Math.max(0, Math.floor(Number(port.level) || 0)),
+    }));
     const tradeRateLevels = new Set();
     for (const port of activeTradeProducerCohorts) {
       tradeRateLevels.add(Math.max(0, Math.floor(Number(port.level) || 0)));
