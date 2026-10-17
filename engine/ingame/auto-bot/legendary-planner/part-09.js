@@ -17,7 +17,7 @@ function legendaryPortPartialTickGold(
 ) {
   const overlap = Math.max(0, Math.min(end, tick + 1) - Math.max(start, tick));
   if (overlap <= 0) return 0;
-  const active = tick + overlap / 2 < activeEnd;
+  const active = Math.max(start, tick) + overlap / 2 < activeEnd;
   return overlap * rate(tick) * (active ? activeRate : postAllianceRate);
 }
 
@@ -146,7 +146,7 @@ function legendaryPortRouteGold(
     for (let tick = Math.floor(start); tick < end; tick++) {
       const overlap = Math.max(0, Math.min(end, tick + 1) - Math.max(start, tick));
       if (overlap <= 0) continue;
-      const active = tick + overlap / 2 < activeEnd;
+      const active = Math.max(start, tick) + overlap / 2 < activeEnd;
       total += overlap * rate(tick) * (active ? activeRate : postAllianceRate);
     }
     return total;

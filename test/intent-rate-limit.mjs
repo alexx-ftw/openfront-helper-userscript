@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { INGAME_FILES } from "../scripts/build/sources.mjs";
 import {
   executeClassicScript,
   readRepositoryFile,
@@ -8,7 +9,6 @@ import {
 const RATE_LIMIT_SOURCE = readRepositoryFile("engine/ingame/intent-rate-limit.js");
 const CONTEXT_SOURCE = readRepositoryFile("engine/ingame/auto-bot/context.js");
 const WS_HOOK_SOURCE = readRepositoryFile("engine/ingame/ws-hook.js");
-const BUILD_SOURCE = readRepositoryFile("build.mjs");
 
 function createSandbox() {
   let now = 0;
@@ -166,9 +166,12 @@ assert.match(
   /tryAcquireIntentRateLimit\(/,
   "direct WebSocket intent fallback must use the shared budget",
 );
-assert.match(
-  BUILD_SOURCE,
-  /"intent-rate-limit\.js"/,
+const rateLimitIndex = INGAME_FILES.indexOf("engine/ingame/intent-rate-limit.js");
+const wsHookIndex = INGAME_FILES.indexOf("engine/ingame/ws-hook.js");
+assert.ok(rateLimitIndex >= 0, "the authoritative build inventory includes the shared budget");
+assert.ok(wsHookIndex >= 0, "the authoritative build inventory includes the WebSocket bridge");
+assert.ok(
+  rateLimitIndex < wsHookIndex,
   "the shared budget must be included before the WebSocket bridge in builds",
 );
 

@@ -8,7 +8,7 @@ const PARTS_DIR = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "nuke-trajectory-sam-coverage-parts",
 );
-const EXPECTED_SHA256 = "97ca3bba991fa1775f6e0a6b9f503f32ef842879e5f3dfd9bd17e88a26e20c5f";
+const EXPECTED_SHA256 = "54f2e8d9b47b94dd0f7f773c32dbeca5efe063645e817f35ddd2b51dc6313024";
 const partFiles = fs
   .readdirSync(PARTS_DIR)
   .filter((name) => /^part-\d+\.mjs$/.test(name))

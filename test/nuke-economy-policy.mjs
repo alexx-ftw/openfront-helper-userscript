@@ -6,10 +6,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const partsDirectory = path.join(testDirectory, "nuke-economy-policy-parts");
-const expectedHash = "7494f0133a70683235d6144abefd1d8cd958f8b7812122eb11c12edbb422e0ad";
-const sourceReadPattern = /const source = fs\.readFileSync\(\n\s*path\.join\(repoRoot,[^\n]+\n\s*"utf8",\n\);/g;
-const helperImport =
-  'import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";';
+const expectedHash = "b7fd7b67116a53b1140ff88b986b090169001c50217a0da5a15b59188e76416c";
+const sourceReadPattern =
+  /const source = fs\.readFileSync\(\n\s*path\.join\(repoRoot,[^\n]+\n\s*"utf8",\n\);/g;
+const helperImport = 'import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";';
 const partFiles = fs
   .readdirSync(partsDirectory)
   .filter((name) => /^part-\d+\.mjs$/.test(name))
@@ -33,10 +33,7 @@ if (joinedHash !== expectedHash) {
       helperImport +
       "\n" +
       sourceText.replace(sourceReadPattern, "const source = readNukeBehaviorSource();");
-    const tempPath = path.join(
-      testDirectory,
-      `.nuke-economy-policy.joined.${process.pid}.mjs`,
-    );
+    const tempPath = path.join(testDirectory, `.nuke-economy-policy.joined.${process.pid}.mjs`);
     try {
       fs.writeFileSync(tempPath, executableSource);
       await import(pathToFileURL(tempPath).href);

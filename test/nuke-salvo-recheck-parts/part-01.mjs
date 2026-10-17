@@ -5,13 +5,13 @@
 // negative tile score — matches the documented intent of the enhancement.
 
 import assert from "node:assert/strict";
-import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
-import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
+import { readNukeBehaviorSource } from "#test/helpers/nuke-behavior-source.mjs";
+import { readStructureBehaviorSource } from "#test/helpers/structure-behavior-source.mjs";
 import fs from "node:fs";
 import path from "node:path";
-import { executeClassicScript } from "./helpers/classic-script.mjs";
+import { executeClassicScript } from "#test/helpers/classic-script.mjs";
 import { fileURLToPath } from "node:url";
-import { readLegendaryPlannerSource } from "./helpers/legendary-planner-source.mjs";
+import { readLegendaryPlannerSource } from "#test/helpers/legendary-planner-source.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");

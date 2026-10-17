@@ -1,16 +1,8 @@
 function legendaryPortExpectedGold(profile, options) {
+  const horizon = Number(options.horizon);
+  const startDelay = Number(options.startDelayTicks ?? 0);
+  if (!Number.isFinite(horizon) || horizon <= 0 || !Number.isFinite(startDelay)) return 0;
   const routes = legendaryPortRoutes(profile, options.fallbackDistance);
-  const totalWeight = routes.reduce(
-    (total, route) => total + Math.max(0, Number(route.weight) || 0),
-    0,
-  );
-  if (totalWeight <= 0) return 0;
-  const postAllianceTotalWeight = routes.reduce(
-    (total, route) =>
-      total + Math.max(0, Number(route.postAllianceWeight ?? route.weight) || 0),
-    0,
-  );
-  if (postAllianceTotalWeight <= 0) return 0;
   const rate = typeof options.rateAtTick === "function"
     ? options.rateAtTick
     : legendaryPortRate(
@@ -19,19 +11,74 @@ function legendaryPortExpectedGold(profile, options) {
         options.tradeShipCount,
         options.config,
       );
-  return routes.reduce(
-    (total, route) =>
-      total + legendaryPortRouteGold(
-        route,
-        rate,
-        totalWeight,
-        postAllianceTotalWeight,
-        options.startDelayTicks,
-        options.horizon,
-        options.rateRangeSum,
-      ),
-    0,
-  );
+  if (routes.length === 1) {
+    const route = routes[0];
+    const before = Math.max(0, Number(route.weight) || 0);
+    const after = Math.max(0, Number(route.postAllianceWeight ?? route.weight) || 0);
+    if (Number.isFinite(before + after) && before > 0 && after > 0) {
+      return legendaryPortRouteGold(
+        route, rate, before, after, startDelay,
+        options.horizon, options.rateRangeSum,
+      );
+    }
+  }
+  // All routes share one destination denominator. Sweep its expiry changes
+  // together with weighted-payout arrivals instead of scanning every route at
+  // every expiry. At most two events per route keep prefix work O(R log R).
+  const events = new Map();
+  const addEvent = (at, weight, payout) => {
+    if (!(at >= 0 && at < horizon)) return;
+    const event = events.get(at) ?? { weight: 0, payout: 0 };
+    event.weight += weight;
+    event.payout += payout;
+    events.set(at, event);
+  };
+  let totalWeight = 0;
+  for (const route of routes) {
+    const before = Math.max(0, Number(route.weight) || 0);
+    const after = Math.max(0, Number(route.postAllianceWeight ?? route.weight) || 0);
+    const gold = Math.max(0, Number(route.teamGoldPerArrival ?? 0));
+    const postGold = Math.max(0, Number(route.postAllianceGoldPerArrival ?? gold));
+    const start = Math.max(0, startDelay +
+      Math.max(0, Number(route.distance) || 0));
+    const rawExpiry = Number(route.allianceTicksRemaining ?? Infinity);
+    const expiry = Number.isNaN(rawExpiry) ? 0 : Math.max(0, rawExpiry);
+    // Invalid profile arithmetic must not poison an otherwise finite sweep.
+    if (![before, after, gold, postGold, start].every(Number.isFinite)) return 0;
+    const beforePayout = before * gold;
+    const afterPayout = after * postGold;
+    if (!Number.isFinite(beforePayout + afterPayout)) return 0;
+    totalWeight += expiry === 0 ? after : before;
+    addEvent(start, 0, start < expiry ? beforePayout : afterPayout);
+    if (expiry > 0) {
+      addEvent(expiry, after - before, start < expiry ? afterPayout - beforePayout : 0);
+    }
+  }
+  const boundaries = [...new Set([0, ...events.keys(), horizon])].sort((a, b) => a - b);
+  let weightedPayout = 0;
+  let total = 0;
+  for (let index = 0; index < boundaries.length - 1; index++) {
+    const start = boundaries[index];
+    const end = boundaries[index + 1];
+    const event = events.get(start);
+    totalWeight += event?.weight ?? 0;
+    weightedPayout += event?.payout ?? 0;
+    if (!(totalWeight > 0 && weightedPayout > 0)) continue;
+    const payout = weightedPayout / totalWeight;
+    if (typeof rate !== "function") {
+      total += rate * (end - start) * payout;
+    } else if (typeof options.rateRangeSum === "function") {
+      total += legendaryPortRouteGoldWithPrefix(
+        rate, options.rateRangeSum, start, end, Infinity, payout, payout,
+      );
+    } else {
+      for (let tick = Math.floor(start); tick < end; tick++) {
+        const overlap = Math.min(end, tick + 1) - Math.max(start, tick);
+        total += overlap * rate(tick) * payout;
+      }
+    }
+  }
+  return total;
 }
 
 function legendaryPayoutTimelineValue(source, key, tick, timeline, fallbackRates) {

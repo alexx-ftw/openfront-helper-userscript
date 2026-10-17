@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { HOT_RELOAD_BRIDGE } from "../scripts/build/assemble.mjs";
+import { publishBuildArtifacts } from "../scripts/build/assets.mjs";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +9,6 @@ import { fileURLToPath } from "node:url";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const buildSource = fs.readFileSync(path.join(repoRoot, "build.mjs"), "utf8");
 const lifecycleSource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/auto-bot/lifecycle.js"),
   "utf8",
@@ -16,12 +17,6 @@ const autoBotBuildSource = fs.readFileSync(
   path.join(repoRoot, "openfront-helper.autobot.js"),
   "utf8",
 );
-
-function extractHotReloadBridge(source) {
-  const match = source.match(/const HOT_RELOAD_BRIDGE = `([\s\S]*?)`;/u);
-  assert.ok(match, "build must contain an extractable hot-reload bridge");
-  return match[1];
-}
 
 async function captureRejection(promise) {
   return promise.then(
@@ -102,7 +97,7 @@ function makeHotReloadBridgeHarness({
   };
   vm.createContext(sandbox);
   // eslint-disable-next-line sonarjs/code-eval
-  vm.runInContext(extractHotReloadBridge(buildSource), sandbox);
+  vm.runInContext(HOT_RELOAD_BRIDGE, sandbox);
 
   return {
     candidate,
@@ -158,7 +153,7 @@ async function testInvalidEvalKeepsPreviousRuntime() {
   };
   vm.createContext(sandbox);
   // eslint-disable-next-line sonarjs/code-eval
-  vm.runInContext(extractHotReloadBridge(buildSource), sandbox);
+  vm.runInContext(HOT_RELOAD_BRIDGE, sandbox);
 
   await assert.rejects(
     sandbox.window.__OFH_HOT_RELOAD_AUTOBOT__(
@@ -682,8 +677,6 @@ async function testPartialPreviousDisposalRestoresRuntime() {
 }
 
 async function testBuildPublishesThreeArtifactsAtomically() {
-  assert.match(buildSource, /export async function publishBuildArtifacts/u);
-  const { publishBuildArtifacts } = await import("../build.mjs");
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "ofh-hot-reload-"));
   const artifacts = {
     full: "full-v2",

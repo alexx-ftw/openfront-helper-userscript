@@ -12,7 +12,7 @@ const PARTS_DIR = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "hybrid-runtime-integration-parts",
 );
-const EXPECTED_SHA256 = "868db9848b84935d61f4e1f1d3adca1f32c8e17a177d56f7e3430baaf0209464";
+const EXPECTED_SHA256 = "68306c7f5fcfa1db1d7bf2e8b078a1bea233ce0fc8b91bfa868fe8b600dcffe0";
 const partFiles = fs
   .readdirSync(PARTS_DIR)
   .filter((name) => /^part-\d+\.mjs$/.test(name))

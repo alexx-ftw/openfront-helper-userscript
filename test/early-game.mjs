@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { INGAME_FILES } from "../scripts/build/sources.mjs";
+import { metadataHeader } from "../scripts/build/assets.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { executeClassicScript } from "./helpers/classic-script.mjs";
@@ -140,11 +142,10 @@ const tribeClusterOverlaySource = fs.readFileSync(
   path.join(repoRoot, "engine/ingame/tribe-cluster-overlay.js"),
   "utf8",
 );
-const buildSource = fs.readFileSync(path.join(repoRoot, "build.mjs"), "utf8");
 const coreSource = fs.readFileSync(path.join(repoRoot, "engine/ingame/auto-bot/core.js"), "utf8");
 
 assert.doesNotMatch(
-  buildSource,
+  metadataHeader("test-version"),
   /@updateURL|@downloadURL/,
   "the CUSTOM build must not auto-update from upstream main and silently replace custom bot behavior",
 );
@@ -2105,8 +2106,14 @@ assert.match(gameApiSource, /findWaterRouteTicksAsync/);
 assert.match(gameApiSource, /maxTicks: BOAT_EXPLORATION_MAX_ROUTE_TICKS/);
 assert.match(attackSource, /allowBoatExplorationRoute/);
 
-assert.match(buildSource, /"auto-bot\/earlyGame\.js"/);
-assert.match(buildSource, /"tribe-cluster-overlay\.js"/);
+assert.ok(
+  INGAME_FILES.includes("engine/ingame/auto-bot/earlyGame.js"),
+  "the build inventory must include the early-game planner",
+);
+assert.ok(
+  INGAME_FILES.includes("engine/ingame/tribe-cluster-overlay.js"),
+  "the build inventory must include the tribe cluster overlay",
+);
 
 // Integration probe: the real AttackBehavior enrichment must expose the same
 // coast/encirclement/blocking signals used by the pure ranker.

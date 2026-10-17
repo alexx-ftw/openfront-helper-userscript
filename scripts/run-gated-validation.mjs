@@ -2,7 +2,7 @@
 // when the current chatgpt cgroup has headroom, so the chain can never be the
 // process that triggers a cgroup-wide OOM. See docs/legendary-metric-ceilings.md.
 import { existsSync, readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 /* eslint-disable no-console -- CLI evidence output is this script's contract. */
 
@@ -81,13 +81,13 @@ for (const step of steps) {
     process.exit(0);
   }
   console.log(`gated-validation run: ${step}`);
-  try {
-    execSync(step, {
-      stdio: "inherit",
-      env: { ...process.env, NODE_OPTIONS: HEAP_CAP },
-    });
-    // eslint-disable-next-line no-restricted-syntax -- each step reports and stops its own failure.
-  } catch {
+  const result = spawnSync(step, {
+    shell: true,
+    stdio: "inherit",
+    env: { ...process.env, NODE_OPTIONS: HEAP_CAP },
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
     console.error(`gated-validation FAIL: ${step}`);
     process.exit(1);
   }

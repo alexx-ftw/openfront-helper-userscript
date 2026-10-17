@@ -8,7 +8,7 @@ const PARTS_DIR = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "sam-defense-policy-parts",
 );
-const EXPECTED_SHA256 = "2cdd06f4b21e3af594f74681bbda0402d2237f94aea93c51a91607d85dac5ec8";
+const EXPECTED_SHA256 = "d46458c44c26e2655f8063b18244a54ebd7f8d4b59145dfd6459446c89471b2e";
 const partFiles = fs
   .readdirSync(PARTS_DIR)
   .filter((name) => /^part-\d+\.mjs$/.test(name))

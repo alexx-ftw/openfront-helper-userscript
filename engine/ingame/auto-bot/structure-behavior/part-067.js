@@ -132,13 +132,10 @@
       });
       const initialTradeShipRemainingTicks = [];
       const currentTick = safeStructureGameTick(this.game);
-      let motionPlans = null;
+      // Missing optional plans retain initial ships conservatively; unexpected
+      // query failures must propagate rather than silently changing the projection.
       // GameApi exposes grid-unit plans but keeps GameView's train plans private.
-      try {
-        motionPlans = this.game?.motionPlans?.();
-      } catch {
-        // Missing motion plans keep those initial ships in the global fleet conservatively.
-      }
+      const motionPlans = this.game?.motionPlans?.() ?? null;
       if (Number.isFinite(currentTick) && typeof motionPlans?.get === "function") {
         for (const ship of this.game?.units?.(UNIT.TradeShip) ?? []) {
           const plan = motionPlans.get(ship?.id?.());

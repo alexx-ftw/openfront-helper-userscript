@@ -145,25 +145,27 @@
       if (typeof partner?.buildables !== "function") return null;
       const partnerTile = partnerSeed?.placementTile;
       if (partnerTile === null || partnerTile === undefined) return null;
+      let quotes;
       try {
-        const quotes = await withTimeout(
+        quotes = await withTimeout(
           partner.buildables(partnerTile, [UNIT.Port]),
           STRUCTURE_PROBE_TIMEOUT_MS,
           null,
         );
-        const buildable = Array.isArray(quotes)
-          ? quotes.find(
-              (entry) =>
-                entry?.type === UNIT.Port && entry.canBuild === partnerTile,
-            )
-          : null;
-        return buildable?.canBuild === partnerTile &&
-          typeof buildable.cost === "bigint"
-          ? buildable.cost
-          : null;
       } catch {
+        // Optional partner worker probes may reject; an unpriced seed is refused.
         return null;
       }
+      const buildable = Array.isArray(quotes)
+        ? quotes.find(
+            (entry) =>
+              entry?.type === UNIT.Port && entry.canBuild === partnerTile,
+          )
+        : null;
+      return buildable?.canBuild === partnerTile &&
+        typeof buildable.cost === "bigint"
+        ? buildable.cost
+        : null;
     }
 
     // maybeSpawnStructure — NationStructureBehavior.ts:585 (now async).

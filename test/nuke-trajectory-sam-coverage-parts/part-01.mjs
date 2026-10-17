@@ -5,8 +5,8 @@
 // plus the salvo partition's trajectory gate.
 
 import assert from "node:assert/strict";
-import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";
-import { executeClassicScript } from "./helpers/repository-fixture.mjs";
+import { readNukeBehaviorSource } from "#test/helpers/nuke-behavior-source.mjs";
+import { executeClassicScript } from "#test/helpers/repository-fixture.mjs";
 
 const sourcePath = "nuke-behavior.vm.js";
 const source = readNukeBehaviorSource();

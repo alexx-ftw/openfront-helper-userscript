@@ -69,6 +69,31 @@ assert.equal(
 );
 assert.equal(quotedOwner, "selected-component-partner");
 
+const workerFailure = new Error("partner worker unavailable");
+thirdTeammate.buildables = async () => {
+  throw workerFailure;
+};
+assert.equal(
+  await behavior.legendaryPortSeedPartnerBuildCostQuote(selectedPartnerSeed),
+  null,
+  "an optional partner worker rejection conservatively refuses the unpriced seed",
+);
+const quoteFailure = new Error("unexpected partner quote getter failure");
+thirdTeammate.buildables = async (tile) => [
+  {
+    type: "Port",
+    canBuild: tile,
+    get cost() {
+      throw quoteFailure;
+    },
+  },
+];
+await assert.rejects(
+  behavior.legendaryPortSeedPartnerBuildCostQuote(selectedPartnerSeed),
+  (error) => error === quoteFailure,
+  "unexpected quote parsing errors propagate without being treated as worker failures",
+);
+
 thirdTeammate.buildables = async (tile) => {
   const buildable = { type: "Port", canBuild: tile, cost: 42n };
   await Promise.resolve();

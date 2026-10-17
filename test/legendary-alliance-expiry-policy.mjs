@@ -8,7 +8,7 @@ const { UNIT } = sandbox;
 const currentTick = 100;
 const payoutByRelation = { team: 50_000, ally: 100_000, other: 1_000 };
 
-function valueForNetwork(relation, expiresAt = Infinity) {
+function valueForNetwork(relation, expiresAt = Infinity, motionPlans = undefined) {
   const makeOwner = (id) => {
     const units = new Map();
     return {
@@ -72,6 +72,7 @@ function valueForNetwork(relation, expiresAt = Infinity) {
     units: () => [],
     ticks: () => currentTick,
     sharedWaterComponents: () => null,
+    motionPlans,
   };
   behavior.buildReachableStations = () => [
     { tile: 1, cluster: "rail" },
@@ -96,6 +97,16 @@ function valueForNetwork(relation, expiresAt = Infinity) {
   assert.ok(value && !value.refused, "the same paid Factory route is evaluable in each fixture");
   return { inputs, netTeamGold: value.netTeamGold };
 }
+
+const motionFailure = new Error("unexpected motion-plan failure");
+assert.throws(
+  () =>
+    valueForNetwork("team", Infinity, () => {
+      throw motionFailure;
+    }),
+  (error) => error === motionFailure,
+  "missing optional motion data is allowed, but unexpected query failures propagate",
+);
 
 const teammate = valueForNetwork("team");
 const indefiniteAlly = valueForNetwork("ally");
@@ -137,11 +148,14 @@ const portRoutes = [10, Infinity].map((allianceTicksRemaining, index) => ({
   allianceTicksRemaining,
 }));
 const portProjection = (startDelayTicks, horizon) =>
-  sandbox.legendaryPortExpectedGold({ routes: portRoutes }, {
-    rateAtTick: () => 1,
-    startDelayTicks,
-    horizon,
-  });
+  sandbox.legendaryPortExpectedGold(
+    { routes: portRoutes },
+    {
+      rateAtTick: () => 1,
+      startDelayTicks,
+      horizon,
+    },
+  );
 assert.equal(
   portProjection(0, 10),
   1_000,
@@ -157,6 +171,195 @@ assert.equal(
   2_000,
   "partial alliance expiry conserves all departures across equal-payout Port routes",
 );
+
+// Staggered expiries must share one live destination denominator, including
+// destinations whose own weight never changes. Compare optimized prefix and
+// numeric-rate projections with an independent interval integral.
+const staggeredRoutes = [
+  {
+    weight: 3,
+    postAllianceWeight: 2,
+    distance: 1.25,
+    teamGoldPerArrival: 100,
+    allianceTicksRemaining: 5.25,
+  },
+  {
+    weight: 3,
+    postAllianceWeight: 2,
+    distance: 2.5,
+    teamGoldPerArrival: 200,
+    allianceTicksRemaining: 9.75,
+  },
+  {
+    weight: 2,
+    postAllianceWeight: 2,
+    distance: 0,
+    teamGoldPerArrival: 300,
+    allianceTicksRemaining: Infinity,
+  },
+];
+const rate = (tick) => 1 + tick / 10;
+const horizon = 15.5;
+const startDelayTicks = 0.5;
+const reference = (rateAtTick) => {
+  const boundaries = [
+    ...new Set([
+      0,
+      horizon,
+      5.25,
+      9.75,
+      ...staggeredRoutes.map((route) => route.distance + startDelayTicks),
+      ...Array.from({ length: Math.ceil(horizon) }, (_, tick) => tick),
+    ]),
+  ]
+    .filter((tick) => tick <= horizon)
+    .sort((a, b) => a - b);
+  let total = 0;
+  for (let index = 0; index < boundaries.length - 1; index++) {
+    const start = boundaries[index];
+    const end = boundaries[index + 1];
+    const weightAt = (route) =>
+      start < route.allianceTicksRemaining ? route.weight : route.postAllianceWeight;
+    const denominator = staggeredRoutes.reduce((sum, route) => sum + weightAt(route), 0);
+    for (const route of staggeredRoutes) {
+      if (start < startDelayTicks + route.distance) continue;
+      total +=
+        (((end - start) * rateAtTick(Math.floor(start)) * weightAt(route)) / denominator) *
+        route.teamGoldPerArrival;
+    }
+  }
+  return total;
+};
+const assertClose = (actual, expected, message) =>
+  assert.ok(Math.abs(actual - expected) < 1e-9, `${message}: ${actual} vs ${expected}`);
+const projectionOptions = { startDelayTicks, horizon, rateAtTick: rate };
+assertClose(
+  sandbox.legendaryPortExpectedGold({ routes: staggeredRoutes }, projectionOptions),
+  reference(rate),
+  "staggered expiry integrates current destination probabilities",
+);
+let prefixCalls = 0;
+let pointCalls = 0;
+assertClose(
+  sandbox.legendaryPortExpectedGold(
+    { routes: staggeredRoutes },
+    {
+      ...projectionOptions,
+      rateAtTick: (tick) => {
+        pointCalls++;
+        return rate(tick);
+      },
+      rateRangeSum: (start, end) => {
+        prefixCalls++;
+        return end - start + ((end - start) * (start + end - 1)) / 20;
+      },
+    },
+  ),
+  reference(rate),
+  "prefix integration agrees across fractional expiries and travel",
+);
+assert.ok(prefixCalls > 0 && pointCalls <= 18, "prefix projection only probes event-edge ticks");
+const constantRate = sandbox.legendaryPortRate(1, false, 0, {
+  tradeShipSpawnRate: () => 10,
+});
+assertClose(
+  sandbox.legendaryPortExpectedGold(
+    { routes: staggeredRoutes },
+    {
+      startDelayTicks,
+      horizon,
+      level: 1,
+      upgrade: false,
+      tradeShipCount: 0,
+      config: { tradeShipSpawnRate: () => 10 },
+    },
+  ),
+  reference(() => constantRate),
+  "numeric rate shares the same expiry denominator",
+);
+
+// Mature boards must not multiply every destination by every owner expiry.
+const manyRoutes = Array.from({ length: 256 }, (_, index) => ({
+  weight: 3,
+  postAllianceWeight: 2,
+  distance: index / 4,
+  teamGoldPerArrival: 100,
+  allianceTicksRemaining: 100 + index * 300,
+}));
+let manyPrefixCalls = 0;
+let manyPointCalls = 0;
+const manyProjection = sandbox.legendaryPortExpectedGold(
+  { routes: manyRoutes },
+  {
+    startDelayTicks: 0,
+    horizon: 100_000,
+    rateAtTick: () => {
+      manyPointCalls++;
+      return 1;
+    },
+    rateRangeSum: (start, end) => {
+      manyPrefixCalls++;
+      return end - start;
+    },
+  },
+);
+assert.ok(Number.isFinite(manyProjection) && manyProjection > 0);
+assert.ok(
+  manyPrefixCalls < 4 * manyRoutes.length,
+  "prefix operations grow with arrivals and expiries, not their cross product",
+);
+assert.ok(
+  manyPointCalls < 4 * manyRoutes.length,
+  "fractional edge probes remain linear in destination count",
+);
+const disappearingRoutes = [
+  {
+    weight: 1,
+    postAllianceWeight: 0,
+    distance: 0,
+    teamGoldPerArrival: 100,
+    allianceTicksRemaining: 5,
+  },
+  {
+    weight: 1,
+    postAllianceWeight: 0,
+    distance: 6,
+    teamGoldPerArrival: 300,
+    allianceTicksRemaining: 4,
+  },
+];
+assert.equal(
+  sandbox.legendaryPortExpectedGold(
+    { routes: disappearingRoutes },
+    {
+      startDelayTicks: 0,
+      horizon: 10,
+      rateAtTick: () => 1,
+      rateRangeSum: (start, end) => end - start,
+    },
+  ),
+  300,
+  "expiry before arrival adds no payout; removing all weights ends income",
+);
+
+for (const invalid of [
+  { startDelayTicks: 0, horizon: Infinity },
+  { startDelayTicks: NaN, horizon: 100 },
+]) {
+  assert.equal(
+    sandbox.legendaryPortExpectedGold(
+      { routes: manyRoutes },
+      {
+        ...invalid,
+        rateAtTick: () => {
+          throw new Error("invalid interval must not probe rates");
+        },
+      },
+    ),
+    0,
+    "unbounded or unreadable projection intervals fail closed",
+  );
+}
 
 process.stdout.write(
   `legendary alliance expiry policy passed: expiring=${expiringAlly.netTeamGold}, ` +

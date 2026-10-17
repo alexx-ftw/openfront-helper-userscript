@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { createAttackBehaviorSandbox } from "./helpers/attack-behavior-sandbox.mjs";
-import { executeClassicScript, readRepositoryFile } from "./helpers/repository-fixture.mjs";
-import { readStructureBehaviorSource } from "./helpers/structure-behavior-source.mjs";
-import { outcomeTransitionFlags } from "../scripts/headless/hybrid-evaluation-contract.mjs";
+import { createAttackBehaviorSandbox } from "#test/helpers/attack-behavior-sandbox.mjs";
+import { executeClassicScript, readRepositoryFile } from "#test/helpers/repository-fixture.mjs";
+import { readStructureBehaviorSource } from "#test/helpers/structure-behavior-source.mjs";
+import { outcomeTransitionFlags } from "#scripts/headless/hybrid-evaluation-contract.mjs";
 
 // Production callers, not a second policy implementation. Removing the native
 // geometry bridge or final purchase veto must fail these assertions.

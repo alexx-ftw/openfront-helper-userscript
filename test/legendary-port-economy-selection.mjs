@@ -103,7 +103,7 @@ const OCEAN = -1;
     let expected = 0;
     for (let tick = Math.floor(start); tick < end; tick++) {
       const overlap = Math.max(0, Math.min(end, tick + 1) - Math.max(start, tick));
-      const active = tick + overlap / 2 < start + activeTicks;
+      const active = Math.max(start, tick) + overlap / 2 < start + activeTicks;
       expected += overlap * routeRate(tick) * (active ? activeValue : postValue);
     }
     let partialRateCalls = 0;
@@ -388,15 +388,17 @@ const OCEAN = -1;
     { weight: 1 / 7, distance: 1 },
     { weight: 6 / 7, distance: 3 },
   ];
-  const groupedFractionalRoutes = sandbox.legendaryTradePortCohorts([{
-    ownerId: "1",
-    ports: Array.from({ length: 3 }, () => ({
-      level: 1,
-      readyAtTicks: 0,
-      count: 1,
-      routes: sandbox.legendaryNormalizedTradeRoutes(fractionalRoutes),
-    })),
-  }])[0];
+  const groupedFractionalRoutes = sandbox.legendaryTradePortCohorts([
+    {
+      ownerId: "1",
+      ports: Array.from({ length: 3 }, () => ({
+        level: 1,
+        readyAtTicks: 0,
+        count: 1,
+        routes: sandbox.legendaryNormalizedTradeRoutes(fractionalRoutes),
+      })),
+    },
+  ])[0];
   assert.equal(
     sandbox.legendaryTradeReplacementKey("1", 1, 0, fractionalRoutes),
     sandbox.legendaryTradeReplacementKey(
@@ -410,12 +412,14 @@ const OCEAN = -1;
   const untouchedOwnerCohorts = sandbox.legendarySubstitutedTradePortCohorts(
     ["1", "2"].map((ownerId) => ({
       ownerId,
-      ports: [{
-        level: 1,
-        readyAtTicks: 0,
-        count: 1,
-        routes: normalizedOldRoutes,
-      }],
+      ports: [
+        {
+          level: 1,
+          readyAtTicks: 0,
+          count: 1,
+          routes: normalizedOldRoutes,
+        },
+      ],
     })),
     [{ ownerId: "1", beforeKey: oldKey }],
   );
@@ -1438,22 +1442,26 @@ const portCandidates = async (behavior) =>
   const profile = {
     placementTile: 30,
     routes: [{ weight: 1, distance: 4, teamGoldPerArrival: 100, postAllianceGoldPerArrival: 100 }],
-    inboundSources: [{
-      ownerId: "2",
-      level: 1,
-      constructionDelayTicks: 0,
-      beforeProfile: { routes: [{ weight: 1, distance: 1 }] },
-      afterProfile: { routes: [{ weight: 1, distance: 4 }] },
-    }],
+    inboundSources: [
+      {
+        ownerId: "2",
+        level: 1,
+        constructionDelayTicks: 0,
+        beforeProfile: { routes: [{ weight: 1, distance: 1 }] },
+        afterProfile: { routes: [{ weight: 1, distance: 4 }] },
+      },
+    ],
   };
   const inputs = {
     tradeShipCount: 0,
     hasCompletedTradePartner: true,
     fleetProducerSupply: {
-      portOwners: [{
-        ownerId: "2",
-        ports: [{ level: 1, readyAtTicks: 0, routes: [{ weight: 1, distance: 1 }] }],
-      }],
+      portOwners: [
+        {
+          ownerId: "2",
+          ports: [{ level: 1, readyAtTicks: 0, routes: [{ weight: 1, distance: 1 }] }],
+        },
+      ],
       trainOwners: [],
     },
     portCandidateProfiles: [profile],
@@ -1481,13 +1489,17 @@ const portCandidates = async (behavior) =>
   } finally {
     sandbox.legendaryProjectEconomyFleets = originalProject;
   }
-  assert.ok(projectedInbound.some((sources) =>
-    sources.some((source) =>
-      source.ownerId === "2" &&
-      source.routes[0]?.distance === 4 &&
-      source.beforeRoutes?.[0]?.distance === 1,
+  assert.ok(
+    projectedInbound.some((sources) =>
+      sources.some(
+        (source) =>
+          source.ownerId === "2" &&
+          source.routes[0]?.distance === 4 &&
+          source.beforeRoutes?.[0]?.distance === 1,
+      ),
     ),
-  ), "candidate fleet scenarios carry both the new and prior schedule for each rerouted source");
+    "candidate fleet scenarios carry both the new and prior schedule for each rerouted source",
+  );
 }
 
 // A 25-site, match-length decision counterfactually projects every route signature.
@@ -1539,12 +1551,13 @@ const portCandidates = async (behavior) =>
 }
 
 {
-  const makeRoutes = (weight, count) => Array.from({ length: count }, () => ({
-    weight,
-    distance: 2,
-    teamGoldPerArrival: 500,
-    postAllianceGoldPerArrival: 500,
-  }));
+  const makeRoutes = (weight, count) =>
+    Array.from({ length: count }, () => ({
+      weight,
+      distance: 2,
+      teamGoldPerArrival: 500,
+      postAllianceGoldPerArrival: 500,
+    }));
   const profiles = [
     { placementTile: 201, routes: makeRoutes(1, 1), teamGoldPerArrival: 500 },
     { placementTile: 202, routes: makeRoutes(0.5, 2), teamGoldPerArrival: 500 },
@@ -1596,7 +1609,11 @@ const portCandidates = async (behavior) =>
     sandbox.legendaryProjectEconomyFleets = project;
   }
   assert.equal(order.indexOf(winner), 2, "the winning route sorts third in preliminary order");
-  assert.equal(evaluated.size, profiles.length, "all three route signatures are counterfactually scored");
+  assert.equal(
+    evaluated.size,
+    profiles.length,
+    "all three route signatures are counterfactually scored",
+  );
   assert.equal(
     selected.portPlacementTile,
     winner.placementTile,
@@ -1608,11 +1625,11 @@ const portCandidates = async (behavior) =>
   const { behavior } = portScenario({ others: [], shared: new Set(), horizonTicks: 80 });
   const ship = { id: () => 9001 };
   behavior.game.ticks = () => 100;
-  behavior.game.units = (type) => type === UNIT.TradeShip ? [ship] : [];
-  behavior.game.motionPlans = () => new Map([[
-    ship.id(),
-    { startTick: 102, ticksPerStep: 1, path: new Uint32Array([10, 11, 12]) },
-  ]]);
+  behavior.game.units = (type) => (type === UNIT.TradeShip ? [ship] : []);
+  behavior.game.motionPlans = () =>
+    new Map([
+      [ship.id(), { startTick: 102, ticksPerStep: 1, path: new Uint32Array([10, 11, 12]) }],
+    ]);
   const inputs = behavior.legendaryEconomyInputs({
     trainCount: 0,
     tradeShipCount: 1,
