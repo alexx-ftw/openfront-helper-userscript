@@ -35,7 +35,7 @@
       // replacement loss for, matching the tile scorer's counterforce logic.
       const enemyValue = unitsOfTypes(target)
         .filter((unit) =>
-          this.game.euclideanDistSquared(pending.targetTile, unit.tile()) <=
+          this.game.euclideanDistSquared(pending.targetTile, unit.tile()) <
             magnitude.outer * magnitude.outer)
         .reduce((sum, unit) =>
           sum + this.nukeStructureValue(unit) * this.mirvCapableSiloPriority(unit), 0);

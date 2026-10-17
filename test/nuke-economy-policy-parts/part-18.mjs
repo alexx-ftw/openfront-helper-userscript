@@ -53,8 +53,8 @@
   grid[tileOf(52, 50)] = 1;
   assert.equal(
     d4b.blastHitsFriendlyLand(tileOf(50, 50), UNIT.AtomBomb),
-    false,
-    "an own enclave exactly at the blast edge survives the friendly-land filter",
+    true,
+    "an own enclave at the inclusive land-fallout edge trips the friendly-land filter",
   );
   grid[tileOf(52, 50)] = 999;
   grid[tileOf(51, 50)] = 1;

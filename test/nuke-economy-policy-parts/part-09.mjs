@@ -29,8 +29,18 @@ assert.equal(
     { type: UNIT.AtomBomb, cost: 750_000n },
     [],
   ),
+  false,
+  "a City exactly on the blast edge survives and cannot justify the launch cost",
+);
+assert.equal(
+  await boundaryValueGuard.nukeHasPositiveExpectedValue(
+    { tile: 0, coveringSamLevels: 0 },
+    boundaryValueTarget(29),
+    { type: UNIT.AtomBomb, cost: 750_000n },
+    [],
+  ),
   true,
-  "the same City exactly on the blast edge is destroyed as well and remains eligible by expected value",
+  "a City strictly inside the blast is destroyed and justifies the launch cost",
 );
 const counterforceValueGuard = Object.create(sandbox.__NukeBehavior.prototype);
 const counterforcePlayer = makeArmyPlayer(1, 1_000_000);

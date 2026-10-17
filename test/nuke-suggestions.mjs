@@ -53,7 +53,8 @@ executeClassicScript(
     "globalThis.__isNukeScoreTileAllowed = isNukeScoreTileAllowed;" +
     "globalThis.__collectAlliedPlayerSmallIds = collectAlliedPlayerSmallIds;" +
     "globalThis.__collectAutoNukeTargetSamScores = collectAutoNukeTargetSamScores;" +
-    "globalThis.__launchAutoNukePlan = launchAutoNukePlan;",
+    "globalThis.__launchAutoNukePlan = launchAutoNukePlan;" +
+    "globalThis.__getAutoNukeSamOvershootCount = getAutoNukeSamOvershootCount;",
   sandbox,
   { filename: "nuke-suggestions-test-exports.js" },
 );
@@ -694,6 +695,103 @@ try {
     true,
     "stubs without terrain info keep the previous eligibility",
   );
+}
+
+// Optional SAM insurance must leave the planner's confirmation capacity intact.
+{
+  const best = {
+    candidate: { isSamClear: true, samsHit: 3 },
+    shotsNeeded: 1,
+    totalCost: 100,
+    nukeCost: 100,
+  };
+  for (const [mode, slots, reserve, gold, expected] of [
+    ["destruction", 4, 2, 1000, 1],
+    ["destruction", 3, 2, 1000, 0],
+    ["destruction", 8, 2, 1000, 2],
+    ["destruction", 8, 2, 200, 1],
+    ["sams", 4, 0, 1000, 2],
+  ]) {
+    const context = {
+      mode,
+      remainingSiloSlots: slots,
+      confirmationShotReserve: reserve,
+      remainingGold: gold,
+      state: { destructionPhase: "sams", destroyedSamKeys: new Set() },
+    };
+    const count = sandbox.__getAutoNukeSamOvershootCount(context, best);
+    assert.equal(count, expected, `${mode}: slots=${slots}, reserve=${reserve}, gold=${gold}`);
+    assert.ok(slots - best.shotsNeeded - count >= reserve);
+    assert.ok(best.totalCost + count * best.nukeCost <= gold);
+  }
+}
+
+// A later wave retains prior building objectives for confirmation after SAM cleanup.
+{
+  const functionNames = [
+    "getPlayerGoldNumber",
+    "getNukeSuggestionUnitCost",
+    "getAutoNukeCandidateLandingTick",
+    "getAutoNukeInterceptionPlan",
+  ];
+  const originals = new Map(functionNames.map((name) => [name, sandbox[name]]));
+  Object.assign(sandbox, {
+    getPlayerGoldNumber: () => 1000,
+    getNukeSuggestionUnitCost: () => 100,
+    getAutoNukeCandidateLandingTick: () => 0,
+    getAutoNukeInterceptionPlan: () => ({
+      shotsNeededBeforeLanding: 0,
+      burnCost: 0,
+      shotSamKeys: [],
+      samSlotUpdates: new Map(),
+    }),
+  });
+  try {
+    const priorObjective = {
+      tile: 20,
+      sourceTile: 1,
+      spec: { type: "Atom Bomb" },
+      totalScore: 100,
+      hitDestructionStructureWeights: new Map([["factory", 100]]),
+    };
+    const samCandidate = {
+      tile: 10,
+      sourceTile: 1,
+      spec: { type: "Atom Bomb" },
+      isSamClear: true,
+      samsHit: 3,
+      totalScore: 100,
+      hitSamKeys: ["a", "b", "c"],
+      samClearStackKey: "stack",
+      samClearStackSamKeys: ["a", "b", "c"],
+    };
+    const plan = sandbox.buildAutoNukePlan(
+      { ticks: () => 0 },
+      {},
+      "destruction",
+      {
+        availableSiloSlotsOverride: 4,
+        destructionPhase: "sams",
+        confirmationShots: 2,
+        initialState: { selectedCandidates: [priorObjective] },
+      },
+      { baseContext: { myPlayer: {} }, candidates: [samCandidate] },
+    );
+    assert.deepEqual(
+      Array.from(plan.shots, (shot) => shot.reason),
+      ["sam-clear", "sam-clear-overshoot", "confirmation", "confirmation"],
+      "optional SAM insurance leaves both reserved confirmations in the real plan",
+    );
+    assert.deepEqual(
+      Array.from(plan.shots, (shot) => shot.tile),
+      [10, 10, 20, 20],
+    );
+    assert.equal(plan.cost, 400);
+    assert.equal(plan.budgetSiloSlots, 4);
+    assert.equal(plan.budgetGold, 1000);
+  } finally {
+    for (const [name, original] of originals) sandbox[name] = original;
+  }
 }
 
 process.stdout.write("nuke suggestion construction tests passed\n");

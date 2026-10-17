@@ -17,8 +17,8 @@
   scoreTick++;
   assert.equal(
     scorer.nukeTileScore(candidate, silos, enemyStructures, UNIT.AtomBomb),
-    innerScore,
-    "a structure exactly on the outer boundary is destroyed too and carries the same penalty",
+    enemyOnlyScore,
+    "a structure exactly on the outer boundary survives native unit deletion and carries no loss penalty",
   );
 
   // A permanent teammate's City cluster inside the inner radius counts as

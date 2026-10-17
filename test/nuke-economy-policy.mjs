@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const partsDirectory = path.join(testDirectory, "nuke-economy-policy-parts");
-const expectedHash = "93069d5edb6b40f561efe4babf815bd83971fbe62626f66be3bfa810f09c7802";
+const expectedHash = "7494f0133a70683235d6144abefd1d8cd958f8b7812122eb11c12edbb422e0ad";
 const sourceReadPattern = /const source = fs\.readFileSync\(\n\s*path\.join\(repoRoot,[^\n]+\n\s*"utf8",\n\);/g;
 const helperImport =
   'import { readNukeBehaviorSource } from "./helpers/nuke-behavior-source.mjs";';

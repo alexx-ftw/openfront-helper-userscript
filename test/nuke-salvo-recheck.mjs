@@ -8,7 +8,7 @@ const PARTS_DIR = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "nuke-salvo-recheck-parts",
 );
-const EXPECTED_SHA256 = "bd757af123c63e690371c4ec2134f112c847daf16d9f64b672571af21591ecd3";
+const EXPECTED_SHA256 = "e04326d31f3bcad57e6fa17f535ae011f01c28fb89774230c70b5ece6e665b42";
 const partFiles = fs
   .readdirSync(PARTS_DIR)
   .filter((name) => /^part-\d+\.mjs$/.test(name))

@@ -177,14 +177,15 @@
       ) {
         return true;
       }
-      // On Hard & Impossible, allow TerraNullius (hit small islands) and other
-      // players unless they are teammates or allies (even AFK ones).
+      // On Hard & Impossible, allow TerraNullius (hit small islands) and, in
+      // team games, other players unless they are teammates or allies (even AFK ones).
       // DIVERGENCE: Legendary is a port-level superset of upstream's
       // Hard‖Impossible ladder, so the gate applies there too.
       if (
         isAtLeastHardDifficulty(difficulty) &&
         (!(owner && owner.isPlayer && owner.isPlayer()) ||
-          !this.player.isFriendly(owner, true))
+          (this.game.config().gameConfig().gameMode === GameMode.Team &&
+            !this.player.isFriendly(owner, true)))
       ) {
         return true;
       }

@@ -4704,7 +4704,11 @@
     );
     return Math.min(
       scaled,
-      Math.max(0, context.remainingSiloSlots - best.shotsNeeded),
+      // Optional insurance cannot consume capacity held for confirmation shots.
+      Math.max(
+        0,
+        context.remainingSiloSlots - best.shotsNeeded - context.confirmationShotReserve,
+      ),
       Math.max(
         0,
         Math.floor(

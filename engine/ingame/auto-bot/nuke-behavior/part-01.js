@@ -136,9 +136,10 @@
     }
   }
 
-  // NukeExecution destroys every tile at distance squared <= outer².
+  // NukeExecution deletes units strictly inside outer²; land fallout has a
+  // separate inclusive-edge rule and must not use this structure-value helper.
   function isInsideNukeDestructionRadius(game, center, tile, outerRadius) {
-    return game.euclideanDistSquared(center, tile) <= outerRadius * outerRadius;
+    return game.euclideanDistSquared(center, tile) < outerRadius * outerRadius;
   }
 
   // ===========================================================================

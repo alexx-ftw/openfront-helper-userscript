@@ -1,6 +1,6 @@
-      // NukeExecution destroys structures within the circular blast (inclusive edge).
+      // NukeExecution deletes structures strictly inside the circular blast.
       return structures
-        .filter((unit) => this.game.euclideanDistSquared(tile, unit.tile()) <= radius * radius)
+        .filter((unit) => this.game.euclideanDistSquared(tile, unit.tile()) < radius * radius)
         .reduce((sum, unit) => sum + this.nukeStructureValue(unit), 0);
     }
 

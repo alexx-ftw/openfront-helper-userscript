@@ -78,7 +78,7 @@
 
     /**
      * Penalty for a candidate tile whose blast radii would also hit friendly
-     * structures: every structure within the outer circle (inclusive edge) is
+     * structures: every structure strictly within the outer circle is
      * destroyed.
      * Uses the existing replacement multiplier for the complete destruction area.
      */
@@ -88,7 +88,7 @@
       const outerSquared = magnitude.outer * magnitude.outer;
       let destroyedValue = 0;
       for (const entry of friendlyStructures) {
-        if (this.game.euclideanDistSquared(tile, entry.tile) <= outerSquared) {
+        if (this.game.euclideanDistSquared(tile, entry.tile) < outerSquared) {
           destroyedValue += replacementValues ? entry.replacementValue : entry.value;
         }
       }
